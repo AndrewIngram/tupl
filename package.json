@@ -1,0 +1,27 @@
+{
+  "name": "sqlql",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SQL facade planning library monorepo",
+  "license": "MIT",
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "clean": "pnpm -r --if-present run clean",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint . --fix",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "oxfmt": "latest",
+    "oxlint": "latest",
+    "tsdown": "latest",
+    "typescript": "^5.9.2",
+    "vitest": "latest"
+  },
+  "packageManager": "pnpm@10.0.0"
+}

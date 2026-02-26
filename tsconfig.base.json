@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@sqlql/core": ["packages/core/src/index.ts"],
+      "@sqlql/sql": ["packages/sql/src/index.ts"],
+      "@sqlql/executor-memory": ["packages/executor-memory/src/index.ts"]
+    }
+  }
+}
