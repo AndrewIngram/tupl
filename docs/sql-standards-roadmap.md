@@ -5,6 +5,11 @@ driven by missing capabilities. Each feature is classified as either a **query a
 (handled entirely inside the executor, no new resolver API) or a **new API capability**
 (requires the resolver/method layer to expose a new hook or operator).
 
+> **Scope note:** This roadmap is not exhaustive of every SQL clause or function that exists
+> in the various SQL standards. It focuses on the features most commonly needed for data query
+> workloads. Vendor-specific extensions (e.g., PostgreSQL JSON operators, MySQL-specific syntax)
+> are out of scope unless they are widely adopted.
+
 ---
 
 ## Currently Supported (Baseline)
@@ -189,10 +194,127 @@ aggregation.
 
 ---
 
-## Tier 3 — SQL-92/99 (Planned)
+## Tier 3 — SQL-92 Remaining (Planned)
 
-The following features are identified as next priorities. They are listed roughly
-in order of implementation complexity.
+These are all SQL-92 features. They are not yet implemented.
+
+### CAST
+**Classification:** Query affordance — in-memory type coercion on projected values
+
+`CAST(expr AS type)` converts a value to a different SQL scalar type. For sqlql,
+this is applied in-memory during projection; the scan method always sees the raw
+value. CAST does not need to be pushed to the resolver because the schema already
+declares each column's type.
+
+```sql
+SELECT CAST(o.total_cents AS text) FROM orders o
+SELECT CAST('2024-01-01' AS timestamp) FROM orders o
+```
+
+The type set (`text`, `integer`, `boolean`, `timestamp`) maps directly to
+`SqlScalarType` in `@sqlql/core`. Numeric narrowing (`CAST(x AS numeric(10,2))`)
+and other precision-qualified types are deferred.
+
+### CASE Expressions
+**Classification:** Query affordance — in-memory computed column
+
+`CASE WHEN ... THEN ... ELSE ... END` evaluated in memory during projection.
+No resolver API change needed; the computed value is returned as a projected column.
+
+```sql
+SELECT o.id, CASE WHEN o.total_cents > 5000 THEN 'high' ELSE 'low' END AS tier
+FROM orders o
+```
+
+Searched CASE (`CASE WHEN cond THEN val`) and simple CASE (`CASE col WHEN val THEN ...`)
+both need to be supported.
+
+### COALESCE / NULLIF
+**Classification:** Query affordance — in-memory computed value
+
+SQL-92 scalar functions applied in-memory during projection or in WHERE.
+
+```sql
+SELECT COALESCE(o.note, 'n/a') AS note FROM orders o
+SELECT NULLIF(o.status, 'pending') AS status FROM orders o
+```
+
+### RIGHT (OUTER) JOIN
+**Classification:** Query affordance — mirrors LEFT JOIN with sides swapped
+
+`RIGHT JOIN` is equivalent to swapping the left and right tables and performing
+a LEFT JOIN. Can be implemented by transposing the join operands before execution.
+
+```sql
+SELECT o.id, u.email FROM users u RIGHT JOIN orders o ON o.user_id = u.id
+```
+
+### FULL (OUTER) JOIN
+**Classification:** Query affordance — union of LEFT JOIN and unmatched right rows
+
+All rows from both sides, with `null`-padding where no match exists.
+Implementable as a LEFT JOIN merged with the unmatched rows from a RIGHT JOIN.
+
+```sql
+SELECT o.id, u.email FROM orders o FULL OUTER JOIN users u ON o.user_id = u.id
+```
+
+### CROSS JOIN
+**Classification:** Query affordance — cartesian product
+
+No join condition; every left row is paired with every right row. Useful for
+small reference tables or generating row sets.
+
+```sql
+SELECT o.id, c.currency FROM orders o CROSS JOIN currencies c
+```
+
+### NATURAL JOIN
+**Classification:** Query affordance — implicit equi-join on same-name columns
+
+Automatically joins on all columns with matching names between the two tables.
+No resolver API change; the executor synthesises the join condition from the schema.
+
+```sql
+SELECT o.id, u.email FROM orders o NATURAL JOIN users u
+```
+
+### JOIN ... USING (col, ...)
+**Classification:** Query affordance — shorthand equi-join on named columns
+
+Equivalent to `ON left.col = right.col` for each listed column.
+
+```sql
+SELECT o.id, u.email FROM orders o JOIN users u USING (id)
+```
+
+### INTERSECT / EXCEPT
+**Classification:** Query affordance — executor performs set operations on two result arrays
+
+`INTERSECT` returns rows present in both result sets; `EXCEPT` returns rows in the
+first set not present in the second. Both require the two result sets to have
+compatible column shapes.
+
+```sql
+SELECT user_id FROM orders WHERE status = 'paid'
+INTERSECT
+SELECT user_id FROM orders WHERE total_cents > 1000
+
+SELECT id FROM users
+EXCEPT
+SELECT user_id FROM orders
+```
+
+### EXISTS Subquery
+**Classification:** Query affordance (uncorrelated) — new API capability (correlated)
+
+`WHERE EXISTS (SELECT ...)` evaluates to `true` if the subquery returns any rows.
+Uncorrelated EXISTS can be pre-executed once; correlated EXISTS requires per-row
+evaluation and is significantly more complex.
+
+```sql
+WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id AND o.status = 'paid')
+```
 
 ### HAVING Clause
 **Classification:** New API capability — post-aggregate filter
@@ -219,7 +341,31 @@ UNION ALL
 SELECT id FROM orders WHERE status = 'pending'
 ```
 
-### Subqueries
+### Scalar String Functions
+**Classification:** Query affordance — in-memory computed values
+
+SQL-92 defines a core set of string functions applicable in SELECT and WHERE:
+
+| Function | Description |
+|----------|-------------|
+| `UPPER(str)` / `LOWER(str)` | Case conversion |
+| `TRIM([LEADING\|TRAILING\|BOTH] FROM str)` | Whitespace/char trimming |
+| `SUBSTRING(str FROM n FOR m)` | Substring extraction |
+| `CHAR_LENGTH(str)` | Character count |
+| `POSITION(needle IN haystack)` | Substring position |
+| `CONCAT(str, ...)` / `\|\|` operator | String concatenation |
+
+### Scalar Datetime Functions
+**Classification:** Query affordance — in-memory computed values / current-time literals
+
+| Function | Description |
+|----------|-------------|
+| `CURRENT_DATE` | Current date (literal) |
+| `CURRENT_TIME` | Current time (literal) |
+| `CURRENT_TIMESTAMP` | Current timestamp (literal) |
+| `EXTRACT(field FROM datetime)` | Extracts year/month/day/etc. |
+
+### Subqueries (non-EXISTS)
 **Classification:** New API capability (correlated) / query affordance (uncorrelated)
 
 Uncorrelated subqueries (`WHERE x IN (SELECT ...)`) can be pre-executed and
@@ -249,16 +395,13 @@ SELECT * FROM paid_orders WHERE total_cents > 1000
 | Feature | Classification | Notes |
 |---------|---------------|-------|
 | Window functions (`OVER`) | New API capability | Requires per-row context; complex to delegate |
-| `CASE` expressions | Query affordance | In-memory computed columns |
-| `COALESCE` / `NULLIF` | Query affordance | In-memory computed columns |
-| `FULL OUTER JOIN` | Query affordance | Union of left+right results |
-| `CROSS JOIN` | Query affordance | Cartesian product |
 | Scalar subqueries in SELECT | New API capability | Returns single value per row |
 | `RECURSIVE` CTEs | New API capability | Requires iterative execution |
 | `ROLLUP` / `CUBE` / `GROUPING SETS` | New API capability | Multi-level GROUP BY |
-| `FETCH FIRST n ROWS ONLY` | Query affordance | Alias for LIMIT |
+| `FETCH FIRST n ROWS ONLY` | Query affordance | SQL:2008 alias for LIMIT |
 | `LATERAL` joins | New API capability | Per-row subquery execution |
 | JSON operators | New API capability | Extend schema type system |
+| `MULTISET` / array types | New API capability | Collection column types |
 
 ---
 
@@ -281,3 +424,4 @@ Existing `ScalarFilterClause` now accepts `"like"` and `"not_like"` in its `op` 
 
 Scan implementations should handle all new operators or return unfiltered rows
 (the executor applies post-join predicate evaluation for complex cases).
+
