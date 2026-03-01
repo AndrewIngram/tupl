@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { defineSchema, defineTableMethods, resolveTableQueryBehavior, toSqlDDL } from "../src";
+import {
+  asIso8601Timestamp,
+  defineSchema,
+  defineTableMethods,
+  resolveTableQueryBehavior,
+  toSqlDDL,
+} from "../src";
 
 describe("defineSchema", () => {
   it("keeps tables concise and applies permissive query defaults", () => {
@@ -75,12 +81,12 @@ describe("defineSchema", () => {
         'CREATE TABLE IF NOT EXISTS "orders" (',
         '  "id" TEXT,',
         '  "total_cents" INTEGER,',
-        '  "created_at" TIMESTAMP',
+        '  "created_at" TEXT /* sqlql: timestamp/date expected as ISO-8601 text */',
         ");",
         "",
         'CREATE TABLE IF NOT EXISTS "users" (',
         '  "id" TEXT,',
-        '  "active" BOOLEAN',
+        '  "active" INTEGER',
         ");",
       ].join("\n"),
     );
@@ -104,7 +110,7 @@ describe("defineSchema", () => {
         'CREATE TABLE "users" (',
         '  "id" TEXT NOT NULL,',
         '  "email" TEXT,',
-        '  "active" BOOLEAN',
+        '  "active" INTEGER',
         ");",
       ].join("\n"),
     );
@@ -313,5 +319,12 @@ describe("defineSchema", () => {
     });
 
     expect(methods.orders).toBeDefined();
+  });
+
+  it("provides a timestamp helper for ISO-8601 values", () => {
+    expect(asIso8601Timestamp("2026-02-01T10:00:00.000Z")).toBe("2026-02-01T10:00:00.000Z");
+    expect(asIso8601Timestamp(new Date("2026-02-01T10:00:00.000Z"))).toBe(
+      "2026-02-01T10:00:00.000Z",
+    );
   });
 });

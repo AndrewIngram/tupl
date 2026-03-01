@@ -37,22 +37,22 @@ const gapCases: StandardsGapCase[] = [
     `,
   },
   {
-    name: "explicit window frame clause",
+    name: "non-running/advanced window frame clauses",
     sql: `
       SELECT
         SUM(total_cents) OVER (
           PARTITION BY org_id
           ORDER BY created_at
-          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+          ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
         ) AS running_total
       FROM orders
     `,
   },
   {
-    name: "navigation window function LEAD",
+    name: "navigation window function FIRST_VALUE",
     sql: `
       SELECT
-        LEAD(total_cents) OVER (PARTITION BY org_id ORDER BY created_at) AS next_total
+        FIRST_VALUE(total_cents) OVER (PARTITION BY org_id ORDER BY created_at) AS first_total
       FROM orders
     `,
   },

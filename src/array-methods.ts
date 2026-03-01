@@ -51,7 +51,8 @@ export function scanArrayRows<
   TTable extends string = string,
   TColumn extends Extract<keyof TRow, string> = Extract<keyof TRow, string>,
 >(rows: TRow[], request: TableScanRequest<TTable, TColumn>): QueryRow[] {
-  let out = filterRows<TRow, TColumn>(rows, request.where ?? []);
+  const normalized = normalizeDateRows(rows);
+  let out = filterRows<TRow, TColumn>(normalized, request.where ?? []);
 
   if (request.orderBy && request.orderBy.length > 0) {
     out = [...out].sort((left, right) => {
@@ -84,8 +85,9 @@ export function lookupArrayRows<
   TTable extends string = string,
   TColumn extends Extract<keyof TRow, string> = Extract<keyof TRow, string>,
 >(rows: TRow[], request: TableLookupRequest<TTable, TColumn>): QueryRow[] {
+  const normalized = normalizeDateRows(rows);
   const keys = new Set(request.values);
-  let out = rows.filter((row) => keys.has(row[request.key]));
+  let out = normalized.filter((row) => keys.has(row[request.key]));
   out = filterRows<TRow, TColumn>(out, request.where ?? []);
   return projectRows(out, request.select);
 }
@@ -95,9 +97,10 @@ export function aggregateArrayRows<
   TTable extends string = string,
   TColumn extends Extract<keyof TRow, string> = Extract<keyof TRow, string>,
 >(rows: TRow[], request: TableAggregateRequest<TTable, TColumn>): QueryRow[] {
+  const normalizedRows = normalizeDateRows(rows);
   const scanRequest: TableScanRequest<TTable, TColumn> = {
     table: request.table,
-    select: Object.keys(rows[0] ?? {}) as TColumn[],
+    select: Object.keys(normalizedRows[0] ?? {}) as TColumn[],
   };
 
   if (request.alias) {
@@ -108,7 +111,7 @@ export function aggregateArrayRows<
     scanRequest.where = request.where;
   }
 
-  const scanned = scanArrayRows<TRow, TTable, TColumn>(rows, scanRequest);
+  const scanned = scanArrayRows<TRow, TTable, TColumn>(normalizedRows, scanRequest);
   const groupBy = request.groupBy ?? [];
   const groups = new Map<string, QueryRow[]>();
 
@@ -147,6 +150,22 @@ export function aggregateArrayRows<
   }
 
   return out;
+}
+
+function normalizeDateRows<TRow extends QueryRow>(rows: TRow[]): TRow[] {
+  return rows.map((row) => {
+    let changed = false;
+    const next: QueryRow = { ...row };
+
+    for (const [key, value] of Object.entries(next)) {
+      if (value instanceof Date) {
+        next[key] = value.toISOString();
+        changed = true;
+      }
+    }
+
+    return (changed ? next : row) as TRow;
+  });
 }
 
 function evaluateMetric<TColumn extends string>(

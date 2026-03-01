@@ -1,5 +1,17 @@
 export type SqlScalarType = "text" | "integer" | "boolean" | "timestamp";
 
+declare const ISO_8601_TIMESTAMP_BRAND: unique symbol;
+
+export type Iso8601TimestampString = string & {
+  readonly [ISO_8601_TIMESTAMP_BRAND]: "Iso8601TimestampString";
+};
+
+export type TimestampValue = Iso8601TimestampString | string | Date;
+
+export function asIso8601Timestamp(value: string | Date): Iso8601TimestampString {
+  return (value instanceof Date ? value.toISOString() : value) as Iso8601TimestampString;
+}
+
 export interface ColumnDefinition {
   type: SqlScalarType;
   nullable?: boolean;
@@ -74,6 +86,8 @@ export type SqlTypeValue<TType extends SqlScalarType> = TType extends "integer"
   ? number
   : TType extends "boolean"
     ? boolean
+    : TType extends "timestamp"
+      ? TimestampValue
     : string;
 
 export type ColumnValue<TColumn extends TableColumnDefinition> = TColumn extends SqlScalarType
@@ -292,7 +306,8 @@ export function toSqlDDL(schema: SchemaDefinition, options: SqlDdlOptions = {}):
     const definitionLines = columnEntries.map(([columnName, columnDefinition]) => {
       const resolved = resolveColumnDefinition(columnDefinition);
       const nullability = resolved.nullable ? "" : " NOT NULL";
-      return `  ${escapeIdentifier(columnName)} ${toSqlType(resolved.type)}${nullability}`;
+      const metadataComment = renderColumnMetadataComment(resolved.type);
+      return `  ${escapeIdentifier(columnName)} ${toSqlType(resolved.type)}${nullability}${metadataComment}`;
     });
 
     const constraints = table.constraints;
@@ -331,9 +346,18 @@ function toSqlType(type: SqlScalarType): string {
     case "integer":
       return "INTEGER";
     case "boolean":
-      return "BOOLEAN";
+      return "INTEGER";
     case "timestamp":
-      return "TIMESTAMP";
+      return "TEXT";
+  }
+}
+
+function renderColumnMetadataComment(type: SqlScalarType): string {
+  switch (type) {
+    case "timestamp":
+      return " /* sqlql: timestamp/date expected as ISO-8601 text */";
+    default:
+      return "";
   }
 }
 

@@ -117,48 +117,83 @@ describe("query/window", () => {
     );
   });
 
-  it("rejects explicit frame clauses", async () => {
+  it("supports explicit ROWS frame clauses", async () => {
     await withQueryHarness(
       {
         schema: commerceSchema,
         rowsByTable: commerceRows,
       },
       async (harness) => {
-        await expect(
-          harness.runSqlql(
-            `
-              SELECT
-                SUM(total_cents) OVER (
-                  PARTITION BY org_id
-                  ORDER BY created_at
-                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                ) AS running_total
-              FROM orders
-            `,
-            EMPTY_CONTEXT,
-          ),
-        ).rejects.toThrow("Explicit window frame clauses are not supported yet.");
+        const { actual, expected } = await harness.runAgainstBoth(
+          `
+            SELECT
+              id,
+              SUM(total_cents) OVER (
+                PARTITION BY org_id
+                ORDER BY created_at
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS running_total
+            FROM orders
+            WHERE org_id = 'org_1'
+            ORDER BY id ASC
+          `,
+          EMPTY_CONTEXT,
+        );
+
+        expect(actual).toEqual(expected);
       },
     );
   });
 
-  it("rejects named WINDOW clauses", async () => {
+  it("supports named WINDOW clauses and references", async () => {
     await withQueryHarness(
       {
         schema: commerceSchema,
         rowsByTable: commerceRows,
       },
       async (harness) => {
-        await expect(
-          harness.runSqlql(
-            `
-              SELECT SUM(total_cents) OVER w AS running_total
-              FROM orders
-              WINDOW w AS (PARTITION BY org_id ORDER BY created_at)
-            `,
-            EMPTY_CONTEXT,
-          ),
-        ).rejects.toThrow("Named WINDOW clauses are not supported yet.");
+        const { actual, expected } = await harness.runAgainstBoth(
+          `
+            SELECT
+              id,
+              SUM(total_cents) OVER w AS running_total
+            FROM orders
+            WINDOW w AS (
+              PARTITION BY org_id
+              ORDER BY created_at
+              ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            )
+            ORDER BY id ASC
+          `,
+          EMPTY_CONTEXT,
+        );
+
+        expect(actual).toEqual(expected);
+      },
+    );
+  });
+
+  it("supports LEAD and LAG", async () => {
+    await withQueryHarness(
+      {
+        schema: commerceSchema,
+        rowsByTable: commerceRows,
+      },
+      async (harness) => {
+        const { actual, expected } = await harness.runAgainstBoth(
+          `
+            SELECT
+              o.id,
+              LEAD(o.total_cents) OVER (PARTITION BY o.org_id ORDER BY o.created_at) AS next_total,
+              LAG(o.total_cents, 1, 0) OVER (PARTITION BY o.org_id ORDER BY o.created_at) AS prev_total
+            FROM orders o
+            WHERE o.org_id = 'org_1'
+            ORDER BY o.id ASC
+          `,
+          EMPTY_CONTEXT,
+        );
+
+        expect(actual).toEqual(expected);
       },
     );
   });
@@ -173,12 +208,12 @@ describe("query/window", () => {
         await expect(
           harness.runSqlql(
             `
-              SELECT LEAD(total_cents) OVER (PARTITION BY org_id ORDER BY created_at) AS next_total
+              SELECT FIRST_VALUE(total_cents) OVER (PARTITION BY org_id ORDER BY created_at) AS first_total
               FROM orders
             `,
             EMPTY_CONTEXT,
           ),
-        ).rejects.toThrow("Unsupported window function: LEAD");
+        ).rejects.toThrow("Unsupported window function: FIRST_VALUE");
       },
     );
   });
@@ -202,7 +237,7 @@ describe("query/window", () => {
             `,
             EMPTY_CONTEXT,
           ),
-        ).rejects.toThrow("Window functions cannot be mixed with GROUP BY/HAVING in this release.");
+        ).rejects.toThrow("Window functions cannot be mixed with GROUP BY/HAVING.");
       },
     );
   });
