@@ -11,7 +11,7 @@ You define:
 
 Then users write SQL queries, and `sqlql` parses and executes them by calling your methods.
 
-## SQL capabilities (v0.2.x)
+## SQL capabilities
 
 Parser policy:
 
@@ -57,8 +57,8 @@ This metadata is used to:
 Optional query-time validation is available through `query(...)`:
 
 - `constraintValidation.mode = "off" | "warn" | "error"`
-- checks implemented now: `NOT NULL`, `PRIMARY KEY` uniqueness, `UNIQUE` uniqueness on retrieved table rows
-- foreign-key runtime checks are intentionally deferred in this release
+- runtime checks: `NOT NULL`, `PRIMARY KEY` uniqueness, `UNIQUE` uniqueness on retrieved table rows
+- foreign-key runtime checks are not implemented
 
 Important limitation:
 
@@ -84,7 +84,7 @@ Security model:
 - The underlying domain methods (`scan`, `lookup`, `aggregate`) are responsible for enforcing access control and data-security constraints.
 - `sqlql` can help with query-shape guardrails, but security guarantees must come from your domain/storage layer.
 
-Current explicit non-goals:
+Explicit non-goals:
 
 - write statements (`INSERT`, `UPDATE`, `DELETE`)
 - recursive CTEs
@@ -97,6 +97,13 @@ Performance philosophy:
 - It can execute independent branches in parallel (set-op branches, independent CTEs, and eligible scan stages).
 - It is not trying to be a full database or a cost-based optimizer.
 - Correctness, safety, and predictable behavior are prioritized over aggressive optimization.
+
+Accepted limitation (relational data sources):
+
+- `sqlql` executes relational workflows in staged table-method calls.
+- `sqlql` does not currently collapse multi-stage relational work into a single provider-native joined query.
+- Even when a backing relational store could answer in one SQL statement, execution may still involve multiple stage calls.
+- This is an accepted limitation for now.
 
 ## Install
 

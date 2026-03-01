@@ -8,9 +8,9 @@ This roadmap defines how `sqlql` expands SQL support while keeping the user-faci
 
 Planning remains internal; users write SQL, not plans.
 
-## Current Baseline (v0.2.x)
+## Baseline
 
-Implemented today:
+Implemented:
 
 - `SELECT ... FROM ...`
 - `INNER JOIN ... ON a = b` (equality joins)
@@ -42,10 +42,10 @@ Implemented today:
 - Opt-in step execution sessions via `createQuerySession(...)`
 - Schema constraint metadata: `PRIMARY KEY`, `UNIQUE`, `FOREIGN KEY`
 - Optional query-time constraint validation modes: `off`, `warn`, `error`
-  - current checks: `NOT NULL`, primary-key uniqueness, unique-key uniqueness
-  - foreign-key runtime checks are intentionally deferred
+  - runtime checks: `NOT NULL`, primary-key uniqueness, unique-key uniqueness
+  - foreign-key runtime checks are not implemented
 
-Currently rejected (not yet implemented):
+Unsupported:
 
 - Correlated subqueries
 - Subqueries in `FROM`
@@ -70,7 +70,7 @@ Target direction:
 
 Goal: support richer filters with controlled planning complexity.
 
-Status: complete for runtime semantics; planner normalization remains future work.
+Status: complete for runtime semantics; planner normalization is out of scope for this milestone.
 
 Execution contract impact:
 
@@ -103,7 +103,7 @@ Execution contract impact:
 
 Goal: close major SQL gaps for read-only workflows.
 
-Status: complete for current target (`SELECT DISTINCT`, `LEFT/RIGHT/FULL JOIN`).
+Status: complete for target scope (`SELECT DISTINCT`, `LEFT/RIGHT/FULL JOIN`).
 
 Execution contract impact:
 
@@ -122,14 +122,14 @@ Execution contract impact:
 - No new public methods.
 - Planner lowers supported subqueries to existing join/filter/aggregate steps.
 
-## Writes (Explicit Non-Goal for Now)
+## Writes (Explicit Non-Goal)
 
-Writes remain explicitly unsupported in v0.x.
+Writes remain explicitly unsupported.
 
 Design reservation only:
 
 - Keep IR and capability surfaces open so keyed writes can be introduced later.
-- Do not imply write semantics/transactions in current API behavior.
+- Do not imply write semantics/transactions in API behavior.
 - Continue rejecting write SQL statements with clear errors.
 
 ## Performance Positioning
@@ -182,7 +182,7 @@ Each milestone is complete only when all are true:
 - Dual-engine integration parity tests (`sqlql` vs SQLite) for supported shapes.
 - `explain(...)` output updated to reflect new plan decisions.
 
-Current compliance test locations:
+Compliance test locations:
 
 - `test/compliance/*-parity.test.ts`: curated sqllogictest-style parity scenarios split by capability.
 - `test/compliance/standards-gaps.todo.test.ts`: explicit standards-gap TODOs for not-yet-supported SQL features.
