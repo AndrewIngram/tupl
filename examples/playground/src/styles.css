@@ -40,6 +40,14 @@
     font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
   }
 
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+  }
+
   code,
   pre {
     font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;

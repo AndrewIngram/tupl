@@ -1,21 +1,13 @@
-import nodeSqlParser from "node-sql-parser";
+import { parseSqliteSelectAst } from "./sqlite-parser/parser";
 
 export interface SqlAstParser {
   astify(sql: string): unknown;
 }
 
-const { Parser } = nodeSqlParser as {
-  Parser: new () => {
-    astify: (sql: string, options?: { database?: string }) => unknown;
-  };
-};
-
-class NodeSqlAstParser implements SqlAstParser {
-  readonly #parser = new Parser();
-
+class SqliteAstParser implements SqlAstParser {
   astify(sql: string): unknown {
-    return this.#parser.astify(sql);
+    return parseSqliteSelectAst(sql);
   }
 }
 
-export const defaultSqlAstParser: SqlAstParser = new NodeSqlAstParser();
+export const defaultSqlAstParser: SqlAstParser = new SqliteAstParser();

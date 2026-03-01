@@ -5,12 +5,16 @@ import type { QueryRow } from "sqlql";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { serializeJson } from "@/examples";
+import { cn } from "@/lib/utils";
 
 interface DataTableJsonEditorProps {
   tableName: string;
   rows: QueryRow[];
   onRowsChange(rows: QueryRow[]): void;
   tableValidationIssues: string[];
+  className?: string;
+  editorClassName?: string;
+  editorHeight?: string;
 }
 
 export function DataTableJsonEditor({
@@ -18,6 +22,9 @@ export function DataTableJsonEditor({
   rows,
   onRowsChange,
   tableValidationIssues,
+  className,
+  editorClassName,
+  editorHeight = "520px",
 }: DataTableJsonEditorProps): React.JSX.Element {
   const externalRowsText = useMemo(() => serializeJson(rows), [rows]);
   const [text, setText] = useState(externalRowsText);
@@ -54,15 +61,17 @@ export function DataTableJsonEditor({
   };
 
   return (
-    <div className="space-y-3">
-      <Editor
-        path={`inmemory://sqlql/data-table-${tableName}.json`}
-        language="json"
-        value={text}
-        onChange={(value) => handleChange(value ?? "")}
-        options={{ minimap: { enabled: false }, fontSize: 13 }}
-        height="520px"
-      />
+    <div className={cn("flex min-h-0 flex-col gap-3", className)}>
+      <div className={cn("min-h-0 overflow-hidden rounded-md border", editorClassName)}>
+        <Editor
+          path={`inmemory://sqlql/data-table-${tableName}.json`}
+          language="json"
+          value={text}
+          onChange={(value) => handleChange(value ?? "")}
+          options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
+          height={editorHeight}
+        />
+      </div>
 
       {parseIssue ? (
         <Alert variant="warning">

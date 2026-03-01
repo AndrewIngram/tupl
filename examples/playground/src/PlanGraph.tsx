@@ -12,17 +12,19 @@ import {
   type NodeProps,
   type NodeTypes,
 } from "@xyflow/react";
-import type { QueryExecutionPlanStep, QueryStepState } from "sqlql";
+import type { QueryExecutionPlanScope, QueryExecutionPlanStep, QueryStepState } from "sqlql";
 
 import { cn } from "@/lib/utils";
 import {
   buildPlanGraphLayout,
   buildPlanGraphModel,
   type PlanNodeData,
+  type PlanScopeNodeData,
 } from "@/plan-graph-model";
 
 interface PlanGraphProps {
   steps: QueryExecutionPlanStep[];
+  scopes?: QueryExecutionPlanScope[];
   statesById: Record<string, QueryStepState | undefined>;
   currentStepId: string | null;
   selectedStepId: string | null;
@@ -77,14 +79,28 @@ const StepNode = memo(function StepNode({ data }: NodeProps): React.JSX.Element 
   );
 });
 
+const ScopeNode = memo(function ScopeNode({ data }: NodeProps): React.JSX.Element {
+  const scopeData = data as PlanScopeNodeData;
+
+  return (
+    <div className="pointer-events-none relative h-full w-full rounded-xl border border-slate-300/90 bg-slate-200/30">
+      <div className="absolute left-3 top-2 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+        {scopeData.scope.label}
+      </div>
+    </div>
+  );
+});
+
 const nodeTypes: NodeTypes = {
   planStep: StepNode,
+  planScope: ScopeNode,
 };
 
 interface PlanGraphCanvasProps extends PlanGraphProps {}
 
 function PlanGraphCanvas({
   steps,
+  scopes,
   statesById,
   currentStepId,
   selectedStepId,
@@ -97,8 +113,8 @@ function PlanGraphCanvas({
   const nodesInitialized = useNodesInitialized();
 
   const graphModel = useMemo(
-    () => buildPlanGraphModel(graphLayout, statesById, selectedStepId, currentStepId),
-    [currentStepId, graphLayout, selectedStepId, statesById],
+    () => buildPlanGraphModel(graphLayout, scopes, statesById, selectedStepId, currentStepId),
+    [currentStepId, graphLayout, scopes, selectedStepId, statesById],
   );
 
   const { fitView, setCenter } = useReactFlow();
@@ -175,15 +191,21 @@ function PlanGraphCanvas({
         nodes={graphModel.nodes}
         edges={graphModel.edges}
         nodeTypes={nodeTypes}
+        proOptions={{ hideAttribution: true }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable
         minZoom={0.25}
         maxZoom={1.5}
-        onNodeClick={(_event, node) => onSelectStep(node.id)}
+        onNodeClick={(_event, node) => {
+          if (node.type !== "planStep") {
+            return;
+          }
+          onSelectStep(node.id);
+        }}
         onPaneClick={() => onClearSelection?.()}
       >
-        <Controls position="top-right" showInteractive={false} />
+        <Controls position="bottom-left" orientation="horizontal" showInteractive={false} />
         <Background gap={24} size={1} color="#d6e3ef" />
       </ReactFlow>
     </div>

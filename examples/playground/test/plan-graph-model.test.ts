@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { QueryExecutionPlanStep } from "sqlql";
+import type { QueryExecutionPlanScope, QueryExecutionPlanStep } from "sqlql";
 
 import {
   buildPlanGraphLayout,
@@ -42,6 +42,26 @@ const STEPS: QueryExecutionPlanStep[] = [
   },
 ];
 
+const SCOPES: QueryExecutionPlanScope[] = [
+  {
+    id: "scope:root",
+    kind: "root",
+    label: "Root",
+  },
+  {
+    id: "scope:cte",
+    kind: "cte",
+    label: "CTE recent_workouts",
+    parentId: "scope:root",
+  },
+  {
+    id: "scope:subquery",
+    kind: "subquery",
+    label: "Subquery WHERE #1",
+    parentId: "scope:cte",
+  },
+];
+
 describe("playground/plan-graph-model", () => {
   it("builds deterministic node positions and edge count", () => {
     const first = buildPlanGraphLayout(STEPS);
@@ -64,12 +84,63 @@ describe("playground/plan-graph-model", () => {
 
   it("marks selected dependency path in graph model", () => {
     const layout = buildPlanGraphLayout(STEPS);
-    const model = buildPlanGraphModel(layout, {}, "join:uw", null);
+    const model = buildPlanGraphModel(layout, [], {}, "join:uw", null);
 
-    const selectedNode = model.nodes.find((node) => node.id === "join:uw");
-    expect(selectedNode?.data.isSelected).toBe(true);
+    const selectedNode = model.nodes.find(
+      (node) => node.id === "join:uw" && node.type === "planStep",
+    );
+    expect(selectedNode && selectedNode.type === "planStep" ? selectedNode.data.isSelected : false).toBe(
+      true,
+    );
 
-    const highlightedNodes = model.nodes.filter((node) => node.data.isHighlighted).map((node) => node.id);
+    const highlightedNodes = model.nodes
+      .filter((node) => node.type === "planStep" && node.data.isHighlighted)
+      .map((node) => node.id);
     expect(highlightedNodes.sort()).toEqual(["join:uw", "order", "scan:users", "scan:workouts"]);
+  });
+
+  it("adds nested scope parent nodes and assigns step parentId", () => {
+    const [scanUsers, scanWorkouts, joinUsersWorkouts, orderResults] = STEPS;
+    if (!scanUsers || !scanWorkouts || !joinUsersWorkouts || !orderResults) {
+      throw new Error("Missing expected test fixture steps.");
+    }
+    const scopedSteps: QueryExecutionPlanStep[] = [
+      {
+        ...scanUsers,
+        scopeId: "scope:cte",
+      },
+      {
+        ...scanWorkouts,
+        scopeId: "scope:subquery",
+      },
+      {
+        ...joinUsersWorkouts,
+        scopeId: "scope:root",
+      },
+      {
+        ...orderResults,
+        scopeId: "scope:root",
+      },
+    ];
+    const layout = buildPlanGraphLayout(scopedSteps);
+    const model = buildPlanGraphModel(layout, SCOPES, {}, null, null);
+
+    const cteScopeNode = model.nodes.find((node) => node.id === "scope:cte");
+    expect(cteScopeNode).toBeDefined();
+    expect(cteScopeNode?.type).toBe("planScope");
+
+    const subqueryScopeNode = model.nodes.find((node) => node.id === "scope:subquery");
+    expect(subqueryScopeNode).toBeDefined();
+    expect(subqueryScopeNode?.type).toBe("planScope");
+    expect(subqueryScopeNode?.parentId).toBe("scope:cte");
+
+    const usersNode = model.nodes.find((node) => node.id === "scan:users");
+    expect(usersNode?.parentId).toBe("scope:cte");
+
+    const workoutsNode = model.nodes.find((node) => node.id === "scan:workouts");
+    expect(workoutsNode?.parentId).toBe("scope:subquery");
+
+    const joinNode = model.nodes.find((node) => node.id === "join:uw");
+    expect(joinNode?.parentId).toBeUndefined();
   });
 });

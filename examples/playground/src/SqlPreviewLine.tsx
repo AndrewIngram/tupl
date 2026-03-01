@@ -50,7 +50,7 @@ export function SqlPreviewLine({ monaco, sql, onActivate }: SqlPreviewLineProps)
     <button
       type="button"
       onClick={onActivate}
-      className="sql-preview-line w-full rounded-md border border-input bg-white px-3 py-2 text-left font-mono text-sm text-slate-900 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="sql-preview-line flex h-9 w-full items-center rounded-md border border-input bg-white px-3 text-left font-mono text-sm text-slate-900 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       title={previewText}
       aria-label="Edit SQL query"
     >
@@ -66,4 +66,3 @@ export function SqlPreviewLine({ monaco, sql, onActivate }: SqlPreviewLineProps)
     </button>
   );
 }
-

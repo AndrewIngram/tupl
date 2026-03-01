@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Database, SearchCode, Table2, X } from "lucide-react";
 import type * as Monaco from "monaco-editor";
 import type {
+  QueryExecutionPlanScope,
   QueryExecutionPlanStep,
   QueryRow,
   QuerySession,
@@ -15,7 +16,7 @@ import { toSqlDDL } from "sqlql";
 
 import { DataGrid } from "@/data-grid";
 import { DataTableJsonEditor } from "@/data-table-json";
-import { mergeTableRows } from "@/data-editing";
+import { addEmptyRow, mergeTableRows } from "@/data-editing";
 import { buildQueryCatalog, EXAMPLE_PACKS, serializeJson } from "@/examples";
 import { PlanGraph } from "@/PlanGraph";
 import { buildQueryCompatibilityMap } from "@/query-compatibility";
@@ -42,7 +43,6 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -55,7 +55,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -71,18 +70,140 @@ const SCHEMA_MODEL_PATH = "inmemory://sqlql/schema.json";
 const SCHEMA_DDL_MODEL_PATH = "inmemory://sqlql/schema.ddl.sql";
 const SQL_MODEL_PATH = "inmemory://sqlql/query.sql";
 const CUSTOM_PRESET_ID = "__custom__";
+const EXPANDED_QUERY_EDITOR_PADDING_Y_PX = 16;
+const EXPANDED_QUERY_EDITOR_DEFAULT_HEIGHT_PX = 120;
+const SCHEMA_SPLIT_MIN_PERCENT = 30;
+const SCHEMA_SPLIT_MAX_PERCENT = 70;
 
 type TopTab = "schema" | "data" | "query";
 type SchemaTab = "diagram" | "ddl";
 type QueryTab = "result" | "explain";
 type DataEditorMode = "json" | "grid";
 
-function formatIssues(issues: string[]): string {
-  return issues.join("\n");
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function positionFromIndex(sql: string, rawIndex: number): { line: number; column: number } {
+  const index = Math.max(0, Math.min(rawIndex, sql.length));
+  let line = 1;
+  let column = 1;
+
+  for (let i = 0; i < index; i += 1) {
+    if (sql[i] === "\n") {
+      line += 1;
+      column = 1;
+    } else {
+      column += 1;
+    }
+  }
+
+  return { line, column };
+}
+
+function rangeFromIndex(sql: string, startIndex: number, endIndexExclusive: number) {
+  const start = positionFromIndex(sql, startIndex);
+  const end = positionFromIndex(sql, Math.max(startIndex + 1, endIndexExclusive));
+  return {
+    startLineNumber: start.line,
+    startColumn: start.column,
+    endLineNumber: end.line,
+    endColumn: end.column,
+  };
+}
+
+function findTokenRangeAtPosition(sql: string, position: number) {
+  const tokenChar = /[A-Za-z0-9_.$"]/u;
+  const clamped = Math.max(0, Math.min(position, Math.max(0, sql.length - 1)));
+  let start = clamped;
+  let end = clamped + 1;
+
+  while (start > 0 && tokenChar.test(sql[start - 1] ?? "")) {
+    start -= 1;
+  }
+  while (end < sql.length && tokenChar.test(sql[end] ?? "")) {
+    end += 1;
+  }
+
+  if (start === end) {
+    end = Math.min(sql.length, start + 1);
+  }
+  return rangeFromIndex(sql, start, end);
+}
+
+function findIdentifierRange(sql: string, identifier: string) {
+  if (!identifier) {
+    return undefined;
+  }
+
+  const pattern = new RegExp(`\\b${escapeRegExp(identifier)}\\b`, "iu");
+  const match = pattern.exec(sql);
+  if (!match || match.index == null) {
+    return undefined;
+  }
+
+  return rangeFromIndex(sql, match.index, match.index + match[0].length);
+}
+
+function findQualifiedIdentifierRange(sql: string, qualifier: string, identifier: string) {
+  if (!qualifier || !identifier) {
+    return undefined;
+  }
+
+  const pattern = new RegExp(
+    `\\b${escapeRegExp(qualifier)}\\b\\s*\\.\\s*\\b${escapeRegExp(identifier)}\\b`,
+    "iu",
+  );
+  const match = pattern.exec(sql);
+  if (!match || match.index == null) {
+    return undefined;
+  }
+
+  return rangeFromIndex(sql, match.index, match.index + match[0].length);
+}
+
+function inferSqlErrorRange(sql: string, message: string) {
+  const parserPositionMatch = /\(at position (\d+)\)\s*$/u.exec(message);
+  if (parserPositionMatch?.[1]) {
+    return findTokenRangeAtPosition(sql, Number.parseInt(parserPositionMatch[1], 10));
+  }
+
+  const unknownQualifiedColumnMatch = /^Unknown column:\s*([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)/iu.exec(
+    message,
+  );
+  if (unknownQualifiedColumnMatch?.[1] && unknownQualifiedColumnMatch?.[2]) {
+    return findQualifiedIdentifierRange(
+      sql,
+      unknownQualifiedColumnMatch[1],
+      unknownQualifiedColumnMatch[2],
+    );
+  }
+
+  const unknownColumnMatch = /^Unknown column:\s*([A-Za-z_][A-Za-z0-9_]*)/iu.exec(message);
+  if (unknownColumnMatch?.[1]) {
+    return findIdentifierRange(sql, unknownColumnMatch[1]);
+  }
+
+  const unknownAliasMatch = /^Unknown table alias:\s*([A-Za-z_][A-Za-z0-9_]*)/iu.exec(message);
+  if (unknownAliasMatch?.[1]) {
+    return findIdentifierRange(sql, unknownAliasMatch[1]);
+  }
+
+  const unknownTableMatch =
+    /^Unknown table:\s*([A-Za-z_][A-Za-z0-9_]*)/iu.exec(message) ??
+    /^No table methods registered for table:\s*([A-Za-z_][A-Za-z0-9_]*)/iu.exec(message) ??
+    /^Table not found in schema:\s*([A-Za-z_][A-Za-z0-9_]*)/iu.exec(message);
+  if (unknownTableMatch?.[1]) {
+    return findIdentifierRange(sql, unknownTableMatch[1]);
+  }
+
+  const ambiguousColumnMatch =
+    /^Ambiguous unqualified column reference:\s*([A-Za-z_][A-Za-z0-9_]*)/iu.exec(message);
+  if (ambiguousColumnMatch?.[1]) {
+    return findIdentifierRange(sql, ambiguousColumnMatch[1]);
+  }
+
+  return undefined;
 }
 
 function findTableLineNumber(schemaText: string, tableName: string): number | null {
@@ -261,25 +382,21 @@ export function App(): React.JSX.Element {
   const [selectedDataTable, setSelectedDataTable] = useState<string | null>(
     defaultPack ? Object.keys(defaultPack.schema.tables)[0] ?? null : null,
   );
-  const [dataEditorModeByTable, setDataEditorModeByTable] = useState<
-    Record<string, DataEditorMode>
-  >(() => {
-    if (!defaultPack) {
-      return {};
-    }
-
-    return Object.fromEntries(
-      Object.keys(defaultPack.schema.tables).map((tableName) => [tableName, "json"]),
-    );
-  });
+  const [dataEditorMode, setDataEditorMode] = useState<DataEditorMode>("json");
 
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [planSteps, setPlanSteps] = useState<QueryExecutionPlanStep[]>([]);
+  const [planScopes, setPlanScopes] = useState<QueryExecutionPlanScope[]>([]);
   const [events, setEvents] = useState<QueryStepEvent[]>([]);
   const [resultRows, setResultRows] = useState<Array<Record<string, unknown>> | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedCatalogQueryId, setSelectedCatalogQueryId] = useState(defaultCatalogId);
   const [isQueryEditorExpanded, setIsQueryEditorExpanded] = useState(false);
+  const [expandedQueryEditorHeightPx, setExpandedQueryEditorHeightPx] = useState(
+    EXPANDED_QUERY_EDITOR_DEFAULT_HEIGHT_PX,
+  );
+  const [schemaSplitPercent, setSchemaSplitPercent] = useState(50);
+  const [isSchemaSplitDragging, setIsSchemaSplitDragging] = useState(false);
   const [sessionTick, setSessionTick] = useState(0);
 
   const monacoRef = useRef<typeof Monaco | null>(null);
@@ -288,10 +405,44 @@ export function App(): React.JSX.Element {
   const sqlProviderDisposableRef = useRef<Monaco.IDisposable | null>(null);
   const schemaDecorationIdsRef = useRef<string[]>([]);
   const queryEditorShellRef = useRef<HTMLDivElement | null>(null);
+  const schemaWorkspaceRef = useRef<HTMLDivElement | null>(null);
 
   const sessionRef = useRef<QuerySession | null>(null);
   const executionRequestIdRef = useRef(0);
   const schemaForCompletionRef = useRef<SchemaDefinition | null>(null);
+  const clampSchemaSplitPercent = useCallback((value: number): number => {
+    return Math.min(SCHEMA_SPLIT_MAX_PERCENT, Math.max(SCHEMA_SPLIT_MIN_PERCENT, value));
+  }, []);
+  const schemaSplitGridTemplate = useMemo(() => {
+    const right = 100 - schemaSplitPercent;
+    return `calc(${schemaSplitPercent}% - 5px) 10px calc(${right}% - 5px)`;
+  }, [schemaSplitPercent]);
+  const recalculateExpandedQueryEditorHeight = useCallback(() => {
+    if (!isQueryEditorExpanded) {
+      return;
+    }
+
+    const editor = sqlEditorRef.current;
+    if (!editor) {
+      return;
+    }
+
+    try {
+      const viewportMaxHeight = Math.max(
+        1,
+        Math.floor(window.innerHeight * 0.5) - EXPANDED_QUERY_EDITOR_PADDING_Y_PX,
+      );
+      const contentHeight = Math.max(1, Math.ceil(editor.getContentHeight()));
+      const nextHeight = Math.min(contentHeight, viewportMaxHeight);
+      setExpandedQueryEditorHeightPx(nextHeight);
+    } catch {
+      setExpandedQueryEditorHeightPx(EXPANDED_QUERY_EDITOR_DEFAULT_HEIGHT_PX);
+    }
+  }, [isQueryEditorExpanded]);
+  const startSchemaSplitDrag = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setIsSchemaSplitDragging(true);
+  }, []);
 
   const activePack = useMemo(
     () => EXAMPLE_PACKS.find((pack) => pack.id === activePackId),
@@ -352,8 +503,7 @@ export function App(): React.JSX.Element {
       : undefined;
 
   const currentDataRows = currentDataTable ? editableRowsByTable[currentDataTable] ?? [] : [];
-  const currentDataMode: DataEditorMode =
-    (currentDataTable ? dataEditorModeByTable[currentDataTable] : undefined) ?? "json";
+  const currentDataMode: DataEditorMode = dataEditorMode;
 
   const currentTableIssues =
     !rowsParse.ok && currentDataTable
@@ -410,7 +560,6 @@ export function App(): React.JSX.Element {
     if (!schemaParse.ok || !schemaParse.schema) {
       setSelectedSchemaTable(null);
       setSelectedDataTable(null);
-      setDataEditorModeByTable({});
       return;
     }
 
@@ -423,13 +572,6 @@ export function App(): React.JSX.Element {
     setSelectedDataTable((current) =>
       current && tableNames.includes(current) ? current : firstTable,
     );
-    setDataEditorModeByTable((current) => {
-      const next: Record<string, DataEditorMode> = {};
-      for (const tableName of tableNames) {
-        next[tableName] = current[tableName] ?? "json";
-      }
-      return next;
-    });
   }, [schemaParse]);
 
   useEffect(() => {
@@ -492,24 +634,42 @@ export function App(): React.JSX.Element {
       return;
     }
 
-    const compileResult = compilePlaygroundInput(schemaJsonText, rowsJsonText, sqlText);
+    const buildErrorMarkers = (messages: string[]) =>
+      messages.map((message) => {
+        const range = inferSqlErrorRange(sqlText, message);
+        if (range) {
+          return {
+            severity: monaco.MarkerSeverity.Error,
+            message,
+            ...range,
+          };
+        }
 
-    if (!compileResult.ok) {
-      monaco.editor.setModelMarkers(model, "sqlql", [
-        {
+        return {
           severity: monaco.MarkerSeverity.Error,
-          message: compileResult.issues[0] ?? "Invalid SQL.",
+          message,
           startLineNumber: 1,
           startColumn: 1,
           endLineNumber: 1,
           endColumn: Math.max(2, model.getLineMaxColumn(1)),
-        },
-      ]);
+        };
+      });
+
+    const compileResult = compilePlaygroundInput(schemaJsonText, rowsJsonText, sqlText);
+
+    if (!compileResult.ok) {
+      const messages = compileResult.issues.length > 0 ? compileResult.issues : ["Invalid SQL."];
+      monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers(messages));
+      return;
+    }
+
+    if (runtimeError) {
+      monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([runtimeError]));
       return;
     }
 
     monaco.editor.setModelMarkers(model, "sqlql", []);
-  }, [rowsJsonText, schemaJsonText, schemaParse, sqlText]);
+  }, [rowsJsonText, runtimeError, schemaJsonText, schemaParse, sqlText]);
 
   const applyExample = (packId: string): void => {
     const pack = EXAMPLE_PACKS.find((candidate) => candidate.id === packId);
@@ -525,9 +685,6 @@ export function App(): React.JSX.Element {
     setRowsJsonText(serializeJson(pack.rows));
     setSelectedSchemaTable(firstTable);
     setSelectedDataTable(firstTable);
-    setDataEditorModeByTable(
-      Object.fromEntries(tableNames.map((tableName) => [tableName, "json"])),
-    );
     setSelectedStepId(null);
   };
 
@@ -547,15 +704,17 @@ export function App(): React.JSX.Element {
     if (!compileResult.ok) {
       sessionRef.current = null;
       setPlanSteps([]);
+      setPlanScopes([]);
       setSessionTick((tick) => tick + 1);
-      setRuntimeError(formatIssues(compileResult.issues));
       return;
     }
 
     const freshSession = createSession(compileResult);
     sessionRef.current = freshSession;
-    const freshPlanSteps = freshSession.getPlan().steps;
+    const freshPlan = freshSession.getPlan();
+    const freshPlanSteps = freshPlan.steps;
     setPlanSteps(freshPlanSteps);
+    setPlanScopes(freshPlan.scopes ?? []);
     setSessionTick((tick) => tick + 1);
 
     void runSessionToCompletion(freshSession, [])
@@ -590,12 +749,99 @@ export function App(): React.JSX.Element {
     const uri = editor.getModel()?.uri.toString();
     if (uri === SQL_MODEL_PATH) {
       sqlEditorRef.current = editor;
+      window.requestAnimationFrame(() => {
+        recalculateExpandedQueryEditorHeight();
+      });
     }
 
     if (uri === SCHEMA_MODEL_PATH) {
       schemaEditorRef.current = editor;
     }
   };
+
+  useEffect(() => {
+    if (!isQueryEditorExpanded) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      recalculateExpandedQueryEditorHeight();
+    });
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [isQueryEditorExpanded, sqlText, recalculateExpandedQueryEditorHeight]);
+
+  useEffect(() => {
+    if (!isQueryEditorExpanded) {
+      return;
+    }
+
+    const onResize = (): void => {
+      recalculateExpandedQueryEditorHeight();
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, [isQueryEditorExpanded, recalculateExpandedQueryEditorHeight]);
+
+  useEffect(() => {
+    if (!isSchemaSplitDragging) {
+      return;
+    }
+
+    const onPointerMove = (event: PointerEvent): void => {
+      const workspace = schemaWorkspaceRef.current;
+      if (!workspace) {
+        return;
+      }
+      if (window.innerWidth < 1024) {
+        return;
+      }
+
+      const rect = workspace.getBoundingClientRect();
+      if (rect.width <= 0) {
+        return;
+      }
+
+      const rawPercent = ((event.clientX - rect.left) / rect.width) * 100;
+      setSchemaSplitPercent(clampSchemaSplitPercent(rawPercent));
+    };
+
+    const onPointerUp = (): void => {
+      setIsSchemaSplitDragging(false);
+    };
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [clampSchemaSplitPercent, isSchemaSplitDragging]);
+
+  useEffect(() => {
+    if (activeTopTab !== "schema") {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      schemaEditorRef.current?.layout();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [activeTopTab, schemaSplitPercent]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -606,7 +852,7 @@ export function App(): React.JSX.Element {
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [activeTopTab, activeSchemaTab, activeQueryTab, isQueryEditorExpanded]);
+  }, [activeTopTab, activeSchemaTab, activeQueryTab, isQueryEditorExpanded, schemaSplitPercent]);
 
   useEffect(() => {
     if (!isQueryEditorExpanded) {
@@ -642,6 +888,9 @@ export function App(): React.JSX.Element {
   }, [isQueryEditorExpanded]);
 
   useEffect(() => {
+    if (activeTopTab !== "schema") {
+      setIsSchemaSplitDragging(false);
+    }
     if (activeTopTab !== "query") {
       setIsQueryEditorExpanded(false);
     }
@@ -708,60 +957,289 @@ export function App(): React.JSX.Element {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_#e0f2fe_0,_#f8fafc_45%,_#eef2ff_100%)] px-4 py-4 lg:px-6">
-      <div className="mx-auto max-w-[1800px] space-y-4">
-        {runtimeError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Runtime error</AlertTitle>
-            <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
-              {runtimeError}
-            </AlertDescription>
-          </Alert>
-        ) : null}
+    <div className="h-screen w-screen overflow-hidden">
+      <Tabs
+        value={activeTopTab}
+        onValueChange={(value) => setActiveTopTab(value as TopTab)}
+        className="h-full"
+      >
+        <div className="flex h-full min-h-0 flex-col">
+          <header className="shrink-0 border-b bg-background shadow-sm">
+            <div className="grid gap-2 px-2 py-2 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
+                <TabsList className="gap-1">
+                  <TabsTrigger value="schema" title="Schema" aria-label="Schema" className="px-2.5">
+                    <Database className="h-4 w-4" />
+                    <span className="sr-only">Schema</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="data" title="Data" aria-label="Data" className="px-2.5">
+                    <Table2 className="h-4 w-4" />
+                    <span className="sr-only">Data</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="query" title="Query" aria-label="Query" className="px-2.5">
+                    <SearchCode className="h-4 w-4" />
+                    <span className="sr-only">Query</span>
+                  </TabsTrigger>
+                </TabsList>
 
-        <Tabs value={activeTopTab} onValueChange={(value) => setActiveTopTab(value as TopTab)}>
-          <TabsList>
-            <TabsTrigger value="schema">Schema</TabsTrigger>
-            <TabsTrigger value="data">Data</TabsTrigger>
-            <TabsTrigger value="query">Query</TabsTrigger>
-          </TabsList>
+                <div className="min-w-0">
+                  {activeTopTab === "schema" ? (
+                    <Select
+                      value={activePack?.id ?? CUSTOM_PRESET_ID}
+                      onValueChange={(value) => {
+                        if (value === CUSTOM_PRESET_ID) {
+                          setActivePackId(CUSTOM_PRESET_ID);
+                          return;
+                        }
+                        applyExample(value);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select preset" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={CUSTOM_PRESET_ID}>Custom</SelectItem>
+                        {EXAMPLE_PACKS.map((pack) => (
+                          <SelectItem key={pack.id} value={pack.id}>
+                            {pack.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
 
-          <TabsContent value="schema" forceMount className="mt-4">
-              <div className="grid gap-4 xl:grid-cols-[minmax(420px,1fr)_minmax(420px,1fr)]">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Schema JSON</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="space-y-1">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Presets
-                      </div>
+                  {activeTopTab === "query" ? (
+                    <div className="grid gap-2 lg:grid-cols-[minmax(180px,260px)_minmax(0,1fr)] lg:items-center">
                       <Select
-                        value={activePack?.id ?? CUSTOM_PRESET_ID}
-                        onValueChange={(value) => {
-                          if (value === CUSTOM_PRESET_ID) {
-                            setActivePackId(CUSTOM_PRESET_ID);
-                            return;
-                          }
-
-                          applyExample(value);
-                        }}
+                        value={selectedCatalogQueryId}
+                        onValueChange={handleCatalogQuerySelect}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select preset" />
+                          <SelectValue placeholder="Preset query" />
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={CUSTOM_PRESET_ID}>Custom</SelectItem>
-                          {EXAMPLE_PACKS.map((pack) => (
-                            <SelectItem key={pack.id} value={pack.id}>
-                              {pack.label}
-                            </SelectItem>
+                        <SelectContent className="min-w-[520px]">
+                          <SelectItem value={CUSTOM_QUERY_ID}>Custom</SelectItem>
+                          <SelectSeparator />
+                          {queryCatalogByPack.map((group) => (
+                            <SelectGroup key={group.packId}>
+                              <SelectLabel>{group.packLabel}</SelectLabel>
+                              {group.entries.map((entry) => {
+                                const compatibility = queryCompatibilityById[entry.id];
+                                const compatible = compatibility?.compatible === true;
+                                const reason = compatibility?.reason ?? "Unsupported for this schema.";
+
+                                return (
+                                  <SelectItem
+                                    key={entry.id}
+                                    value={entry.id}
+                                    disabled={!compatible}
+                                    title={!compatible ? reason : undefined}
+                                  >
+                                    <div className="flex min-w-0 flex-col">
+                                      <span>{`${group.packLabel} · ${entry.queryLabel}`}</span>
+                                      {!compatible ? (
+                                        <span className="text-xs text-muted-foreground">
+                                          {truncateReason(reason)}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectGroup>
                           ))}
                         </SelectContent>
                       </Select>
+
+                      <div ref={queryEditorShellRef} className="relative min-w-0">
+                        <SqlPreviewLine
+                          monaco={monacoRef.current}
+                          sql={sqlText}
+                          onActivate={() => setIsQueryEditorExpanded(true)}
+                        />
+                        {isQueryEditorExpanded ? (
+                          <div className="query-editor-overlay absolute inset-x-0 top-0 overflow-visible rounded-md border bg-white px-3 py-2 shadow-2xl">
+                            <Editor
+                              path={SQL_MODEL_PATH}
+                              language="sql"
+                              value={sqlText}
+                              onMount={handleMonacoMount}
+                              onChange={(value) => handleSqlTextChange(value ?? "")}
+                              options={{
+                                minimap: { enabled: false },
+                                fontSize: 13,
+                                scrollBeyondLastLine: false,
+                                fixedOverflowWidgets: true,
+                              }}
+                              height={`${expandedQueryEditorHeightPx}px`}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
-                    <Separator />
+                  ) : null}
+                </div>
+
+                <div className="flex items-center gap-2 justify-self-start lg:justify-self-end">
+                  {activeTopTab === "schema" ? (
+                    <Tabs
+                      value={activeSchemaTab}
+                      onValueChange={(value) => setActiveSchemaTab(value as SchemaTab)}
+                    >
+                      <TabsList className="gap-1">
+                        <TabsTrigger value="diagram">Diagram</TabsTrigger>
+                        <TabsTrigger value="ddl">DDL</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  ) : null}
+
+                  {activeTopTab === "data" ? (
+                    <div className="flex items-center gap-2">
+                      <Tabs
+                        value={currentDataMode}
+                        onValueChange={(value) => {
+                          if (!currentDataTable) {
+                            return;
+                          }
+                          setDataEditorMode(value as DataEditorMode);
+                        }}
+                      >
+                        <TabsList className="gap-1">
+                          <TabsTrigger value="json" disabled={!currentDataTable}>
+                            JSON
+                          </TabsTrigger>
+                          <TabsTrigger value="grid" disabled={!currentDataTable}>
+                            Table
+                          </TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!currentDataTable || !currentDataTableDefinition}
+                        onClick={() => {
+                          if (!currentDataTable || !currentDataTableDefinition) {
+                            return;
+                          }
+                          handleSetTableRows(
+                            currentDataTable,
+                            addEmptyRow(currentDataRows, currentDataTableDefinition),
+                          );
+                        }}
+                      >
+                        Add row
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {activeTopTab === "query" ? (
+                    <Tabs
+                      value={activeQueryTab}
+                      onValueChange={(value) => setActiveQueryTab(value as QueryTab)}
+                    >
+                      <TabsList className="gap-1">
+                        <TabsTrigger value="result">Result</TabsTrigger>
+                        <TabsTrigger value="explain">Explain</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  ) : null}
+                </div>
+              </div>
+            </header>
+
+          <div className="min-h-0 flex-1 overflow-hidden bg-background p-2">
+              <TabsContent value="schema" forceMount className="mt-0 h-full min-h-0">
+                <div className="hidden h-full min-h-0 flex-col gap-2 lg:flex">
+                  <div
+                    ref={schemaWorkspaceRef}
+                    className="min-h-0 flex-1 overflow-hidden rounded-md border bg-white lg:grid"
+                    style={{ gridTemplateColumns: schemaSplitGridTemplate }}
+                  >
+                    <div className="min-h-0 overflow-hidden">
+                      <Editor
+                        path={SCHEMA_MODEL_PATH}
+                        language="json"
+                        value={schemaJsonText}
+                        onMount={handleMonacoMount}
+                        onChange={(value) => {
+                          const nextValue = value ?? "";
+                          if (nextValue !== schemaJsonText) {
+                            markPresetCustom();
+                            setSchemaJsonText(nextValue);
+                          }
+                        }}
+                        options={{
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          scrollBeyondLastLine: false,
+                        }}
+                        height="100%"
+                      />
+                    </div>
+
+                    <div className="flex min-h-0 items-stretch justify-center">
+                      <button
+                        type="button"
+                        aria-label="Resize schema panels"
+                        className="group h-full w-2 cursor-col-resize bg-transparent"
+                        onPointerDown={startSchemaSplitDrag}
+                      >
+                        <span
+                          className={cn(
+                            "mx-auto block h-full w-px bg-slate-400 transition-colors group-hover:bg-slate-500",
+                            isSchemaSplitDragging ? "bg-slate-500" : null,
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    <div className="min-h-0 overflow-hidden">
+                      {schemaParse.ok && schemaParse.schema ? (
+                        activeSchemaTab === "diagram" ? (
+                          <SchemaRelationsGraph
+                            schema={schemaParse.schema}
+                            selectedTableName={selectedSchemaTable}
+                            onSelectTable={handleSelectSchemaTable}
+                            onClearSelection={() => setSelectedSchemaTable(null)}
+                            heightClassName="h-full"
+                            embedded
+                          />
+                        ) : (
+                          <Editor
+                            path={SCHEMA_DDL_MODEL_PATH}
+                            language="sql"
+                            value={ddlText || "Fix schema to generate DDL."}
+                            options={{
+                              minimap: { enabled: false },
+                              fontSize: 13,
+                              scrollBeyondLastLine: false,
+                              readOnly: true,
+                              wordWrap: "off",
+                              lineNumbers: "on",
+                            }}
+                            height="100%"
+                          />
+                        )
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                          Fix schema JSON to render relations.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {!schemaParse.ok ? (
+                    <Alert variant="warning">
+                      <AlertTitle>Schema issues</AlertTitle>
+                      <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
+                        {schemaParse.issues
+                          .map((issue) => `${issue.path}: ${issue.message}`)
+                          .join("\n")}
+                      </AlertDescription>
+                    </Alert>
+                  ) : null}
+                </div>
+
+                <div className="flex h-full min-h-0 flex-col gap-2 lg:hidden">
+                  <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
                     <Editor
                       path={SCHEMA_MODEL_PATH}
                       language="json"
@@ -774,50 +1252,36 @@ export function App(): React.JSX.Element {
                           setSchemaJsonText(nextValue);
                         }
                       }}
-                      options={{ minimap: { enabled: false }, fontSize: 13 }}
-                      height="640px"
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        scrollBeyondLastLine: false,
+                      }}
+                      height="100%"
                     />
-                    {!schemaParse.ok ? (
-                      <Alert variant="warning">
-                        <AlertTitle>Schema issues</AlertTitle>
-                        <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
-                          {schemaParse.issues
-                            .map((issue) => `${issue.path}: ${issue.message}`)
-                            .join("\n")}
-                        </AlertDescription>
-                      </Alert>
-                    ) : null}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="pt-4">
-                    <Tabs
-                      value={activeSchemaTab}
-                      onValueChange={(value) => setActiveSchemaTab(value as SchemaTab)}
-                    >
-                      <TabsList>
-                        <TabsTrigger value="diagram">Diagram</TabsTrigger>
-                        <TabsTrigger value="ddl">DDL</TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value="diagram" forceMount className="mt-4">
-                          {schemaParse.ok && schemaParse.schema ? (
-                            <SchemaRelationsGraph
-                              schema={schemaParse.schema}
-                              selectedTableName={selectedSchemaTable}
-                              onSelectTable={handleSelectSchemaTable}
-                              onClearSelection={() => setSelectedSchemaTable(null)}
-                              heightClassName="h-[680px]"
-                            />
-                          ) : (
-                            <div className="text-sm text-slate-500">
-                              Fix schema JSON to render relations.
-                            </div>
-                          )}
-                      </TabsContent>
-
-                      <TabsContent value="ddl" forceMount className="mt-4">
+                  </div>
+                  {!schemaParse.ok ? (
+                    <Alert variant="warning">
+                      <AlertTitle>Schema issues</AlertTitle>
+                      <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
+                        {schemaParse.issues
+                          .map((issue) => `${issue.path}: ${issue.message}`)
+                          .join("\n")}
+                      </AlertDescription>
+                    </Alert>
+                  ) : null}
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    {schemaParse.ok && schemaParse.schema ? (
+                      activeSchemaTab === "diagram" ? (
+                        <SchemaRelationsGraph
+                          schema={schemaParse.schema}
+                          selectedTableName={selectedSchemaTable}
+                          onSelectTable={handleSelectSchemaTable}
+                          onClearSelection={() => setSelectedSchemaTable(null)}
+                          heightClassName="h-full"
+                        />
+                      ) : (
+                        <div className="h-full overflow-hidden rounded-md border">
                           <Editor
                             path={SCHEMA_DDL_MODEL_PATH}
                             language="sql"
@@ -825,373 +1289,251 @@ export function App(): React.JSX.Element {
                             options={{
                               minimap: { enabled: false },
                               fontSize: 13,
+                              scrollBeyondLastLine: false,
                               readOnly: true,
                               wordWrap: "off",
                               lineNumbers: "on",
                             }}
-                            height="680px"
+                            height="100%"
                           />
-                      </TabsContent>
-                    </Tabs>
-                  </CardContent>
-                </Card>
-              </div>
-          </TabsContent>
-
-          <TabsContent value="data" forceMount className="mt-4">
-              <Card>
-                <CardContent className="pt-4">
-                  {schemaParse.ok && schemaParse.schema && schemaTableNames.length > 0 ? (
-                    <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Tables</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-2">
-                          <ScrollArea className="h-[620px]">
-                            <div className="space-y-1">
-                              {schemaTableNames.map((tableName) => (
-                                <button
-                                  type="button"
-                                  key={tableName}
-                                  className={cn(
-                                    "w-full rounded-md px-3 py-2 text-left text-sm",
-                                    currentDataTable === tableName
-                                      ? "bg-sky-100 text-sky-900"
-                                      : "hover:bg-slate-100",
-                                  )}
-                                  onClick={() => setSelectedDataTable(tableName)}
-                                >
-                                  {tableName}
-                                </button>
-                              ))}
-                            </div>
-                          </ScrollArea>
-                        </CardContent>
-                      </Card>
-
-                      <div className="space-y-4">
-                        <Card>
-                          <CardHeader className="pb-2">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <CardTitle>{currentDataTable ?? "Table data"}</CardTitle>
-                              {currentDataTable ? (
-                                <div className="flex gap-2">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant={currentDataMode === "json" ? "default" : "secondary"}
-                                    onClick={() =>
-                                      setDataEditorModeByTable((previous) => ({
-                                        ...previous,
-                                        [currentDataTable]: "json",
-                                      }))
-                                    }
-                                  >
-                                    JSON
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant={currentDataMode === "grid" ? "default" : "secondary"}
-                                    onClick={() =>
-                                      setDataEditorModeByTable((previous) => ({
-                                        ...previous,
-                                        [currentDataTable]: "grid",
-                                      }))
-                                    }
-                                  >
-                                    Grid
-                                  </Button>
-                                </div>
-                              ) : null}
-                            </div>
-                          </CardHeader>
-
-                          <CardContent>
-                            {currentDataTable && currentDataTableDefinition ? (
-                              currentDataMode === "json" ? (
-                                <DataTableJsonEditor
-                                  tableName={currentDataTable}
-                                  rows={currentDataRows}
-                                  onRowsChange={(nextRows) =>
-                                    handleSetTableRows(currentDataTable, nextRows)
-                                  }
-                                  tableValidationIssues={currentTableIssues}
-                                />
-                              ) : (
-                                <DataGrid
-                                  tableName={currentDataTable}
-                                  table={currentDataTableDefinition}
-                                  rows={currentDataRows}
-                                  onRowsChange={(nextRows) =>
-                                    handleSetTableRows(currentDataTable, nextRows)
-                                  }
-                                />
-                              )
-                            ) : (
-                              <div className="text-sm text-slate-500">Select a table.</div>
-                            )}
-                          </CardContent>
-                        </Card>
+                        </div>
+                      )
+                    ) : (
+                      <div className="flex h-full items-center justify-center rounded-md border border-dashed text-sm text-slate-500">
+                        Fix schema JSON to render relations.
                       </div>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-slate-500">Fix schema JSON to edit table data.</div>
-                  )}
-                </CardContent>
-              </Card>
-          </TabsContent>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
 
-          <TabsContent value="query" forceMount className="mt-4">
-            <Card>
-              <CardContent className="pt-4">
-                <Tabs
-                  value={activeQueryTab}
-                  onValueChange={(value) => setActiveQueryTab(value as QueryTab)}
-                >
-                  <div className="grid gap-2 lg:grid-cols-[minmax(170px,220px)_minmax(0,1fr)_auto] lg:items-center">
-                    <Select
-                      value={selectedCatalogQueryId}
-                      onValueChange={handleCatalogQuerySelect}
+              <TabsContent value="data" forceMount className="mt-0 h-full min-h-0">
+                {schemaParse.ok && schemaParse.schema && schemaTableNames.length > 0 ? (
+                  <div className="grid h-full min-h-0 gap-2 lg:grid-cols-[220px_minmax(0,1fr)]">
+                    <ScrollArea className="h-full rounded-md border bg-slate-50 p-2">
+                      <div className="space-y-1">
+                        {schemaTableNames.map((tableName) => (
+                          <button
+                            type="button"
+                            key={tableName}
+                            className={cn(
+                              "w-full rounded-md px-3 py-2 text-left text-sm",
+                              currentDataTable === tableName
+                                ? "bg-background text-foreground shadow"
+                                : "hover:bg-slate-100",
+                            )}
+                            onClick={() => setSelectedDataTable(tableName)}
+                          >
+                            {tableName}
+                          </button>
+                        ))}
+                      </div>
+                    </ScrollArea>
+
+                    <div
+                      className={cn(
+                        "min-h-0 overflow-hidden bg-white",
+                        currentDataMode === "json" ? "rounded-md border" : null,
+                      )}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Preset query" />
-                      </SelectTrigger>
-                      <SelectContent className="min-w-[520px]">
-                        <SelectItem value={CUSTOM_QUERY_ID}>Custom</SelectItem>
-                        <SelectSeparator />
-                        {queryCatalogByPack.map((group) => (
-                          <SelectGroup key={group.packId}>
-                            <SelectLabel>{group.packLabel}</SelectLabel>
-                            {group.entries.map((entry) => {
-                              const compatibility = queryCompatibilityById[entry.id];
-                              const compatible = compatibility?.compatible === true;
-                              const reason = compatibility?.reason ?? "Unsupported for this schema.";
+                      {currentDataTable && currentDataTableDefinition ? (
+                        currentDataMode === "json" ? (
+                          <DataTableJsonEditor
+                            tableName={currentDataTable}
+                            rows={currentDataRows}
+                            onRowsChange={(nextRows) =>
+                              handleSetTableRows(currentDataTable, nextRows)
+                            }
+                            tableValidationIssues={currentTableIssues}
+                            className="h-full p-0"
+                            editorClassName="min-h-0 flex-1 rounded-none border-0"
+                            editorHeight="100%"
+                          />
+                        ) : (
+                          <DataGrid
+                            table={currentDataTableDefinition}
+                            rows={currentDataRows}
+                            onRowsChange={(nextRows) =>
+                              handleSetTableRows(currentDataTable, nextRows)
+                            }
+                            scrollAreaClassName="flex-1 rounded-md border bg-white"
+                          />
+                        )
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                          Select a table.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                    Fix schema JSON to edit table data.
+                  </div>
+                )}
+              </TabsContent>
 
-                              return (
-                                <SelectItem
-                                  key={entry.id}
-                                  value={entry.id}
-                                  disabled={!compatible}
-                                  title={!compatible ? reason : undefined}
-                                >
-                                  <div className="flex min-w-0 flex-col">
-                                    <span>{`${group.packLabel} · ${entry.queryLabel}`}</span>
-                                    {!compatible ? (
-                                      <span className="text-xs text-muted-foreground">
-                                        {truncateReason(reason)}
-                                      </span>
+              <TabsContent value="query" forceMount className="mt-0 h-full min-h-0">
+                {activeQueryTab === "result" ? (
+                  <div className="h-full min-h-0">
+                    {resultRows ? (
+                      renderRows(resultRows, { heightClassName: "h-full" })
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                        No results yet.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="relative h-full min-h-0">
+                    <PlanGraph
+                      steps={planSteps}
+                      scopes={planScopes}
+                      statesById={statesById}
+                      currentStepId={currentStepId}
+                      selectedStepId={selectedStepId}
+                      isVisible={activeTopTab === "query" && activeQueryTab === "explain"}
+                      onSelectStep={handleSelectStep}
+                      onClearSelection={handleCloseStepOverlay}
+                      heightClassName="h-full"
+                    />
+                    {selectedStep ? (
+                      <div className="pointer-events-none absolute inset-y-4 right-4 z-20 w-[430px] max-w-[48%]">
+                        <div className="pointer-events-auto flex h-full flex-col rounded-xl border border-sky-200 bg-white/95 shadow-2xl backdrop-blur-sm">
+                          <div className="flex items-start justify-between gap-2 border-b p-3">
+                            <div className="min-w-0 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="secondary" className="font-mono text-[11px]">
+                                  {selectedStep.id}
+                                </Badge>
+                                <Badge variant="outline">{selectedStep.kind}</Badge>
+                                <Badge variant="outline">{selectedStep.phase}</Badge>
+                                {selectedStep.sqlOrigin ? (
+                                  <Badge variant="outline">{selectedStep.sqlOrigin}</Badge>
+                                ) : null}
+                              </div>
+                              <p className="text-sm text-slate-700">{selectedStep.summary}</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0"
+                              onClick={handleCloseStepOverlay}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <div className="min-h-0 flex-1 p-3 pt-2">
+                            <ScrollArea className="h-full pr-2">
+                              <div className="space-y-3">
+                                <div className="rounded-md border bg-slate-50 p-3">
+                                  <p className="text-xs text-slate-500">
+                                    Depends on: {selectedStep.dependsOn.join(", ") || "none"}
+                                  </p>
+                                </div>
+
+                                <StepSection title="Logical operation" defaultOpen>
+                                  <p className="text-xs text-slate-500">
+                                    The planner-level intent for this step and the columns it aims to produce.
+                                  </p>
+                                  <JsonBlock value={selectedStep.operation} />
+                                  {selectedStep.outputs && selectedStep.outputs.length > 0 ? (
+                                    <div className="text-xs text-slate-600">
+                                      Outputs: {selectedStep.outputs.join(", ")}
+                                    </div>
+                                  ) : null}
+                                </StepSection>
+
+                                <StepSection title="Request" defaultOpen>
+                                  <p className="text-xs text-slate-500">
+                                    The normalized input shape passed into this step at execution time.
+                                  </p>
+                                  <JsonBlock value={selectedStep.request ?? {}} />
+                                </StepSection>
+
+                                <StepSection title="Routing / Pushdown" defaultOpen>
+                                  <p className="text-xs text-slate-500">
+                                    How work is split between table methods and local engine processing.
+                                  </p>
+                                  <div className="text-xs text-slate-600">
+                                    Route used:{" "}
+                                    <span className="font-medium text-slate-900">
+                                      {selectedStepState?.routeUsed ?? "pending"}
+                                    </span>
+                                  </div>
+                                  <JsonBlock value={selectedStep.pushdown ?? {}} />
+                                  {selectedStepState?.notes &&
+                                  selectedStepState.notes.length > 0 ? (
+                                    <ul className="list-disc space-y-1 pl-5 text-xs text-slate-600">
+                                      {selectedStepState.notes.map((note: string) => (
+                                        <li key={note}>{note}</li>
+                                      ))}
+                                    </ul>
+                                  ) : null}
+                                </StepSection>
+
+                                <StepSection title="Runtime" defaultOpen>
+                                  <p className="text-xs text-slate-500">
+                                    Execution status and timing/row-count metrics for this step instance.
+                                  </p>
+                                  <div className="grid gap-1 text-xs text-slate-600">
+                                    <div>Status: {selectedStepState?.status ?? "ready"}</div>
+                                    <div>
+                                      Execution index:{" "}
+                                      {selectedStepState?.executionIndex != null
+                                        ? selectedStepState.executionIndex
+                                        : "pending"}
+                                    </div>
+                                    {selectedStepState?.durationMs != null ? (
+                                      <div>Duration: {selectedStepState.durationMs}ms</div>
+                                    ) : null}
+                                    {selectedStepState?.inputRowCount != null ? (
+                                      <div>
+                                        Input rows: {selectedStepState.inputRowCount}
+                                      </div>
+                                    ) : null}
+                                    {selectedStepState?.outputRowCount != null ? (
+                                      <div>
+                                        Output rows: {selectedStepState.outputRowCount}
+                                      </div>
+                                    ) : selectedStepState?.rowCount != null ? (
+                                      <div>Output rows: {selectedStepState.rowCount}</div>
                                     ) : null}
                                   </div>
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectGroup>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                                  {selectedStepState?.error ? (
+                                    <Alert variant="destructive">
+                                      <AlertTitle>Step error</AlertTitle>
+                                      <AlertDescription>
+                                        {selectedStepState.error}
+                                      </AlertDescription>
+                                    </Alert>
+                                  ) : null}
+                                </StepSection>
 
-                    <div ref={queryEditorShellRef} className="relative min-w-0">
-                      <SqlPreviewLine
-                        monaco={monacoRef.current}
-                        sql={sqlText}
-                        onActivate={() => setIsQueryEditorExpanded(true)}
-                      />
-                      {isQueryEditorExpanded ? (
-                        <div className="query-editor-overlay absolute inset-x-0 top-0 overflow-hidden rounded-md border bg-white shadow-2xl">
-                          <Editor
-                            path={SQL_MODEL_PATH}
-                            language="sql"
-                            value={sqlText}
-                            onMount={handleMonacoMount}
-                            onChange={(value) => handleSqlTextChange(value ?? "")}
-                            options={{ minimap: { enabled: false }, fontSize: 13 }}
-                            height="300px"
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <TabsList className="justify-self-end">
-                      <TabsTrigger value="result">Result</TabsTrigger>
-                      <TabsTrigger value="explain">Explain</TabsTrigger>
-                    </TabsList>
-                  </div>
-
-                  <TabsContent value="result" forceMount className="mt-4">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Query result</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {resultRows ? (
-                          renderRows(resultRows)
-                        ) : (
-                          <div className="text-sm text-slate-500">No results yet.</div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-
-                  <TabsContent value="explain" forceMount className="mt-4">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Execution plan</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="relative">
-                          <PlanGraph
-                            steps={planSteps}
-                            statesById={statesById}
-                            currentStepId={currentStepId}
-                            selectedStepId={selectedStepId}
-                            isVisible={activeTopTab === "query" && activeQueryTab === "explain"}
-                            onSelectStep={handleSelectStep}
-                            onClearSelection={handleCloseStepOverlay}
-                            heightClassName="h-[680px]"
-                          />
-                          {selectedStep ? (
-                            <div className="pointer-events-none absolute inset-y-4 right-4 z-20 w-[430px] max-w-[48%]">
-                              <div className="pointer-events-auto flex h-full flex-col rounded-xl border border-sky-200 bg-white/95 shadow-2xl backdrop-blur-sm">
-                                <div className="flex items-start justify-between gap-2 border-b p-3">
-                                  <div className="min-w-0 space-y-2">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <Badge variant="secondary" className="font-mono text-[11px]">
-                                        {selectedStep.id}
-                                      </Badge>
-                                      <Badge variant="outline">{selectedStep.kind}</Badge>
-                                      <Badge variant="outline">{selectedStep.phase}</Badge>
-                                      {selectedStep.sqlOrigin ? (
-                                        <Badge variant="outline">{selectedStep.sqlOrigin}</Badge>
-                                      ) : null}
-                                    </div>
-                                    <p className="text-sm text-slate-700">{selectedStep.summary}</p>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 shrink-0"
-                                    onClick={handleCloseStepOverlay}
-                                  >
-                                    <X className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                                <div className="min-h-0 flex-1 p-3 pt-2">
-                                  <ScrollArea className="h-full pr-2">
-                                    <div className="space-y-3">
-                                      <div className="rounded-md border bg-slate-50 p-3">
-                                        <p className="text-xs text-slate-500">
-                                          Depends on: {selectedStep.dependsOn.join(", ") || "none"}
-                                        </p>
-                                      </div>
-
-                                      <StepSection title="Logical operation" defaultOpen>
-                                        <p className="text-xs text-slate-500">
-                                          The planner-level intent for this step and the columns it aims to produce.
-                                        </p>
-                                        <JsonBlock value={selectedStep.operation} />
-                                        {selectedStep.outputs && selectedStep.outputs.length > 0 ? (
-                                          <div className="text-xs text-slate-600">
-                                            Outputs: {selectedStep.outputs.join(", ")}
-                                          </div>
-                                        ) : null}
-                                      </StepSection>
-
-                                      <StepSection title="Request" defaultOpen>
-                                        <p className="text-xs text-slate-500">
-                                          The normalized input shape passed into this step at execution time.
-                                        </p>
-                                        <JsonBlock value={selectedStep.request ?? {}} />
-                                      </StepSection>
-
-                                      <StepSection title="Routing / Pushdown" defaultOpen>
-                                        <p className="text-xs text-slate-500">
-                                          How work is split between table methods and local engine processing.
-                                        </p>
-                                        <div className="text-xs text-slate-600">
-                                          Route used:{" "}
-                                          <span className="font-medium text-slate-900">
-                                            {selectedStepState?.routeUsed ?? "pending"}
-                                          </span>
-                                        </div>
-                                        <JsonBlock value={selectedStep.pushdown ?? {}} />
-                                        {selectedStepState?.notes &&
-                                        selectedStepState.notes.length > 0 ? (
-                                          <ul className="list-disc space-y-1 pl-5 text-xs text-slate-600">
-                                            {selectedStepState.notes.map((note: string) => (
-                                              <li key={note}>{note}</li>
-                                            ))}
-                                          </ul>
-                                        ) : null}
-                                      </StepSection>
-
-                                      <StepSection title="Runtime" defaultOpen>
-                                        <p className="text-xs text-slate-500">
-                                          Execution status and timing/row-count metrics for this step instance.
-                                        </p>
-                                        <div className="grid gap-1 text-xs text-slate-600">
-                                          <div>Status: {selectedStepState?.status ?? "ready"}</div>
-                                          <div>
-                                            Execution index:{" "}
-                                            {selectedStepState?.executionIndex != null
-                                              ? selectedStepState.executionIndex
-                                              : "pending"}
-                                          </div>
-                                          {selectedStepState?.durationMs != null ? (
-                                            <div>Duration: {selectedStepState.durationMs}ms</div>
-                                          ) : null}
-                                          {selectedStepState?.inputRowCount != null ? (
-                                            <div>
-                                              Input rows: {selectedStepState.inputRowCount}
-                                            </div>
-                                          ) : null}
-                                          {selectedStepState?.outputRowCount != null ? (
-                                            <div>
-                                              Output rows: {selectedStepState.outputRowCount}
-                                            </div>
-                                          ) : selectedStepState?.rowCount != null ? (
-                                            <div>Output rows: {selectedStepState.rowCount}</div>
-                                          ) : null}
-                                        </div>
-                                        {selectedStepState?.error ? (
-                                          <Alert variant="destructive">
-                                            <AlertTitle>Step error</AlertTitle>
-                                            <AlertDescription>
-                                              {selectedStepState.error}
-                                            </AlertDescription>
-                                          </Alert>
-                                        ) : null}
-                                      </StepSection>
-
-                                      {selectedStepState?.rows ? (
-                                        <StepSection title="Data preview" defaultOpen={false}>
-                                          <p className="text-xs text-slate-500">
-                                            Sample output rows emitted by this step after execution.
-                                          </p>
-                                          {renderRows(selectedStepState.rows, {
-                                            heightClassName: "h-[260px]",
-                                            expandNestedObjects: true,
-                                          })}
-                                        </StepSection>
-                                      ) : null}
-                                    </div>
-                                  </ScrollArea>
-                                </div>
+                                {selectedStepState?.rows ? (
+                                  <StepSection title="Data preview" defaultOpen={false}>
+                                    <p className="text-xs text-slate-500">
+                                      Sample output rows emitted by this step after execution.
+                                    </p>
+                                    {renderRows(selectedStepState.rows, {
+                                      heightClassName: "h-[260px]",
+                                      expandNestedObjects: true,
+                                    })}
+                                  </StepSection>
+                                ) : null}
                               </div>
-                            </div>
-                          ) : null}
+                            </ScrollArea>
+                          </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </TabsContent>
+          </div>
+        </div>
+      </Tabs>
     </div>
   );
 }

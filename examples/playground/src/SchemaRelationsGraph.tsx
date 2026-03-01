@@ -27,6 +27,8 @@ interface SchemaRelationsGraphProps {
   onSelectTable(tableName: string): void;
   onClearSelection?(): void;
   heightClassName?: string;
+  frameClassName?: string;
+  embedded?: boolean;
 }
 
 const TableNode = memo(function TableNode({ data }: NodeProps): React.JSX.Element {
@@ -89,6 +91,8 @@ function SchemaRelationsGraphCanvas({
   onSelectTable,
   onClearSelection,
   heightClassName,
+  frameClassName,
+  embedded = false,
 }: SchemaRelationsGraphProps): React.JSX.Element {
   const layout = useMemo(() => buildSchemaGraphLayout(schema), [schema]);
   const model = useMemo(
@@ -129,7 +133,10 @@ function SchemaRelationsGraphCanvas({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50",
+        embedded
+          ? "overflow-hidden bg-slate-50"
+          : "overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50",
+        frameClassName,
         heightClassName ?? "h-[420px]",
       )}
     >
@@ -137,6 +144,7 @@ function SchemaRelationsGraphCanvas({
         nodes={model.nodes}
         edges={model.edges}
         nodeTypes={nodeTypes}
+        proOptions={{ hideAttribution: true }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable
@@ -146,7 +154,7 @@ function SchemaRelationsGraphCanvas({
         onNodeClick={(_event, node) => onSelectTable(node.id)}
         onPaneClick={() => onClearSelection?.()}
       >
-        <Controls position="top-right" showInteractive={false} />
+        <Controls position="bottom-left" orientation="horizontal" showInteractive={false} />
         <Background gap={24} size={1} color="#d6e3ef" />
       </ReactFlow>
     </div>

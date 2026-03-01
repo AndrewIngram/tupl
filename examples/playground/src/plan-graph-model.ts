@@ -1,13 +1,30 @@
 import dagre from "dagre";
 import { MarkerType, Position, type Edge, type Node } from "@xyflow/react";
-import type { QueryExecutionPlanStep, QueryStepState } from "sqlql";
+import type {
+  QueryExecutionPlanScope,
+  QueryExecutionPlanStep,
+  QueryStepState,
+} from "sqlql";
 
 const NODE_WIDTH = 320;
 const NODE_HEIGHT = 170;
 
+const SCOPE_PADDING_X = 28;
+const SCOPE_PADDING_TOP = 34;
+const SCOPE_PADDING_BOTTOM = 18;
+const MIN_SCOPE_WIDTH = NODE_WIDTH + 40;
+const MIN_SCOPE_HEIGHT = NODE_HEIGHT + SCOPE_PADDING_TOP + SCOPE_PADDING_BOTTOM;
+
 interface LayoutPosition {
   x: number;
   y: number;
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface PlanNodeData extends Record<string, unknown> {
@@ -18,8 +35,14 @@ export interface PlanNodeData extends Record<string, unknown> {
   isHighlighted: boolean;
 }
 
+export interface PlanScopeNodeData extends Record<string, unknown> {
+  scope: QueryExecutionPlanScope;
+}
+
+export type PlanGraphNodeData = PlanNodeData | PlanScopeNodeData;
+
 export interface PlanGraphModel {
-  nodes: Array<Node<PlanNodeData>>;
+  nodes: Array<Node<PlanGraphNodeData>>;
   edges: Edge[];
 }
 
@@ -139,8 +162,125 @@ export function buildPlanGraphLayout(steps: QueryExecutionPlanStep[]): PlanGraph
   };
 }
 
+function buildScopeBounds(
+  layout: PlanGraphLayout,
+  scopes: QueryExecutionPlanScope[],
+): {
+  boundsById: Map<string, Rect>;
+  visibleParentById: Map<string, string | undefined>;
+} {
+  const visibleScopes = scopes.filter((scope) => scope.kind !== "root");
+  const visibleScopeIds = new Set(visibleScopes.map((scope) => scope.id));
+  const scopeById = new Map(scopes.map((scope) => [scope.id, scope]));
+
+  const resolveVisibleScopeId = (scopeId: string | undefined): string | undefined => {
+    let current = scopeId;
+    while (current) {
+      if (visibleScopeIds.has(current)) {
+        return current;
+      }
+      current = scopeById.get(current)?.parentId;
+    }
+    return undefined;
+  };
+
+  const stepRectsById = new Map<string, Rect>();
+  for (const step of layout.steps) {
+    const position = layout.positionsById.get(step.id) ?? { x: 0, y: 0 };
+    stepRectsById.set(step.id, {
+      x: position.x,
+      y: position.y,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
+    });
+  }
+
+  const directStepIdsByScope = new Map<string, string[]>();
+  for (const step of layout.steps) {
+    const owner = resolveVisibleScopeId(step.scopeId);
+    if (!owner) {
+      continue;
+    }
+    const current = directStepIdsByScope.get(owner) ?? [];
+    current.push(step.id);
+    directStepIdsByScope.set(owner, current);
+  }
+
+  const childScopeIdsByParent = new Map<string, string[]>();
+  const visibleParentById = new Map<string, string | undefined>();
+  for (const scope of visibleScopes) {
+    const visibleParent = resolveVisibleScopeId(scope.parentId);
+    visibleParentById.set(scope.id, visibleParent);
+    if (!visibleParent) {
+      continue;
+    }
+    const current = childScopeIdsByParent.get(visibleParent) ?? [];
+    current.push(scope.id);
+    childScopeIdsByParent.set(visibleParent, current);
+  }
+
+  const boundsById = new Map<string, Rect>();
+  const computing = new Set<string>();
+
+  const compute = (scopeId: string): Rect | undefined => {
+    const cached = boundsById.get(scopeId);
+    if (cached) {
+      return cached;
+    }
+    if (computing.has(scopeId)) {
+      return undefined;
+    }
+
+    computing.add(scopeId);
+
+    const childRects: Rect[] = [];
+    for (const childScopeId of childScopeIdsByParent.get(scopeId) ?? []) {
+      const childRect = compute(childScopeId);
+      if (childRect) {
+        childRects.push(childRect);
+      }
+    }
+
+    const directStepRects = (directStepIdsByScope.get(scopeId) ?? [])
+      .map((stepId) => stepRectsById.get(stepId))
+      .filter((rect): rect is Rect => rect != null);
+
+    const contentRects = [...directStepRects, ...childRects];
+    if (contentRects.length === 0) {
+      computing.delete(scopeId);
+      return undefined;
+    }
+
+    const minX = Math.min(...contentRects.map((rect) => rect.x));
+    const maxX = Math.max(...contentRects.map((rect) => rect.x + rect.width));
+    const minY = Math.min(...contentRects.map((rect) => rect.y));
+    const maxY = Math.max(...contentRects.map((rect) => rect.y + rect.height));
+
+    const rect: Rect = {
+      x: minX - SCOPE_PADDING_X,
+      y: minY - SCOPE_PADDING_TOP,
+      width: Math.max(MIN_SCOPE_WIDTH, maxX - minX + SCOPE_PADDING_X * 2),
+      height: Math.max(MIN_SCOPE_HEIGHT, maxY - minY + SCOPE_PADDING_TOP + SCOPE_PADDING_BOTTOM),
+    };
+    boundsById.set(scopeId, rect);
+
+    computing.delete(scopeId);
+    return rect;
+  };
+
+  for (const scope of visibleScopes) {
+    compute(scope.id);
+  }
+
+  return {
+    boundsById,
+    visibleParentById,
+  };
+}
+
 export function buildPlanGraphModel(
   layout: PlanGraphLayout,
+  scopes: QueryExecutionPlanScope[] | undefined,
   statesById: Record<string, QueryStepState | undefined>,
   selectedStepId: string | null,
   currentStepId: string | null,
@@ -163,8 +303,92 @@ export function buildPlanGraphModel(
     }
   }
 
-  const nodes: Array<Node<PlanNodeData>> = layout.steps.map((step) => {
-    const position = layout.positionsById.get(step.id);
+  const scopeList = scopes ?? [];
+  const { boundsById: scopeBoundsById, visibleParentById } = buildScopeBounds(layout, scopeList);
+  const scopeById = new Map(scopeList.map((scope) => [scope.id, scope]));
+  const visibleScopeIds = new Set([...scopeBoundsById.keys()]);
+
+  const resolveVisibleScopeId = (scopeId: string | undefined): string | undefined => {
+    let current = scopeId;
+    while (current) {
+      if (visibleScopeIds.has(current)) {
+        return current;
+      }
+      current = scopeById.get(current)?.parentId;
+    }
+    return undefined;
+  };
+
+  const depthCache = new Map<string, number>();
+  const depthOf = (scopeId: string): number => {
+    const cached = depthCache.get(scopeId);
+    if (cached != null) {
+      return cached;
+    }
+
+    const parentId = visibleParentById.get(scopeId);
+    const depth = parentId ? depthOf(parentId) + 1 : 0;
+    depthCache.set(scopeId, depth);
+    return depth;
+  };
+
+  const scopeNodes: Array<Node<PlanGraphNodeData>> = [];
+  for (const scopeId of [...scopeBoundsById.keys()].sort((left, right) => {
+    const depthDiff = depthOf(left) - depthOf(right);
+    if (depthDiff !== 0) {
+      return depthDiff;
+    }
+    return left.localeCompare(right);
+  })) {
+    const scope = scopeById.get(scopeId);
+    const rect = scopeBoundsById.get(scopeId);
+    if (!scope || !rect) {
+      continue;
+    }
+
+    const parentId = visibleParentById.get(scopeId);
+    const parentRect = parentId ? scopeBoundsById.get(parentId) : undefined;
+    const position = parentRect
+      ? {
+          x: rect.x - parentRect.x,
+          y: rect.y - parentRect.y,
+        }
+      : {
+          x: rect.x,
+          y: rect.y,
+        };
+
+    const node: Node<PlanGraphNodeData> = {
+      id: scopeId,
+      type: "planScope",
+      position,
+      data: {
+        scope,
+      },
+      draggable: false,
+      selectable: false,
+      focusable: false,
+      connectable: false,
+      style: {
+        width: rect.width,
+        height: rect.height,
+      },
+      ...(parentId ? { parentId, extent: "parent" as const } : {}),
+    };
+    scopeNodes.push(node);
+  }
+
+  const nodes: Array<Node<PlanGraphNodeData>> = layout.steps.map((step) => {
+    const absolutePosition = layout.positionsById.get(step.id) ?? { x: 0, y: 0 };
+    const parentScopeId = resolveVisibleScopeId(step.scopeId);
+    const parentRect = parentScopeId ? scopeBoundsById.get(parentScopeId) : undefined;
+    const position = parentRect
+      ? {
+          x: absolutePosition.x - parentRect.x,
+          y: absolutePosition.y - parentRect.y,
+        }
+      : absolutePosition;
+
     const isSelected = step.id === selectedStepId;
     const isCurrent = step.id === currentStepId;
     const isHighlighted = focusStepId ? highlighted.has(step.id) : false;
@@ -172,7 +396,7 @@ export function buildPlanGraphModel(
     return {
       id: step.id,
       type: "planStep",
-      position: position ?? { x: 0, y: 0 },
+      position,
       data: {
         step,
         state: statesById[step.id] ?? null,
@@ -184,6 +408,7 @@ export function buildPlanGraphModel(
       sourcePosition: Position.Right,
       draggable: false,
       selectable: true,
+      ...(parentScopeId ? { parentId: parentScopeId, extent: "parent" as const } : {}),
     };
   });
 
@@ -207,5 +432,5 @@ export function buildPlanGraphModel(
     };
   });
 
-  return { nodes, edges };
+  return { nodes: [...scopeNodes, ...nodes], edges };
 }

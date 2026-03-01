@@ -7,26 +7,31 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  addEmptyRow,
   coerceCellInput,
   deleteRow,
   formatCellValue,
   updateRowCell,
 } from "@/data-editing";
 import { isColumnNullable, readColumnType } from "@/types";
+import { cn } from "@/lib/utils";
 
 interface DataGridProps {
-  tableName: string;
   table: TableDefinition;
   rows: QueryRow[];
   onRowsChange(rows: QueryRow[]): void;
+  scrollAreaClassName?: string;
 }
 
 function cellKey(rowIndex: number, columnName: string): string {
   return `${rowIndex}:${columnName}`;
 }
 
-export function DataGrid({ tableName, table, rows, onRowsChange }: DataGridProps): React.JSX.Element {
+export function DataGrid({
+  table,
+  rows,
+  onRowsChange,
+  scrollAreaClassName,
+}: DataGridProps): React.JSX.Element {
   const columns = useMemo(() => Object.entries(table.columns), [table.columns]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -57,7 +62,7 @@ export function DataGrid({ tableName, table, rows, onRowsChange }: DataGridProps
 
       return next;
     });
-  }, [rows.length, tableName]);
+  }, [rows.length]);
 
   const commitCellText = (
     rowIndex: number,
@@ -98,15 +103,13 @@ export function DataGrid({ tableName, table, rows, onRowsChange }: DataGridProps
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-medium text-slate-700">{tableName}</div>
-        <Button type="button" size="sm" onClick={() => onRowsChange(addEmptyRow(rows, table))}>
-          Add row
-        </Button>
-      </div>
-
-      <ScrollArea className="h-[520px] rounded-md border bg-white">
+    <div className="flex min-h-0 flex-col">
+      <ScrollArea
+        className={cn(
+          scrollAreaClassName ?? "h-[520px]",
+          "min-h-0",
+        )}
+      >
         <Table>
           <TableHeader>
             <TableRow>

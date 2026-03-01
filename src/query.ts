@@ -63,6 +63,15 @@ export interface QueryStepOperation {
   details?: Record<string, unknown>;
 }
 
+export type QueryPlanScopeKind = "root" | "cte" | "subquery" | "set_op_branch";
+
+export interface QueryExecutionPlanScope {
+  id: string;
+  kind: QueryPlanScopeKind;
+  label: string;
+  parentId?: string;
+}
+
 export interface QueryExecutionPlanStep {
   id: string;
   kind: QueryStepKind;
@@ -74,10 +83,12 @@ export interface QueryExecutionPlanStep {
   pushdown?: Record<string, unknown>;
   outputs?: string[];
   sqlOrigin?: QuerySqlOrigin;
+  scopeId?: string;
 }
 
 export interface QueryExecutionPlan {
   steps: QueryExecutionPlanStep[];
+  scopes?: QueryExecutionPlanScope[];
 }
 
 export type QueryStepStatus = "ready" | "running" | "done" | "failed";
@@ -142,6 +153,7 @@ export interface QuerySession {
 interface ExecutionOptions {
   maxConcurrency: number;
   stepController?: StepController;
+  subqueryCache?: WeakMap<object, Promise<QueryRow[]>>;
 }
 
 interface SelectAst {
@@ -198,7 +210,15 @@ interface AggregateMetric {
   distinct: boolean;
 }
 
-type WindowFunctionName = "row_number" | "rank" | "dense_rank" | AggregateFunction;
+type WindowFunctionName =
+  | "row_number"
+  | "rank"
+  | "dense_rank"
+  | "lead"
+  | "lag"
+  | AggregateFunction;
+
+type WindowFrameMode = "default" | "rows_unbounded_preceding_current_row";
 
 interface WindowFunctionSpec {
   fn: WindowFunctionName;
@@ -213,6 +233,9 @@ interface WindowFunctionSpec {
     column: string;
   };
   countStar?: boolean;
+  offset?: number;
+  defaultValue?: unknown;
+  frameMode: WindowFrameMode;
 }
 
 interface SourceOrderColumn {
@@ -313,6 +336,7 @@ interface StepTemplateOptions {
   pushdown?: Record<string, unknown>;
   outputs?: string[];
   sqlOrigin?: QuerySqlOrigin;
+  scopeId?: string;
 }
 
 interface PrecompiledPlanMatchState {
@@ -345,6 +369,7 @@ function createExecutionPlanStep(
     ...(template.pushdown ? { pushdown: template.pushdown } : {}),
     ...(template.outputs ? { outputs: [...template.outputs] } : {}),
     ...(template.sqlOrigin ? { sqlOrigin: template.sqlOrigin } : {}),
+    ...(template.scopeId ? { scopeId: template.scopeId } : {}),
   };
 }
 
@@ -366,6 +391,7 @@ function defaultPhaseForStep(kind: QueryStepKind): QueryStepPhase {
 class StepController {
   readonly #options: QuerySessionOptions;
   readonly #steps: QueryExecutionPlanStep[] = [];
+  readonly #scopes: QueryExecutionPlanScope[] = [];
   readonly #states = new Map<string, QueryStepState>();
   readonly #precompiled: PrecompiledPlanMatchState;
   readonly #events: QueryStepEvent[] = [];
@@ -387,7 +413,7 @@ class StepController {
   constructor(
     options: QuerySessionOptions,
     execute: () => Promise<QueryRow[]>,
-    initialPlan: QueryExecutionPlanStep[] = [],
+    initialPlan: QueryExecutionPlan = { steps: [] },
     manual = true,
   ) {
     this.#options = options;
@@ -397,7 +423,11 @@ class StepController {
       byKey: new Map<string, string[]>(),
     };
 
-    for (const step of initialPlan) {
+    for (const scope of initialPlan.scopes ?? []) {
+      this.#scopes.push({ ...scope });
+    }
+
+    for (const step of initialPlan.steps) {
       this.#steps.push({ ...step, dependsOn: [...step.dependsOn] });
       this.#states.set(step.id, {
         id: step.id,
@@ -446,6 +476,7 @@ class StepController {
   getPlan(): QueryExecutionPlan {
     return {
       steps: [...this.#steps],
+      ...(this.#scopes.length > 0 ? { scopes: [...this.#scopes] } : {}),
     };
   }
 
@@ -793,7 +824,21 @@ export async function query<TContext>(input: QueryInput<TContext>): Promise<Quer
 
 class StaticPlanBuilder {
   #counter = 0;
+  #scopeCounter = 0;
   readonly steps: QueryExecutionPlanStep[] = [];
+  readonly scopes: QueryExecutionPlanScope[] = [];
+
+  addScope(kind: QueryPlanScopeKind, label: string, parentId?: string): string {
+    const id = `scope_${this.#scopeCounter + 1}`;
+    this.#scopeCounter += 1;
+    this.scopes.push({
+      id,
+      kind,
+      label,
+      ...(parentId ? { parentId } : {}),
+    });
+    return id;
+  }
 
   addStep(
     kind: QueryStepKind,
@@ -807,9 +852,21 @@ class StaticPlanBuilder {
     return id;
   }
 
+  appendStepDependencies(stepId: string, dependencyStepIds: string[]): void {
+    if (dependencyStepIds.length === 0) {
+      return;
+    }
+    const step = this.steps.find((candidate) => candidate.id === stepId);
+    if (!step) {
+      throw new Error(`Unknown static step id: ${stepId}`);
+    }
+    step.dependsOn = [...new Set([...step.dependsOn, ...dependencyStepIds])];
+  }
+
   result(): QueryExecutionPlan {
     return {
       steps: [...this.steps],
+      scopes: [...this.scopes],
     };
   }
 }
@@ -822,6 +879,7 @@ interface StaticCompileResult {
 function compileStaticExecutionPlan<TContext>(input: QueryInput<TContext>): QueryExecutionPlan {
   const ast = astifySingleSelect(input.sql);
   const builder = new StaticPlanBuilder();
+  const rootScopeId = builder.addScope("root", "Root");
   compileStaticSelectAst(
     ast,
     {
@@ -830,6 +888,8 @@ function compileStaticExecutionPlan<TContext>(input: QueryInput<TContext>): Quer
     },
     new Set<string>(),
     builder,
+    new Map<string, string>(),
+    rootScopeId,
   );
   return builder.result();
 }
@@ -842,13 +902,22 @@ function compileStaticSelectAst<TContext>(
   },
   parentCteNames: Set<string>,
   builder: StaticPlanBuilder,
+  parentCteStepIdsByName: Map<string, string>,
+  currentScopeId: string,
 ): StaticCompileResult {
   if (ast.type !== "select") {
     throw new Error("Only SELECT statements are currently supported.");
   }
 
   if (ast.set_op != null || ast._next != null) {
-    return compileStaticSetOperation(ast, input, parentCteNames, builder);
+    return compileStaticSetOperation(
+      ast,
+      input,
+      parentCteNames,
+      builder,
+      parentCteStepIdsByName,
+      currentScopeId,
+    );
   }
 
   const cteStepIdsByName = new Map<string, string>();
@@ -894,12 +963,24 @@ function compileStaticSelectAst<TContext>(
       }
 
       for (const entry of ready) {
+        const cteScopeId = builder.addScope("cte", `CTE ${entry.cteName}`, currentScopeId);
         const cteScopeNames = new Set<string>([
           ...parentCteNames,
           ...cteNameSet,
           ...cteStepIdsByName.keys(),
         ]);
-        const compiled = compileStaticSelectAst(entry.cteAst, input, cteScopeNames, builder);
+        const cteScopeStepIdsByName = new Map<string, string>([
+          ...parentCteStepIdsByName,
+          ...cteStepIdsByName,
+        ]);
+        const compiled = compileStaticSelectAst(
+          entry.cteAst,
+          input,
+          cteScopeNames,
+          builder,
+          cteScopeStepIdsByName,
+          cteScopeId,
+        );
         const dependencyStepIds = (cteDependencies.get(entry.cteName) ?? [])
           .map((dep) => cteStepIdsByName.get(dep))
           .filter((dep): dep is string => typeof dep === "string");
@@ -917,6 +998,7 @@ function compileStaticSelectAst<TContext>(
               },
             },
             sqlOrigin: "WITH",
+            scopeId: cteScopeId,
           },
         );
         cteStepIdsByName.set(entry.cteName, cteStepId);
@@ -934,15 +1016,33 @@ function compileStaticSelectAst<TContext>(
   }
 
   const parsed = parseSelectAst(ast, input.schema, cteRows);
+  const scopedCteStepIdsByName = new Map<string, string>([
+    ...parentCteStepIdsByName,
+    ...cteStepIdsByName,
+  ]);
   if (parsed.isAggregate) {
-    const aggregate = compileStaticAggregateSelect(parsed, input, cteRows, builder);
+    const aggregate = compileStaticAggregateSelect(
+      parsed,
+      input,
+      cteRows,
+      scopedCteStepIdsByName,
+      builder,
+      currentScopeId,
+    );
     return {
       terminalStepIds: aggregate.terminalStepIds,
       cteStepIdsByName,
     };
   }
 
-  const nonAggregate = compileStaticNonAggregateSelect(parsed, input, cteRows, builder);
+  const nonAggregate = compileStaticNonAggregateSelect(
+    parsed,
+    input,
+    cteRows,
+    scopedCteStepIdsByName,
+    builder,
+    currentScopeId,
+  );
   return {
     terminalStepIds: nonAggregate.terminalStepIds,
     cteStepIdsByName,
@@ -957,6 +1057,8 @@ function compileStaticSetOperation<TContext>(
   },
   parentCteNames: Set<string>,
   builder: StaticPlanBuilder,
+  parentCteStepIdsByName: Map<string, string>,
+  currentScopeId: string,
 ): StaticCompileResult {
   const operation = typeof ast.set_op === "string" ? ast.set_op.toLowerCase() : "";
   const nextRaw = readSetOperationNext(ast._next);
@@ -972,7 +1074,15 @@ function compileStaticSetOperation<TContext>(
   }
 
   const leftAst = cloneSelectWithoutSetOperation(ast);
-  const leftCompiled = compileStaticSelectAst(leftAst, input, parentCteNames, builder);
+  const leftScopeId = builder.addScope("set_op_branch", "Set operation left branch", currentScopeId);
+  const leftCompiled = compileStaticSelectAst(
+    leftAst,
+    input,
+    parentCteNames,
+    builder,
+    parentCteStepIdsByName,
+    leftScopeId,
+  );
   const leftStepId = builder.addStep(
     "set_op_branch",
     "Set operation left branch",
@@ -987,10 +1097,23 @@ function compileStaticSetOperation<TContext>(
         },
       },
       sqlOrigin: "SET_OP",
+      scopeId: leftScopeId,
     },
   );
 
-  const rightCompiled = compileStaticSelectAst(next, input, parentCteNames, builder);
+  const rightScopeId = builder.addScope(
+    "set_op_branch",
+    "Set operation right branch",
+    currentScopeId,
+  );
+  const rightCompiled = compileStaticSelectAst(
+    next,
+    input,
+    parentCteNames,
+    builder,
+    parentCteStepIdsByName,
+    rightScopeId,
+  );
   const rightStepId = builder.addStep(
     "set_op_branch",
     "Set operation right branch",
@@ -1005,6 +1128,7 @@ function compileStaticSetOperation<TContext>(
         },
       },
       sqlOrigin: "SET_OP",
+      scopeId: rightScopeId,
     },
   );
 
@@ -1014,6 +1138,70 @@ function compileStaticSetOperation<TContext>(
   };
 }
 
+interface StaticSubquerySite {
+  label: string;
+  ast: SelectAst;
+}
+
+function collectSubqueryAstsFromExpression(rawExpr: unknown): SelectAst[] {
+  const out: SelectAst[] = [];
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+
+    const subquery = toSubqueryAst(node);
+    if (subquery) {
+      out.push(subquery);
+      return;
+    }
+
+    if (Array.isArray(node)) {
+      for (const entry of node) {
+        visit(entry);
+      }
+      return;
+    }
+
+    const entries = Object.entries(node as Record<string, unknown>).sort(([left], [right]) =>
+      left.localeCompare(right),
+    );
+    for (const [, value] of entries) {
+      visit(value);
+    }
+  };
+
+  visit(rawExpr);
+  return out;
+}
+
+function compileStaticSubquerySites<TContext>(
+  sites: StaticSubquerySite[],
+  input: {
+    schema: SchemaDefinition;
+    methods: TableMethodsMap<TContext>;
+  },
+  parentCteNames: Set<string>,
+  builder: StaticPlanBuilder,
+  cteStepIdsByName: Map<string, string>,
+  currentScopeId: string,
+): string[] {
+  const terminalStepIds: string[] = [];
+  for (const site of sites) {
+    const scopeId = builder.addScope("subquery", site.label, currentScopeId);
+    const compiled = compileStaticSelectAst(
+      site.ast,
+      input,
+      parentCteNames,
+      builder,
+      cteStepIdsByName,
+      scopeId,
+    );
+    terminalStepIds.push(...compiled.terminalStepIds);
+  }
+  return [...new Set(terminalStepIds)];
+}
+
 function compileStaticNonAggregateSelect<TContext>(
   parsed: ParsedSelectQuery,
   input: {
@@ -1021,9 +1209,19 @@ function compileStaticNonAggregateSelect<TContext>(
     methods: TableMethodsMap<TContext>;
   },
   cteRows: Map<string, QueryRow[]>,
+  cteStepIdsByName: Map<string, string>,
   builder: StaticPlanBuilder,
+  currentScopeId: string,
 ): { terminalStepIds: string[] } {
-  const { orderedScanStepIds } = compileStaticScanSteps(parsed, input, cteRows, builder);
+  const parentCteNames = new Set<string>([...cteRows.keys()]);
+  const { orderedScanStepIds } = compileStaticScanSteps(
+    parsed,
+    input,
+    cteRows,
+    cteStepIdsByName,
+    builder,
+    currentScopeId,
+  );
 
   const joinStepId = builder.addStep("join", "Join source bindings", orderedScanStepIds, {
     phase: "transform",
@@ -1039,21 +1237,41 @@ function compileStaticNonAggregateSelect<TContext>(
       },
     },
     sqlOrigin: "FROM",
+    scopeId: currentScopeId,
   });
 
-  const filterStepId = builder.addStep("filter", "Apply WHERE filter", [joinStepId], {
-    phase: "transform",
-    operation: {
-      name: "filter",
-      details: {
-        wherePushdownSafe: parsed.wherePushdownSafe,
+  const filterStepId = builder.addStep(
+    "filter",
+    "Apply WHERE filter",
+    [joinStepId],
+    {
+      phase: "transform",
+      operation: {
+        name: "filter",
+        details: {
+          wherePushdownSafe: parsed.wherePushdownSafe,
+        },
       },
+      request: {
+        whereColumns: parsed.whereColumns.map((column) => `${column.alias}.${column.column}`),
+      },
+      sqlOrigin: "WHERE",
+      scopeId: currentScopeId,
     },
-    request: {
-      whereColumns: parsed.whereColumns.map((column) => `${column.alias}.${column.column}`),
-    },
-    sqlOrigin: "WHERE",
-  });
+  );
+  const whereSubquerySites = collectSubqueryAstsFromExpression(parsed.where).map((ast, index) => ({
+    label: `Subquery WHERE #${index + 1}`,
+    ast,
+  }));
+  const whereSubqueryTerminalStepIds = compileStaticSubquerySites(
+    whereSubquerySites,
+    input,
+    parentCteNames,
+    builder,
+    cteStepIdsByName,
+    currentScopeId,
+  );
+  builder.appendStepDependencies(filterStepId, whereSubqueryTerminalStepIds);
 
   let previousStepId = filterStepId;
   if (parsed.windowFunctions.length > 0) {
@@ -1075,6 +1293,7 @@ function compileStaticNonAggregateSelect<TContext>(
       },
       outputs: parsed.windowFunctions.map((fn) => fn.output),
       sqlOrigin: "SELECT",
+      scopeId: currentScopeId,
     });
     previousStepId = windowStepId;
   }
@@ -1087,14 +1306,35 @@ function compileStaticNonAggregateSelect<TContext>(
         ...parsed.windowFunctions.map((fn) => fn.output),
       ];
 
-  const projectionStepId = builder.addStep("projection", "Project result rows", [previousStepId], {
-    phase: "output",
-    operation: {
-      name: "projection",
+  const projectionStepId = builder.addStep(
+    "projection",
+    "Project result rows",
+    [previousStepId],
+    {
+      phase: "output",
+      operation: {
+        name: "projection",
+      },
+      outputs: projectedOutputs,
+      sqlOrigin: "SELECT",
+      scopeId: currentScopeId,
     },
-    outputs: projectedOutputs,
-    sqlOrigin: "SELECT",
-  });
+  );
+  const selectSubquerySites = parsed.scalarSelectItems
+    .flatMap((item) => collectSubqueryAstsFromExpression(item.expr))
+    .map((ast, index) => ({
+      label: `Subquery SELECT #${index + 1}`,
+      ast,
+    }));
+  const selectSubqueryTerminalStepIds = compileStaticSubquerySites(
+    selectSubquerySites,
+    input,
+    parentCteNames,
+    builder,
+    cteStepIdsByName,
+    currentScopeId,
+  );
+  builder.appendStepDependencies(projectionStepId, selectSubqueryTerminalStepIds);
 
   if (parsed.distinct) {
     const distinctStepId = builder.addStep("distinct", "Apply DISTINCT", [projectionStepId], {
@@ -1103,6 +1343,7 @@ function compileStaticNonAggregateSelect<TContext>(
         name: "distinct",
       },
       sqlOrigin: "SELECT",
+      scopeId: currentScopeId,
     });
     const orderStepId = builder.addStep(
       "order",
@@ -1124,6 +1365,7 @@ function compileStaticNonAggregateSelect<TContext>(
           ...(parsed.offset != null ? { offset: parsed.offset } : {}),
         },
         sqlOrigin: "ORDER BY",
+        scopeId: currentScopeId,
       },
     );
     return { terminalStepIds: [orderStepId] };
@@ -1141,9 +1383,19 @@ function compileStaticAggregateSelect<TContext>(
     methods: TableMethodsMap<TContext>;
   },
   cteRows: Map<string, QueryRow[]>,
+  cteStepIdsByName: Map<string, string>,
   builder: StaticPlanBuilder,
+  currentScopeId: string,
 ): { terminalStepIds: string[] } {
-  const { orderedScanStepIds } = compileStaticScanSteps(parsed, input, cteRows, builder);
+  const parentCteNames = new Set<string>([...cteRows.keys()]);
+  const { orderedScanStepIds } = compileStaticScanSteps(
+    parsed,
+    input,
+    cteRows,
+    cteStepIdsByName,
+    builder,
+    currentScopeId,
+  );
   const rootBinding = parsed.bindings[0];
   const aggregateRoutePossible =
     parsed.bindings.length === 1 &&
@@ -1154,43 +1406,82 @@ function compileStaticAggregateSelect<TContext>(
     !rootBinding.isCte &&
     !!input.methods[rootBinding.table]?.aggregate;
 
-  let previousStepId = builder.addStep("aggregate", "Run aggregate route", orderedScanStepIds, {
-    phase: "fetch",
-    operation: {
-      name: "aggregate",
+  let previousStepId = builder.addStep(
+    "aggregate",
+    "Run aggregate route",
+    orderedScanStepIds,
+    {
+      phase: "fetch",
+      operation: {
+        name: "aggregate",
+      },
+      request: {
+        groupBy: parsed.groupBy.map((column) => `${column.alias}.${column.column}`),
+        metrics: parsed.aggregateMetrics.map((metric) => ({
+          fn: metric.fn,
+          output: metric.output,
+          ...(metric.column
+            ? {
+                column: `${metric.column.alias}.${metric.column.column}`,
+              }
+            : {}),
+          distinct: metric.distinct,
+        })),
+      },
+      pushdown: {
+        routeCandidates: aggregateRoutePossible ? ["aggregate", "local"] : ["local"],
+        aggregateRoutePossible,
+      },
+      outputs: [
+        ...parsed.aggregateOutputColumns.map((column) => column.output),
+        ...parsed.aggregateMetrics.filter((metric) => !metric.hidden).map((metric) => metric.output),
+      ],
+      sqlOrigin: "SELECT",
+      scopeId: currentScopeId,
     },
-    request: {
-      groupBy: parsed.groupBy.map((column) => `${column.alias}.${column.column}`),
-      metrics: parsed.aggregateMetrics.map((metric) => ({
-        fn: metric.fn,
-        output: metric.output,
-        ...(metric.column
-          ? {
-              column: `${metric.column.alias}.${metric.column.column}`,
-            }
-          : {}),
-        distinct: metric.distinct,
-      })),
-    },
-    pushdown: {
-      routeCandidates: aggregateRoutePossible ? ["aggregate", "local"] : ["local"],
-      aggregateRoutePossible,
-    },
-    outputs: [
-      ...parsed.aggregateOutputColumns.map((column) => column.output),
-      ...parsed.aggregateMetrics.filter((metric) => !metric.hidden).map((metric) => metric.output),
-    ],
-    sqlOrigin: "SELECT",
-  });
+  );
+  const whereSubquerySites = collectSubqueryAstsFromExpression(parsed.where).map((ast, index) => ({
+    label: `Subquery WHERE #${index + 1}`,
+    ast,
+  }));
+  const whereSubqueryTerminalStepIds = compileStaticSubquerySites(
+    whereSubquerySites,
+    input,
+    parentCteNames,
+    builder,
+    cteStepIdsByName,
+    currentScopeId,
+  );
+  builder.appendStepDependencies(previousStepId, whereSubqueryTerminalStepIds);
 
   if (parsed.having) {
-    previousStepId = builder.addStep("filter", "Apply HAVING filter", [previousStepId], {
-      phase: "transform",
-      operation: {
-        name: "having_filter",
+    const havingFilterStepId = builder.addStep(
+      "filter",
+      "Apply HAVING filter",
+      [previousStepId],
+      {
+        phase: "transform",
+        operation: {
+          name: "having_filter",
+        },
+        sqlOrigin: "HAVING",
+        scopeId: currentScopeId,
       },
-      sqlOrigin: "HAVING",
-    });
+    );
+    const havingSubquerySites = collectSubqueryAstsFromExpression(parsed.having).map((ast, index) => ({
+      label: `Subquery HAVING #${index + 1}`,
+      ast,
+    }));
+    const havingSubqueryTerminalStepIds = compileStaticSubquerySites(
+      havingSubquerySites,
+      input,
+      parentCteNames,
+      builder,
+      cteStepIdsByName,
+      currentScopeId,
+    );
+    builder.appendStepDependencies(havingFilterStepId, havingSubqueryTerminalStepIds);
+    previousStepId = havingFilterStepId;
   }
 
   if (parsed.distinct) {
@@ -1200,6 +1491,7 @@ function compileStaticAggregateSelect<TContext>(
         name: "distinct",
       },
       sqlOrigin: "SELECT",
+      scopeId: currentScopeId,
     });
   }
 
@@ -1218,6 +1510,7 @@ function compileStaticAggregateSelect<TContext>(
         }),
       },
       sqlOrigin: "ORDER BY",
+      scopeId: currentScopeId,
     });
   }
 
@@ -1232,6 +1525,7 @@ function compileStaticAggregateSelect<TContext>(
         ...(parsed.offset != null ? { offset: parsed.offset } : {}),
       },
       sqlOrigin: "ORDER BY",
+      scopeId: currentScopeId,
     });
   }
 
@@ -1251,8 +1545,24 @@ function compileStaticAggregateSelect<TContext>(
           .map((metric) => metric.output),
       ],
       sqlOrigin: "SELECT",
+      scopeId: currentScopeId,
     },
   );
+  const selectSubquerySites = parsed.scalarSelectItems
+    .flatMap((item) => collectSubqueryAstsFromExpression(item.expr))
+    .map((ast, index) => ({
+      label: `Subquery SELECT #${index + 1}`,
+      ast,
+    }));
+  const selectSubqueryTerminalStepIds = compileStaticSubquerySites(
+    selectSubquerySites,
+    input,
+    parentCteNames,
+    builder,
+    cteStepIdsByName,
+    currentScopeId,
+  );
+  builder.appendStepDependencies(projectionStepId, selectSubqueryTerminalStepIds);
 
   return {
     terminalStepIds: [projectionStepId],
@@ -1266,7 +1576,9 @@ function compileStaticScanSteps<TContext>(
     methods: TableMethodsMap<TContext>;
   },
   cteRows: Map<string, QueryRow[]>,
+  cteStepIdsByName: Map<string, string>,
   builder: StaticPlanBuilder,
+  currentScopeId: string,
 ): { scanStepIdsByAlias: Map<string, string>; orderedScanStepIds: string[] } {
   const rootBinding = parsed.bindings[0];
   if (!rootBinding) {
@@ -1295,6 +1607,12 @@ function compileStaticScanSteps<TContext>(
     const dependsOn = dependencyAliases
       .map((dependencyAlias) => scanStepIdsByAlias.get(dependencyAlias))
       .filter((stepId): stepId is string => typeof stepId === "string");
+    if (binding.isCte) {
+      const cteStepId = cteStepIdsByName.get(binding.table);
+      if (typeof cteStepId === "string" && !dependsOn.includes(cteStepId)) {
+        dependsOn.push(cteStepId);
+      }
+    }
 
     const localFilters = filtersByAlias.get(alias) ?? [];
     const dependencyFilters = deriveStaticDependencyFilters(alias, parsed.joinEdges);
@@ -1357,6 +1675,7 @@ function compileStaticScanSteps<TContext>(
       },
       outputs: [...projection],
       sqlOrigin: "FROM",
+      scopeId: currentScopeId,
     });
 
     scanStepIdsByAlias.set(alias, stepId);
@@ -1424,7 +1743,7 @@ export function createQuerySession<TContext>(input: QuerySessionInput<TContext>)
         stepController,
       });
     },
-    precompiledPlan.steps,
+    precompiledPlan,
   );
 
   return {
@@ -1441,7 +1760,11 @@ async function executeQueryInternal<TContext>(
   options: ExecutionOptions,
 ): Promise<QueryRow[]> {
   const ast = astifySingleSelect(input.sql);
-  return executeSelectAst(ast, input, new Map(), options);
+  const executionOptions: ExecutionOptions = {
+    ...options,
+    subqueryCache: options.subqueryCache ?? new WeakMap<object, Promise<QueryRow[]>>(),
+  };
+  return executeSelectAst(ast, input, new Map(), executionOptions);
 }
 
 async function executeSelectAst<TContext>(
@@ -1815,8 +2138,9 @@ async function tryRunAggregateRoute<TContext>(
   }
 
   const rows = await method.aggregate(request, input.context);
-  validateRowsForBinding(binding.table, rows, input);
-  return rows.map((row) => normalizeAggregateRowFromRoute(row, parsed));
+  const normalizedRows = normalizeRowsForBinding(binding.table, rows, input.schema);
+  validateRowsForBinding(binding.table, normalizedRows, input);
+  return normalizedRows.map((row) => normalizeAggregateRowFromRoute(row, parsed));
 }
 
 function normalizeAggregateRowFromRoute(row: QueryRow, parsed: ParsedSelectQuery): QueryRow {
@@ -2175,13 +2499,17 @@ async function executeJoinedRows<TContext>(
             async () => runSourceScan(binding, request, cteRows, input),
           );
 
+          const normalizedRows = !binding.isCte
+            ? normalizeRowsForBinding(binding.table, rows, input.schema)
+            : rows;
+
           if (!binding.isCte) {
-            validateRowsForBinding(binding.table, rows, input);
+            validateRowsForBinding(binding.table, normalizedRows, input);
           }
 
           return {
             alias,
-            rows,
+            rows: normalizedRows,
           };
         }),
       );
@@ -2451,10 +2779,7 @@ function parseSelectAst(
   if (ast.type !== "select") {
     throw new Error("Only SELECT statements are currently supported.");
   }
-
-  if ((ast as { window?: unknown }).window != null) {
-    throw new Error("Named WINDOW clauses are not supported yet.");
-  }
+  const windowDefinitions = parseWindowDefinitions((ast as { window?: unknown }).window);
 
   const rawFrom: unknown[] = Array.isArray(ast.from) ? ast.from : ast.from ? [ast.from] : [];
   if (rawFrom.length === 0) {
@@ -2520,7 +2845,7 @@ function parseSelectAst(
 
     joinEdges.push(parsedJoin);
   }
-  const where = normalizeBooleanOperatorPrecedence(ast.where);
+  const where = ast.where;
   const whereColumns = collectColumnReferences(where, bindings, aliasToBinding);
   const filters: LiteralFilter[] = [];
   const wherePushdown = tryParseConjunctivePushdownFilters(where, bindings, aliasToBinding);
@@ -2565,6 +2890,7 @@ function parseSelectAst(
         bindings,
         aliasToBinding,
         schema,
+        windowDefinitions,
       );
       if (windowFunction) {
         if (windowFunctions.some((existing) => existing.output === windowFunction.output)) {
@@ -2621,7 +2947,7 @@ function parseSelectAst(
     }
   }
 
-  const having = normalizeBooleanOperatorPrecedence(ast.having);
+  const having = ast.having;
   const havingMetrics = collectHavingAggregateMetrics(
     having,
     bindings,
@@ -2642,7 +2968,7 @@ function parseSelectAst(
   }
 
   if (windowFunctions.length > 0 && (isAggregate || groupBy.length > 0 || having != null)) {
-    throw new Error("Window functions cannot be mixed with GROUP BY/HAVING in this release.");
+    throw new Error("Window functions cannot be mixed with GROUP BY/HAVING.");
   }
 
   const groupByKeys = new Set(
@@ -2758,6 +3084,7 @@ function parseWindowFunction(
   bindings: TableBinding[],
   aliasToBinding: Map<string, TableBinding>,
   schema: SchemaDefinition,
+  windowDefinitions: Map<string, unknown>,
 ): WindowFunctionSpec | null {
   if (!expr || typeof expr !== "object") {
     return null;
@@ -2774,24 +3101,14 @@ function parseWindowFunction(
     throw new Error("Window function OVER clause must include a window specification.");
   }
 
-  if (typeof spec === "string") {
-    throw new Error("Named window references are not supported yet.");
-  }
-
-  const windowSpecification = (spec as { window_specification?: unknown }).window_specification;
+  const windowSpecification = resolveWindowSpecification(spec, windowDefinitions, new Set());
   if (!windowSpecification || typeof windowSpecification !== "object") {
     throw new Error("Unsupported window specification.");
   }
 
-  if ((windowSpecification as { name?: unknown }).name != null) {
-    throw new Error("Named window inheritance is not supported yet.");
-  }
-
   const frameClause = (windowSpecification as { window_frame_clause?: unknown })
     .window_frame_clause;
-  if (frameClause != null) {
-    throw new Error("Explicit window frame clauses are not supported yet.");
-  }
+  const frameMode = parseWindowFrameMode(frameClause);
 
   const partitionByRaw = (windowSpecification as { partitionby?: unknown }).partitionby;
   const partitionByEntries = Array.isArray(partitionByRaw) ? partitionByRaw : [];
@@ -2828,17 +3145,67 @@ function parseWindowFunction(
 
   if (functionExpr.type === "function") {
     const fnName = readFunctionName(functionExpr.name);
-    const fn = mapRankingWindowFunction(fnName);
-    if (!fn) {
+    const rankingFn = mapRankingWindowFunction(fnName);
+    if (rankingFn) {
+      const output = explicitOutput ?? rankingFn;
+      return {
+        fn: rankingFn,
+        output,
+        partitionBy,
+        orderBy,
+        frameMode,
+      };
+    }
+
+    if (fnName !== "LEAD" && fnName !== "LAG") {
       throw new Error(`Unsupported window function: ${fnName || "unknown"}`);
     }
 
-    const output = explicitOutput ?? fn;
+    const argsRaw = (functionExpr.args as { value?: unknown } | undefined)?.value;
+    const args = Array.isArray(argsRaw) ? argsRaw : argsRaw != null ? [argsRaw] : [];
+    const firstArg = args[0];
+    const column = resolveColumnRef(firstArg, bindings, aliasToBinding);
+    if (!column) {
+      throw new Error(`${fnName} window function must reference a column as the first argument.`);
+    }
+
+    let offset = 1;
+    if (args[1] != null) {
+      const parsedOffset = parseLiteral(args[1]);
+      if (
+        typeof parsedOffset !== "number" ||
+        !Number.isInteger(parsedOffset) ||
+        parsedOffset < 0
+      ) {
+        throw new Error(`${fnName} offset must be a non-negative integer literal.`);
+      }
+      offset = parsedOffset;
+    }
+
+    let defaultValue: unknown = null;
+    if (args[2] != null) {
+      const parsedDefault = parseLiteral(args[2]);
+      if (parsedDefault === undefined) {
+        throw new Error(`${fnName} default value must be a literal.`);
+      }
+      defaultValue = parsedDefault;
+    }
+
+    if (args.length > 3) {
+      throw new Error(`${fnName} supports at most three arguments.`);
+    }
+
+    const fn = fnName.toLowerCase() as "lead" | "lag";
+    const output = explicitOutput ?? `${fn}_${column.column}`;
     return {
       fn,
       output,
       partitionBy,
       orderBy,
+      column,
+      offset,
+      defaultValue,
+      frameMode,
     };
   }
 
@@ -2886,9 +3253,131 @@ function parseWindowFunction(
     output,
     partitionBy,
     orderBy,
+    frameMode,
     ...(column ? { column } : {}),
     ...(countStar ? { countStar: true } : {}),
   };
+}
+
+function parseWindowDefinitions(rawWindow: unknown): Map<string, unknown> {
+  const map = new Map<string, unknown>();
+  const entries = Array.isArray(rawWindow) ? rawWindow : [];
+
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") {
+      throw new Error("Unsupported WINDOW clause.");
+    }
+
+    const rawName = (entry as { name?: unknown }).name;
+    const name = typeof rawName === "string" && rawName.length > 0 ? rawName : undefined;
+    const rawSpec = (entry as { as_window_specification?: { window_specification?: unknown } })
+      .as_window_specification?.window_specification;
+    if (!name || !rawSpec || typeof rawSpec !== "object") {
+      throw new Error("Unsupported WINDOW clause.");
+    }
+
+    if (map.has(name)) {
+      throw new Error(`Duplicate WINDOW definition: ${name}`);
+    }
+    map.set(name, rawSpec);
+  }
+
+  return map;
+}
+
+function resolveWindowSpecification(
+  spec: unknown,
+  windowDefinitions: Map<string, unknown>,
+  resolving: Set<string>,
+): unknown {
+  if (typeof spec === "string") {
+    const resolved = windowDefinitions.get(spec);
+    if (!resolved) {
+      throw new Error(`Unknown WINDOW reference: ${spec}`);
+    }
+
+    if (resolving.has(spec)) {
+      throw new Error(`Cyclic WINDOW reference: ${spec}`);
+    }
+    resolving.add(spec);
+
+    const merged = resolveWindowSpecification(
+      { window_specification: resolved },
+      windowDefinitions,
+      resolving,
+    );
+
+    resolving.delete(spec);
+    return merged;
+  }
+
+  const windowSpecification = (spec as { window_specification?: unknown }).window_specification;
+  if (!windowSpecification || typeof windowSpecification !== "object") {
+    return undefined;
+  }
+
+  const baseName =
+    typeof (windowSpecification as { name?: unknown }).name === "string"
+      ? ((windowSpecification as { name?: string }).name ?? "")
+      : "";
+  if (!baseName) {
+    return windowSpecification;
+  }
+
+  const baseRaw = windowDefinitions.get(baseName);
+  if (!baseRaw) {
+    throw new Error(`Unknown WINDOW reference: ${baseName}`);
+  }
+  if (resolving.has(baseName)) {
+    throw new Error(`Cyclic WINDOW reference: ${baseName}`);
+  }
+  resolving.add(baseName);
+  const resolvedBase = resolveWindowSpecification(
+    { window_specification: baseRaw },
+    windowDefinitions,
+    resolving,
+  ) as {
+    partitionby?: unknown;
+    orderby?: unknown;
+    window_frame_clause?: unknown;
+  };
+  resolving.delete(baseName);
+
+  const derived = windowSpecification as {
+    partitionby?: unknown;
+    orderby?: unknown;
+    window_frame_clause?: unknown;
+  };
+
+  return {
+    ...resolvedBase,
+    ...(derived.partitionby != null ? { partitionby: derived.partitionby } : {}),
+    ...(derived.orderby != null ? { orderby: derived.orderby } : {}),
+    ...(derived.window_frame_clause != null
+      ? { window_frame_clause: derived.window_frame_clause }
+      : {}),
+  };
+}
+
+function parseWindowFrameMode(rawFrameClause: unknown): WindowFrameMode {
+  if (rawFrameClause == null) {
+    return "default";
+  }
+
+  const raw = (rawFrameClause as { raw?: unknown }).raw;
+  if (typeof raw !== "string") {
+    throw new Error("Unsupported window frame clause.");
+  }
+
+  const normalized = raw.replace(/\s+/g, " ").trim().toUpperCase();
+  if (
+    normalized === "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW" ||
+    normalized === "ROWS UNBOUNDED PRECEDING"
+  ) {
+    return "rows_unbounded_preceding_current_row";
+  }
+
+  throw new Error("Only ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW is supported.");
 }
 
 function mapRankingWindowFunction(
@@ -4229,8 +4718,37 @@ async function applyWindowFunctions(
           }
           break;
         }
+        case "lead":
+        case "lag": {
+          const offset = windowSpec.offset ?? 1;
+          const defaultValue = windowSpec.defaultValue ?? null;
+          for (let index = 0; index < ordered.length; index += 1) {
+            const rowIndex = ordered[index];
+            if (rowIndex == null) {
+              continue;
+            }
+            const row = out[rowIndex];
+            if (!row) {
+              continue;
+            }
+
+            const targetIndex =
+              windowSpec.fn === "lead" ? index + offset : index - offset;
+            const targetRow = targetIndex >= 0 ? out[ordered[targetIndex] ?? -1] : undefined;
+            const value =
+              targetRow && windowSpec.column
+                ? (targetRow[windowSpec.column.alias]?.[windowSpec.column.column] ?? null)
+                : defaultValue;
+
+            (row[WINDOW_OUTPUT_ALIAS] as QueryRow)[windowSpec.output] =
+              value ?? defaultValue ?? null;
+          }
+          break;
+        }
         default: {
-          const isRunning = windowSpec.orderBy.length > 0;
+          const isRunning =
+            windowSpec.orderBy.length > 0 ||
+            windowSpec.frameMode === "rows_unbounded_preceding_current_row";
           if (!isRunning) {
             const aggregateValue = computeWindowAggregate(out, ordered, windowSpec, ordered.length);
             for (const rowIndex of ordered) {
@@ -4669,12 +5187,34 @@ async function executeSubquery<TContext>(
   subquery: SelectAst,
   scope: PredicateEvalScope<TContext>,
 ): Promise<QueryRow[]> {
+  const key = subquery as object;
+  const cache = scope.options.subqueryCache;
+  const cached = cache?.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = (async () => {
+    try {
+      return await executeSelectAst(subquery, scope.input, scope.cteRows, scope.options);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith("Unknown table alias:")) {
+        throw new Error("Correlated subqueries are not yet supported.");
+      }
+      throw error;
+    }
+  })();
+
+  if (cache) {
+    cache.set(key, pending);
+  }
+
   try {
-    return await executeSelectAst(subquery, scope.input, scope.cteRows, scope.options);
+    return await pending;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.startsWith("Unknown table alias:")) {
-      throw new Error("Correlated subqueries are not yet supported.");
+    if (cache) {
+      cache.delete(key);
     }
     throw error;
   }
@@ -4857,196 +5397,6 @@ function flattenConjunctiveWhere(where: unknown): unknown[] | null {
   }
 
   return [expr];
-}
-
-type BooleanOperator = "AND" | "OR";
-
-type BooleanToken =
-  | {
-      kind: "expr";
-      expr: unknown;
-    }
-  | {
-      kind: "op";
-      op: BooleanOperator;
-    };
-
-function normalizeBooleanOperatorPrecedence(expr: unknown): unknown {
-  if (!expr || typeof expr !== "object") {
-    return expr;
-  }
-
-  const node = expr as {
-    type?: unknown;
-    operator?: unknown;
-    left?: unknown;
-    right?: unknown;
-    parentheses?: unknown;
-    args?: { value?: unknown };
-  };
-
-  if (node.type === "binary_expr") {
-    const normalized = {
-      ...node,
-      left: normalizeBooleanOperatorPrecedence(node.left),
-      right: normalizeBooleanOperatorPrecedence(node.right),
-    };
-
-    const operator = typeof normalized.operator === "string" ? normalized.operator : "";
-    if ((operator !== "AND" && operator !== "OR") || normalized.parentheses === true) {
-      return normalized;
-    }
-
-    return rebuildBooleanExpression(normalized);
-  }
-
-  if (node.type === "function") {
-    const args = node.args?.value;
-    if (Array.isArray(args)) {
-      return {
-        ...node,
-        args: {
-          ...node.args,
-          value: args.map((arg) => normalizeBooleanOperatorPrecedence(arg)),
-        },
-      };
-    }
-
-    if (args != null) {
-      return {
-        ...node,
-        args: {
-          ...node.args,
-          value: normalizeBooleanOperatorPrecedence(args),
-        },
-      };
-    }
-  }
-
-  return expr;
-}
-
-function rebuildBooleanExpression(root: {
-  type?: unknown;
-  operator?: unknown;
-  left?: unknown;
-  right?: unknown;
-  parentheses?: unknown;
-}): unknown {
-  const tokens = collectBooleanTokens(root);
-  if (tokens.length === 1 && tokens[0]?.kind === "expr") {
-    return tokens[0].expr;
-  }
-
-  const output: BooleanToken[] = [];
-  const operators: BooleanOperator[] = [];
-
-  for (const token of tokens) {
-    if (token.kind === "expr") {
-      output.push(token);
-      continue;
-    }
-
-    while (operators.length > 0) {
-      const top = operators[operators.length - 1];
-      if (!top || precedence(top) < precedence(token.op)) {
-        break;
-      }
-
-      output.push({
-        kind: "op",
-        op: top,
-      });
-      operators.pop();
-    }
-
-    operators.push(token.op);
-  }
-
-  while (operators.length > 0) {
-    const top = operators.pop();
-    if (!top) {
-      continue;
-    }
-    output.push({
-      kind: "op",
-      op: top,
-    });
-  }
-
-  const stack: unknown[] = [];
-  for (const token of output) {
-    if (token.kind === "expr") {
-      stack.push(token.expr);
-      continue;
-    }
-
-    const right = stack.pop();
-    const left = stack.pop();
-    if (left == null || right == null) {
-      return root;
-    }
-
-    stack.push({
-      type: "binary_expr",
-      operator: token.op,
-      left,
-      right,
-    });
-  }
-
-  return stack.length === 1 ? (stack[0] ?? root) : root;
-}
-
-function collectBooleanTokens(expr: unknown): BooleanToken[] {
-  if (!expr || typeof expr !== "object") {
-    return [
-      {
-        kind: "expr",
-        expr,
-      },
-    ];
-  }
-
-  const node = expr as {
-    type?: unknown;
-    operator?: unknown;
-    left?: unknown;
-    right?: unknown;
-    parentheses?: unknown;
-  };
-
-  if (node.type !== "binary_expr" || node.parentheses === true) {
-    return [
-      {
-        kind: "expr",
-        expr,
-      },
-    ];
-  }
-
-  const operator = typeof node.operator === "string" ? node.operator.toUpperCase() : "";
-  if (operator !== "AND" && operator !== "OR") {
-    return [
-      {
-        kind: "expr",
-        expr,
-      },
-    ];
-  }
-
-  return [
-    ...collectBooleanTokens(node.left),
-    {
-      kind: "op",
-      op: operator,
-    },
-    ...collectBooleanTokens(node.right),
-  ];
-}
-
-function precedence(operator: BooleanOperator): number {
-  return operator === "AND" ? 2 : 1;
 }
 
 function tryNormalizeBinaryOperator(raw: unknown): Exclude<ScanFilterClause["op"], never> | null {
@@ -5362,6 +5712,40 @@ function validateRowsForBinding<TContext>(
   }
 
   validateTableConstraintRows(payload);
+}
+
+function normalizeRowsForBinding(
+  tableName: string,
+  rows: QueryRow[],
+  schema: SchemaDefinition,
+): QueryRow[] {
+  const table = schema.tables[tableName];
+  if (!table) {
+    return rows;
+  }
+
+  const timestampColumns = Object.entries(table.columns)
+    .filter(([, definition]) => resolveColumnType(definition) === "timestamp")
+    .map(([column]) => column);
+
+  if (timestampColumns.length === 0) {
+    return rows;
+  }
+
+  return rows.map((row) => {
+    let changed = false;
+    const next: QueryRow = { ...row };
+
+    for (const column of timestampColumns) {
+      const value = next[column];
+      if (value instanceof Date) {
+        next[column] = value.toISOString();
+        changed = true;
+      }
+    }
+
+    return changed ? next : row;
+  });
 }
 
 function collectCteDependencies(ast: SelectAst, cteNames: Set<string>, selfName: string): string[] {

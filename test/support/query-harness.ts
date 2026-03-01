@@ -134,5 +134,9 @@ function normalizeSqliteValue(value: unknown): unknown {
     return value ? 1 : 0;
   }
 
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
   return value ?? null;
 }
