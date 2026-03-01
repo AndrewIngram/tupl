@@ -15,7 +15,7 @@ Then users write SQL queries, and `sqlql` parses and executes them by calling yo
 
 Parser policy:
 
-- single parser mode via `node-sql-parser` default dialect
+- single in-house parser targeting SQLite SQL (baseline aligned to SQLite 3.51 semantics)
 - no parser fallback/workaround paths
 
 Supported:
@@ -37,9 +37,8 @@ Not yet supported:
 - recursive CTEs
 - correlated subqueries
 - subqueries in `FROM`
-- explicit window frame clauses
-- named `WINDOW` clauses/references
-- navigation window functions (`LEAD`, `LAG`, etc.)
+- advanced window frame clauses (beyond `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`)
+- some navigation/value window functions (`FIRST_VALUE`, `LAST_VALUE`, etc.)
 
 ## Schema constraints
 
@@ -200,6 +199,9 @@ import { toSqlDDL } from "sqlql";
 console.log(toSqlDDL(schema, { ifNotExists: true }));
 ```
 
+`toSqlDDL(...)` targets SQLite-friendly type output (`TEXT`, `INTEGER`) and includes timestamp
+metadata comments (ISO-8601 expectation) on timestamp columns.
+
 ## Facade example (Drizzle)
 
 The Drizzle example demonstrates a restricted, consumer-oriented facade:
@@ -243,13 +245,14 @@ pnpm example:playground:start
 
 - `src/schema.ts`: schema and table method contracts
 - `src/constraints.ts`: optional query-time constraint validation
-- `src/parser.ts`: SQL parser adapter (`node-sql-parser`, single mode, no fallback)
+- `src/parser.ts`: SQL parser adapter (in-house SQLite parser)
+- `src/sqlite-parser/*`: in-house SQLite lexer/parser + AST
 - `src/query.ts`: SQL parsing + query execution
 - `src/planning.ts`: planning model types
 - `src/index.ts`: package entrypoint
 - `packages/drizzle`: optional Drizzle adapter helpers (`@sqlql/drizzle`)
 - `docs/sql-standards-roadmap.md`: incremental SQL support plan
-- `docs/parser-known-issues.md`: parser-specific limitations and desired future behavior
+- `docs/parser-known-issues.md`: parser behavior notes and known gaps
 - `examples/playground`: interactive schema/data/query playground
 
 ## Local development

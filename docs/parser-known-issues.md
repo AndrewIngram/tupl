@@ -1,79 +1,58 @@
-# Parser Known Issues (`node-sql-parser`)
+# Parser Notes (In-House SQLite Parser)
 
-This document tracks parser-specific behavior that currently adds complexity to `sqlql`.
-If we later replace the parser, these are high-priority improvements.
+`sqlql` now uses an in-house SQL parser focused on the SQLite read-query subset that `sqlql`
+supports.
 
-## 1) Boolean precedence in AST (`AND` / `OR`)
+This document tracks parser-specific behavior and known gaps so support decisions remain explicit.
 
-Observed with current parser output:
+## Baseline and Scope
 
-- SQL: `a OR b AND c`
-- AST: `(a OR b) AND c`
-- SQL standard expectation: `a OR (b AND c)`
+- Baseline target: SQLite semantics as exercised by the parity suite (`better-sqlite3` runtime).
+- Parser scope: read queries (`SELECT`, `WITH`, joins, set ops, predicates, aggregates, windows in supported subset).
+- Non-goals in parser: write statements, parser fallback modes, and multi-statement execution.
 
-Impact:
+## Known Parser Gaps
 
-- We cannot trust raw parser boolean tree shape for precedence-sensitive predicates.
-- `sqlql` currently normalizes boolean expression trees before planning/evaluation.
+## 1) Coverage is intentionally subset-based, not full SQLite grammar
 
-Desired behavior in a future parser:
+The parser is designed around `sqlql`'s supported surface area, not full SQLite syntax.
+Queries outside the supported subset should fail fast with clear errors.
 
-- Emit precedence-correct AST by default.
-- Preserve explicit parenthesis grouping.
+Current examples of intentionally unsupported syntax:
 
-## 2) Dialect tradeoff for `RIGHT` / `FULL` joins
+- recursive CTE execution
+- correlated subqueries
+- subqueries in `FROM`
+- named `WINDOW` clauses/references
+- explicit window frame clauses
+- navigation window functions (`LEAD`, `LAG`, etc.)
 
-Observed:
+## 2) AST remains compatibility-oriented for executor/planner integration
 
-- Default parser mode accepts `RIGHT JOIN` and `FULL JOIN`.
-- `database: "sqlite"` mode rejects `RIGHT JOIN` / `FULL JOIN` syntax.
-
-Impact:
-
-- We cannot switch parser mode to SQLite just to improve parity behavior.
-- We keep default parser mode and handle SQLite parity in tests at execution level.
-
-Desired behavior in a future parser:
-
-- Consistent parse support for target SQL features independent of dialect mode.
-- Optional strict mode to reject unsupported features explicitly at validation stage.
-
-## 3) Operator normalization burden for planning pushdown
-
-Observed:
-
-- Parser emits operators as raw strings (`=`, `IN`, `BETWEEN`, etc.).
-- Not all operators map directly to current scan pushdown clauses.
+The internal parser emits AST nodes shaped to match `query.ts` expectations (for example,
+function-style `NOT`/`EXISTS` nodes and specific window node structures).
 
 Impact:
 
-- Pushdown parsing must treat unsupported operators as "not pushdown-safe" (fallback), not hard errors.
-- This adds defensive logic around filter extraction.
+- parser and executor evolution are coupled
+- AST schema changes must be made alongside planner/executor updates
 
-Desired behavior in a future parser:
+## 3) Expression/operator support is bounded to current planning/evaluation needs
 
-- Stable, typed operator enums.
-- Optional normalized predicate IR (including range predicates) to reduce planner glue code.
-
-## 4) Function-style predicate encoding
-
-Observed:
-
-- Some predicates (e.g. `NOT`, `EXISTS`) arrive in function-style AST nodes.
+The parser recognizes the operators and expression forms used by current query planning and
+evaluation logic. Unsupported operators are rejected or flow into "not pushdown-safe" paths.
 
 Impact:
 
-- Predicate evaluation must support both binary operator nodes and function-style predicates.
+- adding new SQL operators typically requires both parser and planner/evaluator changes
 
-Desired behavior in a future parser:
+## 4) Error diagnostics are intentionally simple
 
-- Unified predicate node kinds for unary/binary/logical operations.
-- Reduced evaluator branching for equivalent semantics.
+Parser errors prioritize stable behavior over rich diagnostics. Errors include message + token
+position, but they are not full compiler-style diagnostics.
 
-## Why keep this document
+## Test Anchors
 
-Parser replacement is not a short-term priority, but this list keeps design pressure visible:
-
-- what is parser behavior vs executor behavior
-- where we currently compensate in `sqlql`
-- what would simplify if we owned or replaced the parser
+- `test/parser/sqlite-parser.test.ts`: parser-conformance coverage (shape + rejection behavior)
+- `test/compliance/*-parity.test.ts`: SQLite parity behavior for supported query shapes
+- `test/compliance/standards-gaps.todo.test.ts`: explicit unsupported feature backlog

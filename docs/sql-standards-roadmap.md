@@ -50,15 +50,14 @@ Unsupported:
 - Correlated subqueries
 - Subqueries in `FROM`
 - Recursive CTEs
-- Explicit window frame clauses
-- Named `WINDOW` clauses/references
-- Navigation/value window functions (`LEAD`, `LAG`, `FIRST_VALUE`, `LAST_VALUE`, ...)
+- Advanced window frame clauses (beyond `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`)
+- Some navigation/value window functions (`FIRST_VALUE`, `LAST_VALUE`, ...)
 
 Target direction:
 
 - SQL standards compliance for read queries over time.
 - Keep parser/planner/executor behavior converging with SQLite parity for supported subsets.
-- Use a single parser mode (`node-sql-parser` default dialect), with no parser fallbacks/workarounds.
+- Use a single in-house parser targeting SQLite SQL, with no parser fallbacks/workarounds.
 - Treat schema constraints as communication-first metadata and optional runtime checks (not at-rest guarantees).
 - Defer index metadata and index-driven planning until constraint semantics are fully settled.
 - Continue expanding feature support milestone by milestone.
@@ -186,4 +185,4 @@ Compliance test locations:
 
 - `test/compliance/*-parity.test.ts`: curated sqllogictest-style parity scenarios split by capability.
 - `test/compliance/standards-gaps.todo.test.ts`: explicit standards-gap TODOs for not-yet-supported SQL features.
-- `docs/parser-known-issues.md`: parser behaviors that currently require executor/planner compensations.
+- `docs/parser-known-issues.md`: in-house parser behavior notes and known gaps.
