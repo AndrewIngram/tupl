@@ -27,6 +27,8 @@ interface SchemaRelationsGraphProps {
   onSelectTable(tableName: string): void;
   onClearSelection?(): void;
   heightClassName?: string;
+  frameClassName?: string;
+  embedded?: boolean;
 }
 
 const TableNode = memo(function TableNode({ data }: NodeProps): React.JSX.Element {
@@ -89,6 +91,8 @@ function SchemaRelationsGraphCanvas({
   onSelectTable,
   onClearSelection,
   heightClassName,
+  frameClassName,
+  embedded = false,
 }: SchemaRelationsGraphProps): React.JSX.Element {
   const layout = useMemo(() => buildSchemaGraphLayout(schema), [schema]);
   const model = useMemo(
@@ -129,7 +133,10 @@ function SchemaRelationsGraphCanvas({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50",
+        embedded
+          ? "overflow-hidden bg-slate-50"
+          : "overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50",
+        frameClassName,
         heightClassName ?? "h-[420px]",
       )}
     >
