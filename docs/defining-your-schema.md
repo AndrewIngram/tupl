@@ -30,6 +30,75 @@ const schema = defineSchema({
 
 Each table must declare `provider`, which maps table access to a registered provider adapter.
 
+## Lens DSL (provider-owned entities)
+
+For source-neutral modeling (SQL tables, Elasticsearch indices, Redis keyspaces, Mongo collections),
+you can define a logical schema as a lens over provider-owned entities:
+
+```ts
+import { createDataEntityHandle, defineSchema } from "sqlql";
+
+const ordersEntity = createDataEntityHandle({
+  entity: "orders_raw",
+  provider: "regional",
+});
+
+const schema = defineSchema(({ table }) => ({
+  tables: {
+    my_orders: table({
+      from: ordersEntity,
+      columns: {
+        id: { source: "id", type: "text", nullable: false },
+        total_cents: { source: "total_cents", type: "integer", nullable: false },
+      },
+    }),
+  },
+}));
+```
+
+This keeps SQL-facing names relational while allowing provider-facing entities to map to non-relational sources.
+
+Typed references are also supported when defining synthetic views:
+
+```ts
+const schema = defineSchema(({ table, view, rel, col, expr }) => {
+  const myOrders = table({
+    from: ordersEntity,
+    columns: {
+      id: col("id"),
+      vendorId: col("vendor_id"),
+    },
+  });
+
+  const vendors = table({
+    from: vendorsEntity,
+    columns: {
+      id: col("id"),
+      name: col("name"),
+    },
+  });
+
+  return {
+    tables: {
+      myOrders,
+      vendors,
+      orderVendors: view({
+        rel: () =>
+          rel.join({
+            left: rel.scan(myOrders),
+            right: rel.scan(vendors),
+            on: expr.eq(col(myOrders, "vendorId"), col(vendors, "id")),
+          }),
+        columns: {
+          orderId: col("myOrders.id"),
+          vendorName: col("vendors.name"),
+        },
+      }),
+    },
+  };
+});
+```
+
 `type` supports:
 
 - `"text"`

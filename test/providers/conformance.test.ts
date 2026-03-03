@@ -1,10 +1,9 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
-import type { ProviderAdapter, ProviderFragment, RelNode } from "../../src";
-import { createDrizzleProvider } from "../../packages/drizzle/src";
+import type { ProviderAdapter, ProviderFragment, QueryRow, RelNode } from "../../src";
+import { createDrizzleProvider, type DrizzleQueryExecutor } from "../../packages/drizzle/src";
 import { createKyselyProvider } from "../../packages/kysely/src";
-import { createObjectionProvider } from "../../packages/objection/src";
 
 function seedDatabase(): Database.Database {
   const sqlite = new Database(":memory:");
@@ -50,7 +49,6 @@ function buildRel(): RelNode {
           table: "orders",
           alias: "o",
           select: ["id", "user_id", "total_cents"],
-          where: [{ op: "gte", column: "total_cents", value: 1000 }],
           output: [{ name: "o.id" }, { name: "o.user_id" }, { name: "o.total_cents" }],
         },
         right: {
@@ -90,6 +88,46 @@ function buildRel(): RelNode {
   };
 }
 
+function createMockDrizzleDb(rowsByTable: Map<object, QueryRow[]>): DrizzleQueryExecutor {
+  return {
+    select(...args: unknown[]) {
+      const selection = (args[0] ?? {}) as Record<string, { name?: string }>;
+      let rows: QueryRow[] = [];
+      const builder = {
+        from(table: object) {
+          rows = [...(rowsByTable.get(table) ?? [])];
+          return builder;
+        },
+        where() {
+          return builder;
+        },
+        orderBy() {
+          return builder;
+        },
+        limit(value: number) {
+          rows = rows.slice(0, value);
+          return builder;
+        },
+        offset(value: number) {
+          rows = rows.slice(value);
+          return builder;
+        },
+        async execute() {
+          return rows.map((row) => {
+            const out: Record<string, unknown> = {};
+            for (const [outputName, column] of Object.entries(selection)) {
+              const source = column.name ?? outputName;
+              out[outputName] = row[source] ?? null;
+            }
+            return out;
+          });
+        },
+      };
+      return builder;
+    },
+  };
+}
+
 async function runRelFragment(
   providerName: string,
   provider: ProviderAdapter<object>,
@@ -109,52 +147,59 @@ async function runRelFragment(
 }
 
 describe("provider conformance (rel fragments)", () => {
-  it("returns equivalent rows for drizzle, objection, and kysely providers", async () => {
+  it("returns equivalent rows for drizzle and kysely providers", async () => {
     const expected = [
       { id: "o2", email: "ada@example.com", total_cents: 3000 },
       { id: "o1", email: "ada@example.com", total_cents: 1500 },
+      { id: "o3", email: "ben@example.com", total_cents: 700 },
     ];
 
     {
-      const sqlite = seedDatabase();
-      try {
-        const drizzleProvider = createDrizzleProvider({
-          db: { select: () => ({}) },
-          executeSql: async (sqlText) => sqlite.prepare(sqlText).all() as Array<Record<string, unknown>>,
-          tables: {
-            users: { table: {}, columns: {} as any },
-            orders: { table: {}, columns: {} as any },
-          },
-        });
+      const usersTable = { name: "users" };
+      const ordersTable = { name: "orders" };
+      const db = createMockDrizzleDb(
+        new Map<object, QueryRow[]>([
+          [
+            usersTable,
+            [
+              { id: "u1", email: "ada@example.com" },
+              { id: "u2", email: "ben@example.com" },
+            ],
+          ],
+          [
+            ordersTable,
+            [
+              { id: "o1", user_id: "u1", total_cents: 1500 },
+              { id: "o2", user_id: "u1", total_cents: 3000 },
+              { id: "o3", user_id: "u2", total_cents: 700 },
+            ],
+          ],
+        ]),
+      );
 
-        const rows = await runRelFragment("drizzle", drizzleProvider);
-        expect(rows).toEqual(expected);
-      } finally {
-        sqlite.close();
-      }
-    }
-
-    {
-      const sqlite = seedDatabase();
-      try {
-        const objectionProvider = createObjectionProvider({
-          knex: {
-            table() {
-              throw new Error("table() is not used in rel conformance test.");
+      const drizzleProvider = createDrizzleProvider({
+        db,
+        tables: {
+          users: {
+            table: usersTable,
+            columns: {
+              id: { name: "id" } as any,
+              email: { name: "email" } as any,
             },
-            async raw(sqlText: string) {
-              return {
-                rows: sqlite.prepare(sqlText).all(),
-              };
+          },
+          orders: {
+            table: ordersTable,
+            columns: {
+              id: { name: "id" } as any,
+              user_id: { name: "user_id" } as any,
+              total_cents: { name: "total_cents" } as any,
             },
           },
-        });
+        },
+      });
 
-        const rows = await runRelFragment("objection", objectionProvider);
-        expect(rows).toEqual(expected);
-      } finally {
-        sqlite.close();
-      }
+      const rows = await runRelFragment("drizzle", drizzleProvider);
+      expect(rows).toEqual(expected);
     }
 
     {

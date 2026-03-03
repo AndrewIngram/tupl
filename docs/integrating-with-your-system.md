@@ -8,6 +8,11 @@ This guide covers the provider-first runtime in `sqlql` v1.
 2. `defineProviders(...)` with one adapter per provider name.
 3. `query({ schema, providers, context, sql, queryGuardrails? })`.
 
+You can also use source-neutral entity handles (`createDataEntityHandle`) and map logical SQL tables
+to provider-owned entities via the schema DSL (`table({ from, columns })`).
+When using the DSL callback form, `table(...)` values can be reused as typed references in
+`rel.scan(...)` and `col(tableRef, \"column\")`.
+
 ## Provider interface
 
 A provider implements:
@@ -17,6 +22,11 @@ A provider implements:
 - `execute(compiled, context)`
 - optional `lookupMany(request, context)`
 - optional `estimate(fragment, context)`
+
+Source-neutral naming:
+
+- `DataSourceAdapter` is an alias of the provider contract.
+- `DataEntityHandle` represents a provider-owned physical entity (table/index/keyspace/collection).
 
 `lookupMany` enables cross-provider lookup joins (`INNER`/`LEFT`) without full scans on the lookup side.
 
@@ -81,3 +91,19 @@ const rows = await query({
 - `@sqlql/kysely`
 
 These implement the same provider contract with backend-specific execution behavior.
+
+## Facade-over-downstream pattern
+
+A practical integration pattern is:
+
+1. Keep a larger downstream data model (for example operational tables in Postgres/Drizzle).
+2. Expose a narrower, user-centric facade schema in `sqlql`.
+3. Apply mandatory context scope in provider table config (`scope(context)`).
+4. Let users query only the facade tables.
+
+This is exactly how the playground demo is wired:
+
+- downstream DB: pglite + Drizzle raw tables (`orgs`, `users`, `vendors`, `products`, `orders`, `order_items`)
+- facade tables: scoped lenses (`my_orders`, `my_order_items`, `vendors_for_org`, `active_products`)
+- context controls: `orgId` and `userId`
+- explain UI: shows `user SQL -> facade rel -> provider fragment` translation

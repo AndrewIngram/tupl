@@ -24,6 +24,7 @@ import {
   type ProvidersMap,
 } from "./provider";
 import type { ScanFilterClause, SchemaDefinition } from "./schema";
+import { getNormalizedTableBinding, type ColumnDefinition } from "./schema";
 
 export interface RelLoweringResult {
   rel: RelNode;
@@ -55,10 +56,25 @@ interface SelectProjection {
 
 interface ParsedOrderTerm {
   source: {
-    alias: string;
+    alias?: string;
     column: string;
   };
   direction: "asc" | "desc";
+}
+
+interface ParsedAggregateProjection {
+  kind: "group" | "metric";
+  output: string;
+  source?: {
+    alias: string;
+    column: string;
+  };
+  metric?: {
+    fn: "count" | "sum" | "avg" | "min" | "max";
+    as: string;
+    column?: RelColumnRef;
+    distinct?: boolean;
+  };
 }
 
 interface LiteralFilter {
@@ -134,7 +150,7 @@ async function planPhysicalNode<TContext>(
   sql: string,
   state: { steps: PhysicalStep[] },
 ): Promise<string> {
-  const remoteStepId = await tryPlanRemoteFragment(node, schema, providers, context, sql, state);
+  const remoteStepId = await tryPlanRemoteFragment(node, schema, providers, context, state);
   if (remoteStepId) {
     return remoteStepId;
   }
@@ -258,7 +274,6 @@ async function tryPlanRemoteFragment<TContext>(
   schema: SchemaDefinition,
   providers: ProvidersMap<TContext>,
   context: TContext,
-  sql: string,
   state: { steps: PhysicalStep[] },
 ): Promise<string | null> {
   const provider = resolveSingleProvider(node, schema);
@@ -271,7 +286,7 @@ async function tryPlanRemoteFragment<TContext>(
     throw new Error(`Missing provider adapter: ${provider}`);
   }
 
-  const fragment = buildProviderFragmentForNode(node, provider, sql);
+  const fragment = buildProviderFragmentForNode(node, schema, provider);
   const capability = normalizeCapability(await adapter.canExecute(fragment, context));
   if (!capability.supported) {
     return null;
@@ -290,38 +305,316 @@ async function tryPlanRemoteFragment<TContext>(
   return step.id;
 }
 
-function buildProviderFragmentForNode(node: RelNode, provider: string, sql: string): ProviderFragment {
+export function buildProviderFragmentForRel(
+  node: RelNode,
+  schema: SchemaDefinition,
+): ProviderFragment | null {
+  const provider = resolveSingleProvider(node, schema);
+  if (!provider) {
+    return null;
+  }
+
+  return buildProviderFragmentForNode(node, schema, provider);
+}
+
+function buildProviderFragmentForNode(
+  node: RelNode,
+  schema: SchemaDefinition,
+  provider: string,
+): ProviderFragment {
   if (node.kind === "scan") {
+    const normalizedScan = normalizeScanForProvider(node, schema);
     return {
       kind: "scan",
       provider,
-      table: node.table,
+      table: normalizedScan.table,
       request: {
-        table: node.table,
-        ...(node.alias ? { alias: node.alias } : {}),
-        select: node.select,
-        ...(node.where ? { where: node.where } : {}),
-        ...(node.orderBy ? { orderBy: node.orderBy } : {}),
-        ...(node.limit != null ? { limit: node.limit } : {}),
-        ...(node.offset != null ? { offset: node.offset } : {}),
+        table: normalizedScan.table,
+        ...(normalizedScan.alias ? { alias: normalizedScan.alias } : {}),
+        select: normalizedScan.select,
+        ...(normalizedScan.where ? { where: normalizedScan.where } : {}),
+        ...(normalizedScan.orderBy ? { orderBy: normalizedScan.orderBy } : {}),
+        ...(normalizedScan.limit != null ? { limit: normalizedScan.limit } : {}),
+        ...(normalizedScan.offset != null ? { offset: normalizedScan.offset } : {}),
       },
-    };
-  }
-
-  if (node.kind === "sql") {
-    return {
-      kind: "sql_query",
-      provider,
-      sql: node.sql,
-      rel: node,
     };
   }
 
   return {
     kind: "rel",
     provider,
-    rel: node,
+    rel: normalizeRelForProvider(node, schema),
   };
+}
+
+type AliasToSourceMap = Map<string, Record<string, string>>;
+
+function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition): RelNode {
+  const aliasToSource = collectAliasToSourceMappings(node, schema);
+
+  const visit = (current: RelNode): RelNode => {
+    switch (current.kind) {
+      case "scan":
+        return normalizeScanForProvider(current, schema);
+      case "filter":
+        return {
+          ...current,
+          input: visit(current.input),
+          where: current.where.map((clause) => ({
+            ...clause,
+            column: mapColumnNameForAlias(clause.column, aliasToSource),
+          })),
+        };
+      case "project":
+        return {
+          ...current,
+          input: visit(current.input),
+          columns: current.columns.map((column) => ({
+            ...column,
+            source: mapColumnRefForAlias(column.source, aliasToSource),
+          })),
+        };
+      case "join":
+        return {
+          ...current,
+          left: visit(current.left),
+          right: visit(current.right),
+          leftKey: mapColumnRefForAlias(current.leftKey, aliasToSource),
+          rightKey: mapColumnRefForAlias(current.rightKey, aliasToSource),
+        };
+      case "aggregate":
+        return {
+          ...current,
+          input: visit(current.input),
+          groupBy: current.groupBy.map((column) => mapColumnRefForAlias(column, aliasToSource)),
+          metrics: current.metrics.map((metric) => ({
+            ...metric,
+            ...(metric.column
+              ? { column: mapColumnRefForAlias(metric.column, aliasToSource) }
+              : {}),
+          })),
+        };
+      case "sort":
+        return {
+          ...current,
+          input: visit(current.input),
+          orderBy: current.orderBy.map((term) => ({
+            ...term,
+            source: mapColumnRefForAlias(term.source, aliasToSource),
+          })),
+        };
+      case "limit_offset":
+        return {
+          ...current,
+          input: visit(current.input),
+        };
+      case "set_op":
+        return {
+          ...current,
+          left: visit(current.left),
+          right: visit(current.right),
+        };
+      case "with":
+        return {
+          ...current,
+          ctes: current.ctes.map((cte) => ({
+            ...cte,
+            query: visit(cte.query),
+          })),
+          body: visit(current.body),
+        };
+      case "sql":
+        return current;
+    }
+  };
+
+  return visit(node);
+}
+
+function normalizeScanForProvider(node: RelScanNode, schema: SchemaDefinition): RelScanNode {
+  const binding = getNormalizedTableBinding(schema, node.table);
+  if (!binding || binding.kind !== "physical") {
+    return node;
+  }
+  const table = schema.tables[node.table];
+
+  const mapColumn = (column: string): string => binding.columnToSource[column] ?? column;
+  const mapClause = (clause: ScanFilterClause): ScanFilterClause => {
+    const mapped = mapEnumFilterForProvider(table?.columns[clause.column], clause);
+    return {
+      ...mapped,
+      column: mapColumn(mapped.column),
+    };
+  };
+
+  return {
+    ...node,
+    table: binding.entity,
+    select: node.select.map(mapColumn),
+    ...(node.where
+      ? {
+          where: node.where.map(mapClause),
+        }
+      : {}),
+    ...(node.orderBy
+      ? {
+          orderBy: node.orderBy.map((term) => ({
+            ...term,
+            column: mapColumn(term.column),
+          })),
+        }
+      : {}),
+  };
+}
+
+function mapEnumFilterForProvider(
+  definition: unknown,
+  clause: ScanFilterClause,
+): ScanFilterClause {
+  if (!definition || typeof definition === "string") {
+    return clause;
+  }
+
+  const column = definition as ColumnDefinition;
+  if (!column.enumMap || Object.keys(column.enumMap).length === 0) {
+    return clause;
+  }
+
+  const mapFacadeValueToSource = (value: unknown): string[] => {
+    if (typeof value !== "string") {
+      return [];
+    }
+    const out: string[] = [];
+    for (const [sourceValue, facadeValue] of Object.entries(column.enumMap ?? {})) {
+      if (facadeValue === value) {
+        out.push(sourceValue);
+      }
+    }
+    return out;
+  };
+
+  if (clause.op === "eq") {
+    const mappedValues = mapFacadeValueToSource(clause.value);
+    if (mappedValues.length === 0) {
+      throw new Error(
+        `No upstream enum mapping for value ${JSON.stringify(clause.value)} on ${clause.column}.`,
+      );
+    }
+    if (mappedValues.length === 1) {
+      return {
+        ...clause,
+        value: mappedValues[0],
+      };
+    }
+    return {
+      op: "in",
+      column: clause.column,
+      values: mappedValues,
+    };
+  }
+
+  if (clause.op === "in") {
+    const mapped = [...new Set(clause.values.flatMap((value) => mapFacadeValueToSource(value)))];
+    if (mapped.length === 0) {
+      throw new Error(
+        `No upstream enum mappings for IN predicate on ${clause.column}.`,
+      );
+    }
+    return {
+      ...clause,
+      values: mapped,
+    };
+  }
+
+  return clause;
+}
+
+function collectAliasToSourceMappings(node: RelNode, schema: SchemaDefinition): AliasToSourceMap {
+  const mappings: AliasToSourceMap = new Map();
+
+  const visit = (current: RelNode): void => {
+    switch (current.kind) {
+      case "scan": {
+        const binding = getNormalizedTableBinding(schema, current.table);
+        if (binding?.kind !== "physical") {
+          return;
+        }
+        const alias = current.alias ?? current.table;
+        mappings.set(alias, binding.columnToSource);
+        return;
+      }
+      case "filter":
+      case "project":
+      case "aggregate":
+      case "sort":
+      case "limit_offset":
+        visit(current.input);
+        return;
+      case "join":
+      case "set_op":
+        visit(current.left);
+        visit(current.right);
+        return;
+      case "with":
+        for (const cte of current.ctes) {
+          visit(cte.query);
+        }
+        visit(current.body);
+        return;
+      case "sql":
+        return;
+    }
+  };
+
+  visit(node);
+  return mappings;
+}
+
+function mapColumnRefForAlias(ref: RelColumnRef, aliasToSource: AliasToSourceMap): RelColumnRef {
+  const alias = ref.alias ?? ref.table;
+  if (alias) {
+    const mapping = aliasToSource.get(alias);
+    if (!mapping) {
+      return ref;
+    }
+    return {
+      ...ref,
+      column: mapping[ref.column] ?? ref.column,
+    };
+  }
+
+  return {
+    ...ref,
+    column: mapColumnNameForAlias(ref.column, aliasToSource),
+  };
+}
+
+function mapColumnNameForAlias(column: string, aliasToSource: AliasToSourceMap): string {
+  const idx = column.lastIndexOf(".");
+  if (idx > 0) {
+    const alias = column.slice(0, idx);
+    const name = column.slice(idx + 1);
+    const mapping = aliasToSource.get(alias);
+    if (!mapping) {
+      return column;
+    }
+    const mapped = mapping[name] ?? name;
+    return `${alias}.${mapped}`;
+  }
+
+  let mappedColumn: string | null = null;
+  for (const mapping of aliasToSource.values()) {
+    if (!(column in mapping)) {
+      continue;
+    }
+    const candidate = mapping[column] ?? column;
+    if (mappedColumn && mappedColumn !== candidate) {
+      return column;
+    }
+    mappedColumn = candidate;
+  }
+
+  return mappedColumn ?? column;
 }
 
 function resolveSingleProvider(node: RelNode, schema: SchemaDefinition): string | null {
@@ -330,7 +623,14 @@ function resolveSingleProvider(node: RelNode, schema: SchemaDefinition): string 
     return null;
   }
 
-  const providers = new Set(tables.map((table) => resolveTableProvider(schema, table)));
+  const providers = new Set<string>();
+  for (const table of tables) {
+    const normalized = getNormalizedTableBinding(schema, table);
+    if (normalized?.kind === "view") {
+      return null;
+    }
+    providers.add(resolveTableProvider(schema, table));
+  }
   if (providers.size !== 1) {
     return null;
   }
@@ -341,6 +641,13 @@ function resolveSingleProvider(node: RelNode, schema: SchemaDefinition): string 
 function assignConventions(node: RelNode, schema: SchemaDefinition): RelNode {
   switch (node.kind) {
     case "scan": {
+      const normalized = getNormalizedTableBinding(schema, node.table);
+      if (normalized?.kind === "view") {
+        return {
+          ...node,
+          convention: "local",
+        };
+      }
       const provider = resolveTableProvider(schema, node.table);
       return {
         ...node,
@@ -408,7 +715,7 @@ function tryLowerSimpleSelect(ast: SelectAst, schema: SchemaDefinition): RelNode
     return null;
   }
 
-  if (ast.with || ast.set_op || ast._next || ast.groupby || ast.having || ast.distinct || ast.window) {
+  if (ast.with || ast.set_op || ast._next || ast.having || ast.window) {
     return null;
   }
 
@@ -446,17 +753,67 @@ function tryLowerSimpleSelect(ast: SelectAst, schema: SchemaDefinition): RelNode
     return null;
   }
 
-  const projections = parseProjection(ast.columns, bindings, aliasToBinding);
-  if (projections == null) {
-    return null;
-  }
-
   const whereFilters = parseWhereFilters(ast.where, bindings, aliasToBinding);
   if (whereFilters == null) {
     return null;
   }
 
-  const orderBy = parseOrderBy(ast.orderby, bindings, aliasToBinding);
+  const groupBy = parseGroupBy(ast.groupby, bindings, aliasToBinding);
+  if (groupBy == null) {
+    return null;
+  }
+
+  const distinctMode = ast.distinct === "DISTINCT";
+  const aggregateMode = groupBy.length > 0 || hasAggregateProjection(ast.columns) || distinctMode;
+
+  const projections = aggregateMode
+    ? null
+    : parseProjection(ast.columns, bindings, aliasToBinding);
+  if (!aggregateMode && projections == null) {
+    return null;
+  }
+
+  const aggregateProjections = aggregateMode
+    ? parseAggregateProjections(ast.columns, bindings, aliasToBinding)
+    : null;
+  if (aggregateMode && aggregateProjections == null) {
+    return null;
+  }
+
+  const safeAggregateProjections = aggregateMode ? (aggregateProjections ?? []) : [];
+  const safeProjections = aggregateMode ? [] : (projections ?? []);
+  let effectiveGroupBy = groupBy;
+
+  if (distinctMode && effectiveGroupBy.length === 0) {
+    const distinctGroupBy: RelColumnRef[] = [];
+    for (const projection of safeAggregateProjections) {
+      if (projection.kind !== "group" || !projection.source) {
+        // Defer DISTINCT+aggregate/function cases to the generic fallback path.
+        return null;
+      }
+      distinctGroupBy.push({
+        alias: projection.source.alias,
+        column: projection.source.column,
+      });
+    }
+
+    if (distinctGroupBy.length === 0) {
+      return null;
+    }
+    effectiveGroupBy = distinctGroupBy;
+  }
+
+  if (aggregateMode && !validateAggregateProjectionGroupBy(safeAggregateProjections, effectiveGroupBy)) {
+    return null;
+  }
+
+  const outputAliases = new Set<string>(
+    aggregateMode
+      ? safeAggregateProjections.map((projection) => projection.output)
+      : safeProjections.map((projection) => projection.output),
+  );
+
+  const orderBy = parseOrderBy(ast.orderby, bindings, aliasToBinding, outputAliases);
   if (orderBy == null) {
     return null;
   }
@@ -468,8 +825,30 @@ function tryLowerSimpleSelect(ast: SelectAst, schema: SchemaDefinition): RelNode
     columnsByAlias.set(binding.alias, new Set<string>());
   }
 
-  for (const projection of projections) {
-    columnsByAlias.get(projection.source.alias)?.add(projection.source.column);
+  if (aggregateMode) {
+    for (const projection of safeAggregateProjections) {
+      if (projection.kind === "group" && projection.source) {
+        columnsByAlias.get(projection.source.alias)?.add(projection.source.column);
+      }
+
+      if (projection.kind === "metric" && projection.metric?.column) {
+        const metricSource = projection.metric.column;
+        const alias = metricSource.alias ?? metricSource.table;
+        if (alias) {
+          columnsByAlias.get(alias)?.add(metricSource.column);
+        }
+      }
+    }
+
+    for (const ref of effectiveGroupBy) {
+      if (ref.alias) {
+        columnsByAlias.get(ref.alias)?.add(ref.column);
+      }
+    }
+  } else {
+    for (const projection of safeProjections) {
+      columnsByAlias.get(projection.source.alias)?.add(projection.source.column);
+    }
   }
 
   for (const join of joins) {
@@ -482,7 +861,9 @@ function tryLowerSimpleSelect(ast: SelectAst, schema: SchemaDefinition): RelNode
   }
 
   for (const term of orderBy) {
-    columnsByAlias.get(term.source.alias)?.add(term.source.column);
+    if (term.source.alias) {
+      columnsByAlias.get(term.source.alias)?.add(term.source.column);
+    }
   }
 
   for (const binding of bindings) {
@@ -571,6 +952,33 @@ function tryLowerSimpleSelect(ast: SelectAst, schema: SchemaDefinition): RelNode
     };
   }
 
+  if (aggregateMode) {
+    current = {
+      id: nextRelId("aggregate"),
+      kind: "aggregate",
+      convention: "local",
+      input: current,
+      groupBy: effectiveGroupBy,
+      metrics: safeAggregateProjections
+        .filter((projection): projection is ParsedAggregateProjection & { metric: NonNullable<ParsedAggregateProjection["metric"]> } =>
+          projection.kind === "metric" && !!projection.metric
+        )
+        .map((projection) => projection.metric),
+      output: [
+        ...effectiveGroupBy.map((ref) => ({
+          name: ref.column,
+        })),
+        ...safeAggregateProjections
+          .filter((projection): projection is ParsedAggregateProjection & { metric: NonNullable<ParsedAggregateProjection["metric"]> } =>
+            projection.kind === "metric" && !!projection.metric
+          )
+          .map((projection) => ({
+            name: projection.metric.as,
+          })),
+      ],
+    };
+  }
+
   if (orderBy.length > 0) {
     current = {
       id: nextRelId("sort"),
@@ -578,10 +986,14 @@ function tryLowerSimpleSelect(ast: SelectAst, schema: SchemaDefinition): RelNode
       convention: "local",
       input: current,
       orderBy: orderBy.map((term) => ({
-        source: {
-          alias: term.source.alias,
-          column: term.source.column,
-        },
+        source: term.source.alias
+          ? {
+              alias: term.source.alias,
+              column: term.source.column,
+            }
+          : {
+              column: term.source.column,
+            },
         direction: term.direction,
       })),
       output: current.output,
@@ -605,14 +1017,29 @@ function tryLowerSimpleSelect(ast: SelectAst, schema: SchemaDefinition): RelNode
     kind: "project",
     convention: "local",
     input: current,
-    columns: projections.map((projection) => ({
-      source: {
-        alias: projection.source.alias,
-        column: projection.source.column,
-      },
-      output: projection.output,
-    })),
-    output: projections.map((projection) => ({
+    columns: aggregateMode
+      ? safeAggregateProjections.map((projection) =>
+          projection.kind === "group" && projection.source
+            ? {
+                source: {
+                  column: projection.source.column,
+                },
+                output: projection.output,
+              }
+            : {
+                source: {
+                  column: projection.metric!.as,
+                },
+                output: projection.output,
+              })
+      : safeProjections.map((projection) => ({
+          source: {
+            alias: projection.source.alias,
+            column: projection.source.column,
+          },
+          output: projection.output,
+        })),
+    output: (aggregateMode ? safeAggregateProjections : safeProjections).map((projection) => ({
       name: projection.output,
     })),
   };
@@ -741,10 +1168,211 @@ function parseProjection(
   return out;
 }
 
+function hasAggregateProjection(rawColumns: unknown): boolean {
+  if (rawColumns === "*") {
+    return false;
+  }
+
+  const columns = Array.isArray(rawColumns) ? (rawColumns as SelectColumnAst[]) : [];
+  return columns.some((entry) => (entry.expr as { type?: unknown })?.type === "aggr_func");
+}
+
+function parseGroupBy(
+  rawGroupBy: unknown,
+  bindings: Binding[],
+  aliasToBinding: Map<string, Binding>,
+): RelColumnRef[] | null {
+  if (!rawGroupBy || typeof rawGroupBy !== "object") {
+    return [];
+  }
+
+  const groupBy = rawGroupBy as { columns?: unknown };
+  const columns = Array.isArray(groupBy.columns) ? groupBy.columns : [];
+  const refs: RelColumnRef[] = [];
+
+  for (const entry of columns) {
+    const resolved = resolveColumnRef(entry, bindings, aliasToBinding);
+    if (!resolved) {
+      return null;
+    }
+
+    refs.push({
+      alias: resolved.alias,
+      column: resolved.column,
+    });
+  }
+
+  return refs;
+}
+
+function parseAggregateProjections(
+  rawColumns: unknown,
+  bindings: Binding[],
+  aliasToBinding: Map<string, Binding>,
+): ParsedAggregateProjection[] | null {
+  if (rawColumns === "*") {
+    return null;
+  }
+
+  const columns = Array.isArray(rawColumns) ? (rawColumns as SelectColumnAst[]) : [];
+  if (columns.length === 0) {
+    return null;
+  }
+
+  const out: ParsedAggregateProjection[] = [];
+
+  for (const entry of columns) {
+    const exprType = (entry.expr as { type?: unknown })?.type;
+    if (exprType === "aggr_func") {
+      const output =
+        typeof entry.as === "string" && entry.as.length > 0
+          ? entry.as
+          : deriveDefaultAggregateOutputName(entry.expr);
+      const metric = parseAggregateMetric(entry.expr, output, bindings, aliasToBinding);
+      if (!metric) {
+        return null;
+      }
+
+      out.push({
+        kind: "metric",
+        output,
+        metric,
+      });
+      continue;
+    }
+
+    const column = resolveColumnRef(entry.expr, bindings, aliasToBinding);
+    if (!column) {
+      return null;
+    }
+
+    out.push({
+      kind: "group",
+      source: {
+        alias: column.alias,
+        column: column.column,
+      },
+      output: typeof entry.as === "string" && entry.as.length > 0 ? entry.as : column.column,
+    });
+  }
+
+  return out;
+}
+
+function parseAggregateMetric(
+  raw: unknown,
+  output: string,
+  bindings: Binding[],
+  aliasToBinding: Map<string, Binding>,
+): ParsedAggregateProjection["metric"] | null {
+  const expr = raw as {
+    type?: unknown;
+    name?: unknown;
+    args?: {
+      expr?: unknown;
+      distinct?: unknown;
+    };
+  };
+
+  if (expr.type !== "aggr_func" || typeof expr.name !== "string") {
+    return null;
+  }
+
+  const fn = expr.name.toLowerCase();
+  if (fn !== "count" && fn !== "sum" && fn !== "avg" && fn !== "min" && fn !== "max") {
+    return null;
+  }
+
+  const distinct = expr.args?.distinct === "DISTINCT";
+  const arg = expr.args?.expr;
+  const column = parseAggregateMetricColumn(arg, bindings, aliasToBinding);
+
+  if (fn === "count") {
+    if (column === null) {
+      return null;
+    }
+    if (!column && distinct) {
+      return null;
+    }
+
+    return {
+      fn,
+      as: output,
+      ...(column ? { column } : {}),
+      ...(distinct ? { distinct: true } : {}),
+    };
+  }
+
+  if (!column) {
+    return null;
+  }
+
+  return {
+    fn,
+    as: output,
+    column,
+    ...(distinct ? { distinct: true } : {}),
+  };
+}
+
+function parseAggregateMetricColumn(
+  raw: unknown,
+  bindings: Binding[],
+  aliasToBinding: Map<string, Binding>,
+): RelColumnRef | null | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const maybeStar = raw as { type?: unknown; value?: unknown };
+  if (maybeStar.type === "star" || maybeStar.value === "*") {
+    return undefined;
+  }
+
+  const resolved = resolveColumnRef(raw, bindings, aliasToBinding);
+  if (!resolved) {
+    return null;
+  }
+
+  return {
+    alias: resolved.alias,
+    column: resolved.column,
+  };
+}
+
+function deriveDefaultAggregateOutputName(raw: unknown): string {
+  const expr = raw as { name?: unknown };
+  const fn = typeof expr.name === "string" ? expr.name.toLowerCase() : "agg";
+  return `${fn}_value`;
+}
+
+function validateAggregateProjectionGroupBy(
+  projections: ParsedAggregateProjection[],
+  groupBy: RelColumnRef[],
+): boolean {
+  const groupBySet = new Set(
+    groupBy.map((ref) => `${ref.alias ?? ""}.${ref.column}`),
+  );
+
+  for (const projection of projections) {
+    if (projection.kind !== "group" || !projection.source) {
+      continue;
+    }
+
+    const key = `${projection.source.alias}.${projection.source.column}`;
+    if (!groupBySet.has(key)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function parseOrderBy(
   rawOrderBy: unknown,
   bindings: Binding[],
   aliasToBinding: Map<string, Binding>,
+  outputAliases: Set<string> = new Set<string>(),
 ): ParsedOrderTerm[] | null {
   const orderBy = Array.isArray(rawOrderBy) ? (rawOrderBy as OrderByTermAst[]) : [];
   const out: ParsedOrderTerm[] = [];
@@ -752,6 +1380,21 @@ function parseOrderBy(
   for (const term of orderBy) {
     const resolved = resolveColumnRef(term.expr, bindings, aliasToBinding);
     if (!resolved) {
+      const rawRef = toRawColumnRef(term.expr);
+      if (!rawRef || rawRef.table || !outputAliases.has(rawRef.column)) {
+        return null;
+      }
+
+      out.push({
+        source: {
+          column: rawRef.column,
+        },
+        direction: term.type === "DESC" ? "desc" : "asc",
+      });
+      continue;
+    }
+
+    if (!resolved.alias) {
       return null;
     }
 
@@ -1148,6 +1791,12 @@ function resolveLookupJoinCandidate<TContext>(
   const leftScan = findFirstScanNode(join.left);
   const rightScan = findFirstScanNode(join.right);
   if (!leftScan || !rightScan) {
+    return null;
+  }
+
+  const leftBinding = getNormalizedTableBinding(schema, leftScan.table);
+  const rightBinding = getNormalizedTableBinding(schema, rightScan.table);
+  if (leftBinding?.kind === "view" || rightBinding?.kind === "view") {
     return null;
   }
 

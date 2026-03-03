@@ -5,6 +5,8 @@ _Warning:_ Currently very rough and LLM-generated, not ready for production use.
 `sqlql` is a TypeScript library for exposing a SQL interface over arbitrary data sources.
 You define a logical schema and provider adapters, then users write SQL and `sqlql` executes by planning relational fragments across providers.
 
+The SQL surface stays relational (`table`, `view`), while provider internals are source-neutral (`DataSourceAdapter`, `DataEntityHandle`) so non-relational systems (Redis/Elasticsearch/MongoDB) fit naturally.
+
 ## Why
 
 One core motivation is AI tooling.
@@ -123,11 +125,22 @@ Providers expose fragment planning/execution and optional lookup joins:
 - `lookupMany(request, context)` (optional, used for cross-provider lookup joins)
 - `estimate(fragment, context)` (optional)
 
+Cross-provider joins:
+
+- `lookupMany` is used for lookup-join plans across providers.
+- There is currently no explicit boundary/domain field in provider registration.
+
 First-party provider packages:
 
 - `@sqlql/drizzle`
 - `@sqlql/objection`
 - `@sqlql/kysely`
+
+Schema DSL typed refs:
+
+- `table(...)` definitions can be passed directly to `rel.scan(tableRef)`.
+- `col(tableRef, "column")` is type-checked against that table's logical columns.
+- String refs remain supported for compatibility (`rel.scan("table")`, `col("table.column")`).
 
 Prisma is intentionally not shipped in v1. The recommended path is a custom provider using raw SQL execution hooks until a dedicated adapter lands.
 
@@ -169,7 +182,7 @@ For demos/tests, register a lightweight provider that reads from in-memory row a
 
 - `sqlql` does not provide authorization or tenancy guarantees by itself.
 - Provider adapters must enforce access control and data security.
-- `sqlql` can add query-shape guardrails, but security guarantees come from your domain/storage layer.
+- `sqlql` can add query-shape guardrails, but security guarantees come from your application/storage layer.
 
 ## Performance philosophy
 
@@ -215,20 +228,22 @@ Not yet supported:
 The playground is a Vite + React app for interactive exploration with three top-level tabs:
 
 - `Schema`:
-  - JSON schema editor
+  - JSON editor for the **facade schema** exposed to SQL users
   - relation diagram (React Flow) from declared foreign keys
   - generated DDL viewer (syntax-highlighted SQL)
-  - preset selector (`Custom` is selected automatically after edits)
 - `Data`:
-  - table list from current schema
+  - editable rows for a fixed **downstream database** (`orgs`, `users`, `vendors`, `products`, `orders`, `order_items`)
   - per-table `JSON` editor and `Table` grid editor
   - enum/type-aware editing and schema-driven validation
 - `Query`:
-  - global preset-query catalog (queries from all packs)
+  - scenario selector (context + downstream seed data) and query preset selector
+  - runtime lens context controls (`orgId`, `userId`)
   - compatibility-aware query picker (incompatible queries are disabled with reasons)
   - compact one-line SQL preview that expands into Monaco on focus
   - auto-run on valid schema/data/query (no manual run button)
-  - `Result` tab for rows and `Explain` tab for plan graph + step overlay details
+  - `Result` tab for rows and `Explain` tab for:
+    - translation pipeline (`user SQL -> facade rel -> provider fragment`)
+    - plan graph + step overlay details
 
 Run:
 

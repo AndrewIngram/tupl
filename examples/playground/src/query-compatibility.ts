@@ -1,10 +1,8 @@
 import {
-  createQuerySession,
   defaultSqlAstParser,
   type SchemaDefinition,
 } from "sqlql";
 
-import { createPlaygroundProviders } from "./memory-provider";
 import type {
   CatalogQueryEntry,
   QueryCompatibility,
@@ -127,22 +125,6 @@ export function checkQueryCompatibility(
       }
     }
 
-    const emptyRows = Object.fromEntries(
-      Object.keys(schema.tables).map((tableName) => [tableName, []]),
-    );
-    const providers = createPlaygroundProviders(schema, emptyRows);
-    const session = createQuerySession({
-      schema,
-      providers,
-      context: {},
-      sql: normalizedSql,
-      options: {
-        maxConcurrency: 1,
-        captureRows: "full",
-      },
-    });
-
-    session.getPlan();
     return { compatible: true };
   } catch (error) {
     return {

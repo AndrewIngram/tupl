@@ -1,5 +1,7 @@
 export * from "./schema";
+export * from "./array-methods";
 export * from "./query-v1";
+export { parseSql } from "./query";
 export * from "./constraints";
 export * from "./parser";
 export * from "./provider";

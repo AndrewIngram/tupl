@@ -3,7 +3,7 @@ import {
   createQuerySession as createLegacyQuerySession,
   query as legacyQuery,
   type QueryExecutionPlan as LegacyQueryExecutionPlan,
-  type QueryExecutionPlanScope,
+  type QueryExecutionPlanScope as LegacyQueryExecutionPlanScope,
   type QueryExecutionPlanStep as LegacyQueryExecutionPlanStep,
   type QuerySession as LegacyQuerySession,
   type QuerySessionInput as LegacyQuerySessionInput,
@@ -23,7 +23,8 @@ import {
 } from "./provider";
 import { collectRelTables, countRelNodes, type RelNode } from "./rel";
 import { executeRelWithProviders, UnsupportedRelExecutionError } from "./executor";
-import { lowerSqlToRel, planPhysicalQuery } from "./planning";
+import { buildProviderFragmentForRel, lowerSqlToRel, planPhysicalQuery } from "./planning";
+import { getNormalizedTableBinding, resolveSchemaLinkedEnums } from "./schema";
 import type {
   QueryRow,
   SchemaDefinition,
@@ -50,7 +51,8 @@ export const DEFAULT_QUERY_GUARDRAILS: QueryGuardrails = {
 
 export interface QueryInput<TContext> {
   schema: SchemaDefinition;
-  providers: ProvidersMap<TContext>;
+  providers?: ProvidersMap<TContext>;
+  methods?: TableMethodsMap<TContext>;
   context: TContext;
   sql: string;
   queryGuardrails?: Partial<QueryGuardrails>;
@@ -58,7 +60,7 @@ export interface QueryInput<TContext> {
 }
 
 export type QueryStepKind = LegacyQueryStepKind | "remote_fragment" | "lookup_join";
-export type QueryStepRoute = "provider_fragment" | "lookup_join" | "local";
+export type QueryStepRoute = LegacyQueryStepRoute | "provider_fragment" | "lookup_join";
 
 export interface QueryExecutionPlanStep
   extends Omit<LegacyQueryExecutionPlanStep, "kind"> {
@@ -69,6 +71,8 @@ export interface QueryExecutionPlan {
   steps: QueryExecutionPlanStep[];
   scopes?: QueryExecutionPlanScope[];
 }
+
+export type QueryExecutionPlanScope = LegacyQueryExecutionPlanScope;
 
 export interface QueryStepState extends Omit<LegacyQueryStepState, "kind" | "routeUsed"> {
   kind: QueryStepKind;
@@ -147,45 +151,24 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   }
 }
 
-function buildSqlQueryFragment(provider: string, sql: string, rel: RelNode): ProviderFragment {
-  return {
-    kind: "sql_query",
-    provider,
-    sql,
-    rel,
-  };
-}
-
 async function maybeExecuteWholeQueryFragment<TContext>(
   input: QueryInput<TContext>,
   rel: RelNode,
 ): Promise<QueryRow[] | null> {
-  const tables = new Set(collectRelTables(rel));
-
-  if (tables.size === 0) {
+  if (!input.providers) {
     return null;
   }
 
-  const providers = new Set<string>();
-  for (const table of tables) {
-    providers.add(resolveTableProvider(input.schema, table));
-  }
-
-  if (providers.size !== 1) {
+  const fragment = buildProviderFragmentForRel(rel, input.schema);
+  if (!fragment) {
     return null;
   }
 
-  const providerName = [...providers][0];
-  if (!providerName) {
-    return null;
-  }
-
-  const provider = input.providers[providerName];
+  const provider = input.providers[fragment.provider];
   if (!provider) {
-    throw new Error(`Missing provider adapter: ${providerName}`);
+    return null;
   }
 
-  const fragment = buildSqlQueryFragment(providerName, input.sql, rel);
   const capability = normalizeCapability(await provider.canExecute(fragment, input.context));
   if (!capability.supported) {
     return null;
@@ -200,11 +183,17 @@ function buildLegacyMethodsMap<TContext>(
   guardrails: QueryGuardrails,
   runtimeState: GuardrailRuntimeState,
 ): TableMethodsMap<TContext> {
+  const providers = requireProviders(input);
   const methods: TableMethodsMap<TContext> = {};
 
   for (const tableName of Object.keys(input.schema.tables)) {
+    const normalizedTable = getNormalizedTableBinding(input.schema, tableName);
+    if (normalizedTable?.kind === "view") {
+      continue;
+    }
+
     const providerName = resolveTableProvider(input.schema, tableName);
-    const provider = input.providers[providerName];
+    const provider = providers[providerName];
     if (!provider) {
       throw new Error(`Missing provider adapter ${providerName} for table ${tableName}.`);
     }
@@ -272,6 +261,14 @@ function buildLegacyMethodsMap<TContext>(
   }
 
   return methods;
+}
+
+function requireProviders<TContext>(input: QueryInput<TContext>): ProvidersMap<TContext> {
+  if (!input.providers) {
+    throw new Error("Query input requires `providers` when `methods` are not supplied.");
+  }
+
+  return input.providers;
 }
 
 function mapStepKind(step: LegacyQueryExecutionPlanStep): QueryStepKind {
@@ -511,36 +508,63 @@ function createLegacyBackedSession<TContext>(
   };
 }
 
+function createMethodsBackedSession<TContext>(
+  input: QuerySessionInput<TContext> & { methods: TableMethodsMap<TContext> },
+  guardrails: QueryGuardrails,
+): QuerySession {
+  const legacyInput: LegacyQuerySessionInput<TContext> = {
+    schema: input.schema,
+    methods: input.methods,
+    context: input.context,
+    sql: input.sql,
+    ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
+    ...(input.options ? { options: input.options } : {}),
+  };
+
+  const legacySession = createLegacyQuerySession(legacyInput);
+
+  return {
+    getPlan: () => legacySession.getPlan(),
+    next: async () => {
+      const next = await withTimeout(legacySession.next(), guardrails.timeoutMs);
+      if ("done" in next) {
+        enforceExecutionRowLimit(next.result, guardrails);
+        return next;
+      }
+
+      input.options?.onEvent?.(next as QueryStepEvent);
+      return next as QueryStepEvent;
+    },
+    runToCompletion: async () => {
+      const rows = await withTimeout(legacySession.runToCompletion(), guardrails.timeoutMs);
+      enforceExecutionRowLimit(rows, guardrails);
+      return rows;
+    },
+    getResult: () => legacySession.getResult(),
+    getStepState: (stepId: string) => legacySession.getStepState(stepId) as QueryStepState | undefined,
+  };
+}
+
 function tryCreateSyncProviderFragmentSession<TContext>(
   input: QuerySessionInput<TContext>,
   guardrails: QueryGuardrails,
   rel: RelNode,
 ): QuerySession | null {
-  const tables = new Set(collectRelTables(rel));
-  if (tables.size === 0) {
+  const providers = input.providers;
+  if (!providers) {
     return null;
   }
 
-  const providers = new Set<string>();
-  for (const table of tables) {
-    providers.add(resolveTableProvider(input.schema, table));
-  }
-
-  if (providers.size !== 1) {
+  const fragment = buildProviderFragmentForRel(rel, input.schema);
+  if (!fragment) {
     return null;
   }
 
-  const providerName = [...providers][0];
-  if (!providerName) {
-    return null;
-  }
-
-  const provider = input.providers[providerName];
+  const provider = providers[fragment.provider];
   if (!provider) {
     return null;
   }
 
-  const fragment = buildSqlQueryFragment(providerName, input.sql, rel);
   const capability = provider.canExecute(fragment, input.context);
   if (isPromiseLike(capability)) {
     return null;
@@ -551,13 +575,32 @@ function tryCreateSyncProviderFragmentSession<TContext>(
     return null;
   }
 
-  return createProviderFragmentSession(input, guardrails, provider, providerName, fragment);
+  return createProviderFragmentSession(
+    input,
+    guardrails,
+    provider,
+    fragment.provider,
+    fragment,
+  );
 }
 
 export function createQuerySession<TContext>(input: QuerySessionInput<TContext>): QuerySession {
-  validateProviderBindings(input.schema, input.providers);
+  const schema = resolveSchemaLinkedEnums(input.schema);
+  const resolvedInput: QuerySessionInput<TContext> = {
+    ...input,
+    schema,
+  };
   const guardrails = resolveGuardrails(input.queryGuardrails);
-  const lowered = lowerSqlToRel(input.sql, input.schema);
+  if (resolvedInput.methods && !resolvedInput.providers) {
+    return createMethodsBackedSession(
+      resolvedInput as QuerySessionInput<TContext> & { methods: TableMethodsMap<TContext> },
+      guardrails,
+    );
+  }
+
+  const providers = requireProviders(resolvedInput);
+  validateProviderBindings(resolvedInput.schema, providers);
+  const lowered = lowerSqlToRel(resolvedInput.sql, resolvedInput.schema);
 
   const plannerNodeCount = countRelNodes(lowered.rel);
   if (plannerNodeCount > guardrails.maxPlannerNodes) {
@@ -567,16 +610,38 @@ export function createQuerySession<TContext>(input: QuerySessionInput<TContext>)
   }
 
   return (
-    tryCreateSyncProviderFragmentSession(input, guardrails, lowered.rel) ??
-    createLegacyBackedSession(input, guardrails)
+    tryCreateSyncProviderFragmentSession(resolvedInput, guardrails, lowered.rel) ??
+    createLegacyBackedSession(resolvedInput, guardrails)
   );
 }
 
 export async function query<TContext>(input: QueryInput<TContext>): Promise<QueryRow[]> {
-  validateProviderBindings(input.schema, input.providers);
-
+  const schema = resolveSchemaLinkedEnums(input.schema);
+  const resolvedInput: QueryInput<TContext> = {
+    ...input,
+    schema,
+  };
   const guardrails = resolveGuardrails(input.queryGuardrails);
-  const lowered = lowerSqlToRel(input.sql, input.schema);
+  if (resolvedInput.methods && !resolvedInput.providers) {
+    const rows = await withTimeout(
+      legacyQuery({
+        schema: resolvedInput.schema,
+        methods: resolvedInput.methods,
+        context: resolvedInput.context,
+        sql: resolvedInput.sql,
+        ...(resolvedInput.constraintValidation
+          ? { constraintValidation: resolvedInput.constraintValidation }
+          : {}),
+      }),
+      guardrails.timeoutMs,
+    );
+    enforceExecutionRowLimit(rows, guardrails);
+    return rows;
+  }
+
+  const providers = requireProviders(resolvedInput);
+  validateProviderBindings(resolvedInput.schema, providers);
+  const lowered = lowerSqlToRel(resolvedInput.sql, resolvedInput.schema);
   const plannerNodeCount = countRelNodes(lowered.rel);
 
   if (plannerNodeCount > guardrails.maxPlannerNodes) {
@@ -586,7 +651,7 @@ export async function query<TContext>(input: QueryInput<TContext>): Promise<Quer
   }
 
   const remoteRows = await withTimeout(
-    maybeExecuteWholeQueryFragment(input, lowered.rel),
+    maybeExecuteWholeQueryFragment(resolvedInput, lowered.rel),
     guardrails.timeoutMs,
   );
 
@@ -598,33 +663,27 @@ export async function query<TContext>(input: QueryInput<TContext>): Promise<Quer
   try {
     const physicalPlan = await planPhysicalQuery(
       lowered.rel,
-      input.schema,
-      input.providers,
-      input.context,
-      input.sql,
+      resolvedInput.schema,
+      providers,
+      resolvedInput.context,
+      resolvedInput.sql,
     );
 
-    const singleStep = physicalPlan.steps.length === 1 ? physicalPlan.steps[0] : null;
-    const rows =
-      singleStep?.kind === "remote_fragment"
-        ? await withTimeout(
-            executeProviderFragmentStep(singleStep, input.providers, input.context),
-            guardrails.timeoutMs,
-          )
-        : await withTimeout(
-            executeRelWithProviders(
-              lowered.rel,
-              input.schema,
-              input.providers,
-              input.context,
-              {
-                maxExecutionRows: guardrails.maxExecutionRows,
-                maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
-                maxLookupBatches: guardrails.maxLookupBatches,
-              },
-            ),
-            guardrails.timeoutMs,
-          );
+    void physicalPlan;
+    const rows = await withTimeout(
+      executeRelWithProviders(
+        lowered.rel,
+        resolvedInput.schema,
+        providers,
+        resolvedInput.context,
+        {
+          maxExecutionRows: guardrails.maxExecutionRows,
+          maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
+          maxLookupBatches: guardrails.maxLookupBatches,
+        },
+      ),
+      guardrails.timeoutMs,
+    );
 
     enforceExecutionRowLimit(rows, guardrails);
     return rows;
@@ -638,14 +697,16 @@ export async function query<TContext>(input: QueryInput<TContext>): Promise<Quer
     lookupBatches: 0,
   };
 
-  const methods = buildLegacyMethodsMap(input, guardrails, runtimeState);
+  const methods = buildLegacyMethodsMap(resolvedInput, guardrails, runtimeState);
   const result = await withTimeout(
     legacyQuery({
-      schema: input.schema,
+      schema: resolvedInput.schema,
       methods,
-      context: input.context,
-      sql: input.sql,
-      ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
+      context: resolvedInput.context,
+      sql: resolvedInput.sql,
+      ...(resolvedInput.constraintValidation
+        ? { constraintValidation: resolvedInput.constraintValidation }
+        : {}),
     }),
     guardrails.timeoutMs,
   );
@@ -661,9 +722,12 @@ export interface ExplainResult {
 }
 
 export function explain<TContext>(input: QueryInput<TContext>): ExplainResult {
-  validateProviderBindings(input.schema, input.providers);
+  const schema = resolveSchemaLinkedEnums(input.schema);
+  if (input.providers) {
+    validateProviderBindings(schema, input.providers);
+  }
   const guardrails = resolveGuardrails(input.queryGuardrails);
-  const lowered = lowerSqlToRel(input.sql, input.schema);
+  const lowered = lowerSqlToRel(input.sql, schema);
 
   return {
     rel: lowered.rel,

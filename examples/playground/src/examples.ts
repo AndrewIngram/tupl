@@ -1,497 +1,450 @@
-import type { CatalogQueryEntry, ExamplePack } from "./types";
+import { defineSchema, type SchemaDefinition } from "sqlql";
 
-const commerce: ExamplePack = {
-  id: "commerce",
-  label: "Commerce",
-  description: "Orders + catalog data with joins, aggregates, CTEs, and windows.",
-  schema: {
-    tables: {
-      customers: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          full_name: { type: "text", nullable: false },
-          region: { type: "text", nullable: false, enum: ["us-east", "eu-west"] as const },
-        },
-      },
-      products: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          sku: { type: "text", nullable: false, unique: true },
-          name: { type: "text", nullable: false },
-          category: { type: "text", nullable: false, enum: ["wearables", "footwear"] as const },
-        },
-      },
-      orders: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          customer_id: {
-            type: "text",
-            nullable: false,
-            foreignKey: {
-              table: "customers",
-              column: "id",
-            },
-          },
-          status: { type: "text", nullable: false, enum: ["pending", "paid"] as const },
-          total_cents: { type: "integer", nullable: false },
-          ordered_at: { type: "timestamp", nullable: false },
-        },
-      },
-      order_items: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          order_id: {
-            type: "text",
-            nullable: false,
-            foreignKey: {
-              table: "orders",
-              column: "id",
-            },
-          },
-          product_id: {
-            type: "text",
-            nullable: false,
-            foreignKey: {
-              table: "products",
-              column: "id",
-            },
-          },
-          quantity: { type: "integer", nullable: false },
-          line_total_cents: { type: "integer", nullable: false },
-        },
-      },
-    },
-  },
-  rows: {
-    customers: [
-      { id: "cust_1", full_name: "Maya Ortiz", region: "us-east" },
-      { id: "cust_2", full_name: "Noah Singh", region: "eu-west" },
-      { id: "cust_3", full_name: "Liam Chen", region: "us-east" },
-    ],
-    products: [
-      { id: "prod_1", sku: "watch-001", name: "Running Watch", category: "wearables" },
-      { id: "prod_2", sku: "shoe-002", name: "Tempo Shoes", category: "footwear" },
-      { id: "prod_3", sku: "band-003", name: "Heart Band", category: "wearables" },
-    ],
-    orders: [
-      {
-        id: "ord_1",
-        customer_id: "cust_1",
-        status: "paid",
-        total_cents: 15900,
-        ordered_at: "2026-02-01T10:00:00Z",
-      },
-      {
-        id: "ord_2",
-        customer_id: "cust_1",
-        status: "paid",
-        total_cents: 9900,
-        ordered_at: "2026-02-04T08:00:00Z",
-      },
-      {
-        id: "ord_3",
-        customer_id: "cust_2",
-        status: "pending",
-        total_cents: 4200,
-        ordered_at: "2026-02-05T09:30:00Z",
-      },
-      {
-        id: "ord_4",
-        customer_id: "cust_3",
-        status: "paid",
-        total_cents: 25900,
-        ordered_at: "2026-02-07T11:20:00Z",
-      },
-    ],
-    order_items: [
-      {
-        id: "item_1",
-        order_id: "ord_1",
-        product_id: "prod_1",
-        quantity: 1,
-        line_total_cents: 12900,
-      },
-      {
-        id: "item_2",
-        order_id: "ord_1",
-        product_id: "prod_3",
-        quantity: 1,
-        line_total_cents: 3000,
-      },
-      {
-        id: "item_3",
-        order_id: "ord_2",
-        product_id: "prod_2",
-        quantity: 1,
-        line_total_cents: 9900,
-      },
-      {
-        id: "item_4",
-        order_id: "ord_4",
-        product_id: "prod_1",
-        quantity: 2,
-        line_total_cents: 25800,
-      },
-    ],
-  },
-  queries: [
-    {
-      label: "Join orders + customers",
-      sql: `
-SELECT o.id, c.full_name, o.total_cents
-FROM orders o
-JOIN customers c ON o.customer_id = c.id
-WHERE o.status = 'paid'
-ORDER BY o.ordered_at DESC
-LIMIT 10;
-      `.trim(),
-    },
-    {
-      label: "CTE + aggregate",
-      sql: `
-WITH paid_orders AS (
-  SELECT customer_id, total_cents
-  FROM orders
-  WHERE status = 'paid'
-)
-SELECT c.full_name, COUNT(*) AS order_count, SUM(p.total_cents) AS gross_cents
-FROM paid_orders p
-JOIN customers c ON p.customer_id = c.id
-GROUP BY c.full_name
-ORDER BY gross_cents DESC;
-      `.trim(),
-    },
-    {
-      label: "Window ranking",
-      sql: `
-SELECT
-  o.id,
-  o.customer_id,
-  o.total_cents,
-  RANK() OVER (PARTITION BY o.customer_id ORDER BY o.total_cents DESC) AS spend_rank
-FROM orders o
-ORDER BY o.customer_id, spend_rank;
-      `.trim(),
-    },
-  ],
-};
+import type {
+  CatalogQueryEntry,
+  DownstreamRows,
+  PlaygroundQueryPreset,
+  PlaygroundScenarioPreset,
+} from "./types";
 
-const finance: ExamplePack = {
-  id: "finance",
-  label: "Finance",
-  description: "Accounts + transactions for balance and spending analytics.",
-  schema: {
-    tables: {
-      accounts: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          owner_name: { type: "text", nullable: false },
-          account_type: {
-            type: "text",
-            nullable: false,
-            enum: ["checking", "savings"] as const,
+export const FACADE_SCHEMA: SchemaDefinition = defineSchema({
+  tables: {
+    my_orders: {
+      provider: "dbProvider",
+      columns: {
+        id: { type: "text", nullable: false, primaryKey: true },
+        vendor_id: {
+          type: "text",
+          nullable: false,
+          foreignKey: {
+            table: "vendors_for_org",
+            column: "id",
           },
         },
+        status: { type: "text", nullable: false, enum: ["pending", "paid", "shipped"] as const },
+        total_cents: { type: "integer", nullable: false },
+        created_at: { type: "timestamp", nullable: false },
       },
-      transactions: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          account_id: {
-            type: "text",
-            nullable: false,
-            foreignKey: {
-              table: "accounts",
-              column: "id",
-            },
+    },
+    my_order_items: {
+      provider: "dbProvider",
+      columns: {
+        id: { type: "text", nullable: false, primaryKey: true },
+        order_id: {
+          type: "text",
+          nullable: false,
+          foreignKey: {
+            table: "my_orders",
+            column: "id",
           },
-          posted_at: { type: "timestamp", nullable: false },
-          kind: { type: "text", nullable: false, enum: ["expense", "income"] as const },
-          amount_cents: { type: "integer", nullable: false },
-          merchant: { type: "text", nullable: true },
         },
-      },
-      monthly_budgets: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          account_id: {
-            type: "text",
-            nullable: false,
-            foreignKey: {
-              table: "accounts",
-              column: "id",
-            },
+        product_id: {
+          type: "text",
+          nullable: false,
+          foreignKey: {
+            table: "active_products",
+            column: "id",
           },
-          month: { type: "text", nullable: false },
-          category: { type: "text", nullable: false, enum: ["food", "coffee"] as const },
-          limit_cents: { type: "integer", nullable: false },
+        },
+        quantity: { type: "integer", nullable: false },
+        line_total_cents: { type: "integer", nullable: false },
+      },
+    },
+    vendors_for_org: {
+      provider: "dbProvider",
+      columns: {
+        id: { type: "text", nullable: false, primaryKey: true },
+        name: { type: "text", nullable: false },
+        tier: { type: "text", nullable: false, enum: ["standard", "preferred"] as const },
+      },
+    },
+    active_products: {
+      provider: "dbProvider",
+      columns: {
+        id: { type: "text", nullable: false, primaryKey: true },
+        sku: { type: "text", nullable: false },
+        name: { type: "text", nullable: false },
+        category: {
+          type: "text",
+          nullable: false,
+          enum: ["hardware", "software", "services"] as const,
         },
       },
     },
   },
-  rows: {
-    accounts: [
-      { id: "acct_1", owner_name: "Alex Kim", account_type: "checking" },
-      { id: "acct_2", owner_name: "Alex Kim", account_type: "savings" },
-    ],
-    transactions: [
-      {
-        id: "txn_1",
-        account_id: "acct_1",
-        posted_at: "2026-02-01T08:00:00Z",
-        kind: "expense",
-        amount_cents: 5400,
-        merchant: "Grocerio",
-      },
-      {
-        id: "txn_2",
-        account_id: "acct_1",
-        posted_at: "2026-02-02T08:00:00Z",
-        kind: "expense",
-        amount_cents: 2200,
-        merchant: "Coffee Lab",
-      },
-      {
-        id: "txn_3",
-        account_id: "acct_1",
-        posted_at: "2026-02-03T08:00:00Z",
-        kind: "income",
-        amount_cents: 150000,
-        merchant: null,
-      },
-      {
-        id: "txn_4",
-        account_id: "acct_2",
-        posted_at: "2026-02-04T08:00:00Z",
-        kind: "income",
-        amount_cents: 20000,
-        merchant: null,
-      },
-    ],
-    monthly_budgets: [
-      {
-        id: "bud_1",
-        account_id: "acct_1",
-        month: "2026-02",
-        category: "food",
-        limit_cents: 50000,
-      },
-      {
-        id: "bud_2",
-        account_id: "acct_1",
-        month: "2026-02",
-        category: "coffee",
-        limit_cents: 12000,
-      },
-    ],
+});
+
+export const QUERY_PRESETS: PlaygroundQueryPreset[] = [
+  {
+    id: "orders_with_vendors",
+    label: "My orders with vendors",
+    description: "Simple join over facade tables; downstream adds org/user scope.",
+    sql: `
+SELECT o.id, o.status, o.total_cents, o.created_at, v.name AS vendor_name
+FROM my_orders o
+JOIN vendors_for_org v ON o.vendor_id = v.id
+ORDER BY o.created_at DESC;
+    `.trim(),
   },
-  queries: [
-    {
-      label: "Income vs expense aggregate",
-      sql: `
-SELECT account_id, kind, SUM(amount_cents) AS total_cents
-FROM transactions
-GROUP BY account_id, kind
-ORDER BY account_id, kind;
-      `.trim(),
-    },
-    {
-      label: "CTE spend by merchant",
-      sql: `
-WITH expense_txns AS (
-  SELECT account_id, merchant, amount_cents
-  FROM transactions
-  WHERE kind = 'expense'
-)
-SELECT a.owner_name, e.merchant, SUM(e.amount_cents) AS spend_cents
-FROM expense_txns e
-JOIN accounts a ON e.account_id = a.id
-GROUP BY a.owner_name, e.merchant
+  {
+    id: "vendor_spend",
+    label: "My spend by vendor",
+    description: "Join + grouped aggregate with ORDER BY metric alias.",
+    sql: `
+SELECT v.name AS vendor_name, COUNT(*) AS order_count, SUM(o.total_cents) AS spend_cents
+FROM my_orders o
+JOIN vendors_for_org v ON o.vendor_id = v.id
+GROUP BY v.name
 ORDER BY spend_cents DESC;
-      `.trim(),
-    },
-    {
-      label: "Running income per account",
-      sql: `
-SELECT
-  t.account_id,
-  t.posted_at,
-  t.amount_cents,
-  SUM(t.amount_cents) OVER (PARTITION BY t.account_id ORDER BY t.posted_at) AS running_total
-FROM transactions t
-WHERE t.kind = 'income'
-ORDER BY t.account_id, t.posted_at;
-      `.trim(),
-    },
-  ],
-};
-
-const fitness: ExamplePack = {
-  id: "fitness",
-  label: "Fitness",
-  description: "Athletes, workouts, and runs for coaching dashboards.",
-  schema: {
-    tables: {
-      athletes: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          display_name: { type: "text", nullable: false },
-          level: {
-            type: "text",
-            nullable: false,
-            enum: ["beginner", "intermediate", "advanced"] as const,
-          },
-        },
-      },
-      workouts: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          athlete_id: {
-            type: "text",
-            nullable: false,
-            foreignKey: {
-              table: "athletes",
-              column: "id",
-            },
-          },
-          workout_type: {
-            type: "text",
-            nullable: false,
-            enum: ["strength", "run", "bike"] as const,
-          },
-          duration_min: { type: "integer", nullable: false },
-          completed_at: { type: "timestamp", nullable: false },
-        },
-      },
-      runs: {
-        provider: "memory",
-        columns: {
-          id: { type: "text", nullable: false, primaryKey: true },
-          athlete_id: {
-            type: "text",
-            nullable: false,
-            foreignKey: {
-              table: "athletes",
-              column: "id",
-            },
-          },
-          run_date: { type: "timestamp", nullable: false },
-          distance_km: { type: "integer", nullable: false },
-          pace_sec: { type: "integer", nullable: false },
-        },
-      },
-    },
+    `.trim(),
   },
-  rows: {
-    athletes: [
-      { id: "ath_1", display_name: "Sam", level: "beginner" },
-      { id: "ath_2", display_name: "Priya", level: "intermediate" },
-      { id: "ath_3", display_name: "Owen", level: "advanced" },
-    ],
-    workouts: [
-      {
-        id: "wo_1",
-        athlete_id: "ath_1",
-        workout_type: "strength",
-        duration_min: 30,
-        completed_at: "2026-02-01T07:00:00Z",
-      },
-      {
-        id: "wo_2",
-        athlete_id: "ath_2",
-        workout_type: "run",
-        duration_min: 45,
-        completed_at: "2026-02-02T07:00:00Z",
-      },
-      {
-        id: "wo_3",
-        athlete_id: "ath_2",
-        workout_type: "bike",
-        duration_min: 55,
-        completed_at: "2026-02-03T07:00:00Z",
-      },
-      {
-        id: "wo_4",
-        athlete_id: "ath_3",
-        workout_type: "run",
-        duration_min: 65,
-        completed_at: "2026-02-04T07:00:00Z",
-      },
-    ],
-    runs: [
-      { id: "run_1", athlete_id: "ath_2", run_date: "2026-02-05", distance_km: 5, pace_sec: 315 },
-      { id: "run_2", athlete_id: "ath_2", run_date: "2026-02-10", distance_km: 8, pace_sec: 340 },
-      { id: "run_3", athlete_id: "ath_3", run_date: "2026-02-03", distance_km: 10, pace_sec: 285 },
-      { id: "run_4", athlete_id: "ath_3", run_date: "2026-02-09", distance_km: 12, pace_sec: 295 },
-    ],
+  {
+    id: "items_with_products",
+    label: "My line items with products",
+    description: "Facade hides downstream user-product access join table filtering active_products.",
+    sql: `
+SELECT i.order_id, p.sku, p.name, i.quantity, i.line_total_cents
+FROM my_order_items i
+JOIN active_products p ON i.product_id = p.id
+ORDER BY i.order_id, p.sku;
+    `.trim(),
   },
-  queries: [
-    {
-      label: "Join workouts + athletes",
-      sql: `
-SELECT w.id, a.display_name, w.workout_type, w.duration_min
-FROM workouts w
-JOIN athletes a ON w.athlete_id = a.id
-ORDER BY w.completed_at DESC
-LIMIT 12;
-      `.trim(),
-    },
-    {
-      label: "CTE total workout minutes",
-      sql: `
-WITH recent_workouts AS (
-  SELECT athlete_id, duration_min
-  FROM workouts
-  WHERE completed_at >= '2026-02-01'
+  {
+    id: "top_products",
+    label: "Top products by spend",
+    description: "Aggregate over m2m-filtered active_products via a hidden downstream access table.",
+    sql: `
+SELECT p.name, SUM(i.line_total_cents) AS spend_cents, SUM(i.quantity) AS units
+FROM my_order_items i
+JOIN active_products p ON i.product_id = p.id
+GROUP BY p.name
+ORDER BY spend_cents DESC;
+    `.trim(),
+  },
+  {
+    id: "preferred_vendor_orders",
+    label: "Orders from preferred vendors",
+    description: "IN subquery over another facade table.",
+    sql: `
+SELECT id, vendor_id, total_cents
+FROM my_orders
+WHERE vendor_id IN (
+  SELECT id
+  FROM vendors_for_org
+  WHERE tier = 'preferred'
 )
-SELECT a.display_name, SUM(r.duration_min) AS total_minutes
-FROM recent_workouts r
-JOIN athletes a ON r.athlete_id = a.id
-GROUP BY a.display_name
-ORDER BY total_minutes DESC;
-      `.trim(),
+ORDER BY total_cents DESC;
+    `.trim(),
+  },
+  {
+    id: "status_distinct",
+    label: "Distinct statuses",
+    description: "DISTINCT projection shape.",
+    sql: `
+SELECT DISTINCT status
+FROM my_orders
+ORDER BY status;
+    `.trim(),
+  },
+  {
+    id: "product_coverage",
+    label: "Product coverage (left join)",
+    description: "LEFT JOIN with aggregate to include products with zero units.",
+    sql: `
+SELECT p.name, p.category, COUNT(i.id) AS line_count, SUM(i.quantity) AS units
+FROM active_products p
+LEFT JOIN my_order_items i ON i.product_id = p.id
+GROUP BY p.name, p.category
+ORDER BY units DESC, p.name;
+    `.trim(),
+  },
+  {
+    id: "activity_union",
+    label: "Activity union",
+    description: "UNION ALL over two facade tables.",
+    sql: `
+SELECT id, vendor_id AS activity_ref
+FROM my_orders
+UNION ALL
+SELECT id, product_id AS activity_ref
+FROM my_order_items
+ORDER BY activity_ref, id;
+    `.trim(),
+  },
+  {
+    id: "paid_orders",
+    label: "Paid orders over threshold",
+    description: "Simple filter + ordering.",
+    sql: `
+SELECT id, total_cents, created_at
+FROM my_orders
+WHERE status = 'paid' AND total_cents >= 20000
+ORDER BY total_cents DESC;
+    `.trim(),
+  },
+  {
+    id: "vendor_rank",
+    label: "Vendor spend rank",
+    description: "CTE + window function shape.",
+    sql: `
+WITH vendor_totals AS (
+  SELECT
+    v.name AS vendor_name,
+    SUM(o.total_cents) AS spend_cents
+  FROM my_orders o
+  JOIN vendors_for_org v ON o.vendor_id = v.id
+  GROUP BY v.name
+)
+SELECT
+  vendor_name,
+  spend_cents,
+  DENSE_RANK() OVER (ORDER BY spend_cents DESC) AS spend_rank
+FROM vendor_totals
+ORDER BY spend_rank, vendor_name;
+    `.trim(),
+  },
+];
+
+const BASE_DOWNSTREAM_ROWS: DownstreamRows = {
+  orgs: [
+    { id: "org_acme", name: "Acme Corp" },
+    { id: "org_globex", name: "Globex LLC" },
+  ],
+  users: [
+    {
+      id: "u_alex",
+      org_id: "org_acme",
+      email: "alex@acme.example",
+      display_name: "Alex Rivera",
+      role: "buyer",
     },
     {
-      label: "Pace rank by athlete",
-      sql: `
-SELECT
-  r.athlete_id,
-  r.run_date,
-  r.pace_sec,
-  DENSE_RANK() OVER (PARTITION BY r.athlete_id ORDER BY r.pace_sec ASC) AS pace_rank
-FROM runs r
-ORDER BY r.athlete_id, pace_rank;
-      `.trim(),
+      id: "u_jordan",
+      org_id: "org_acme",
+      email: "jordan@acme.example",
+      display_name: "Jordan Lee",
+      role: "manager",
     },
+    {
+      id: "u_sam",
+      org_id: "org_globex",
+      email: "sam@globex.example",
+      display_name: "Sam Patel",
+      role: "buyer",
+    },
+  ],
+  vendors: [
+    { id: "v_northwind", org_id: "org_acme", name: "Northwind Supply", tier: "preferred" },
+    { id: "v_metro", org_id: "org_acme", name: "Metro Parts", tier: "standard" },
+    { id: "v_sunrise", org_id: "org_globex", name: "Sunrise Tech", tier: "preferred" },
+  ],
+  products: [
+    {
+      id: "p_router",
+      org_id: "org_acme",
+      sku: "RTR-100",
+      name: "Edge Router",
+      category: "hardware",
+      active: true,
+    },
+    {
+      id: "p_backup",
+      org_id: "org_acme",
+      sku: "BKP-200",
+      name: "Backup Service",
+      category: "services",
+      active: true,
+    },
+    {
+      id: "p_archive",
+      org_id: "org_acme",
+      sku: "ARC-300",
+      name: "Archive Toolkit",
+      category: "software",
+      active: false,
+    },
+    {
+      id: "p_sensor",
+      org_id: "org_globex",
+      sku: "SNS-500",
+      name: "Plant Sensor",
+      category: "hardware",
+      active: true,
+    },
+  ],
+  orders: [
+    {
+      id: "o_1001",
+      org_id: "org_acme",
+      user_id: "u_alex",
+      vendor_id: "v_northwind",
+      status: "paid",
+      total_cents: 48000,
+      created_at: "2026-02-02T10:00:00Z",
+    },
+    {
+      id: "o_1002",
+      org_id: "org_acme",
+      user_id: "u_alex",
+      vendor_id: "v_metro",
+      status: "shipped",
+      total_cents: 25500,
+      created_at: "2026-02-06T09:30:00Z",
+    },
+    {
+      id: "o_1003",
+      org_id: "org_acme",
+      user_id: "u_jordan",
+      vendor_id: "v_metro",
+      status: "pending",
+      total_cents: 11500,
+      created_at: "2026-02-10T14:15:00Z",
+    },
+    {
+      id: "o_2001",
+      org_id: "org_globex",
+      user_id: "u_sam",
+      vendor_id: "v_sunrise",
+      status: "paid",
+      total_cents: 91000,
+      created_at: "2026-02-04T08:20:00Z",
+    },
+  ],
+  order_items: [
+    {
+      id: "oi_1",
+      org_id: "org_acme",
+      user_id: "u_alex",
+      order_id: "o_1001",
+      product_id: "p_router",
+      quantity: 2,
+      line_total_cents: 36000,
+    },
+    {
+      id: "oi_2",
+      org_id: "org_acme",
+      user_id: "u_alex",
+      order_id: "o_1001",
+      product_id: "p_backup",
+      quantity: 1,
+      line_total_cents: 12000,
+    },
+    {
+      id: "oi_3",
+      org_id: "org_acme",
+      user_id: "u_alex",
+      order_id: "o_1002",
+      product_id: "p_backup",
+      quantity: 2,
+      line_total_cents: 25500,
+    },
+    {
+      id: "oi_4",
+      org_id: "org_acme",
+      user_id: "u_jordan",
+      order_id: "o_1003",
+      product_id: "p_router",
+      quantity: 1,
+      line_total_cents: 11500,
+    },
+    {
+      id: "oi_5",
+      org_id: "org_globex",
+      user_id: "u_sam",
+      order_id: "o_2001",
+      product_id: "p_sensor",
+      quantity: 7,
+      line_total_cents: 91000,
+    },
+  ],
+  user_product_access: [
+    { id: "upa_1", user_id: "u_alex", product_id: "p_router" },
+    { id: "upa_2", user_id: "u_alex", product_id: "p_backup" },
+    { id: "upa_3", user_id: "u_jordan", product_id: "p_router" },
+    { id: "upa_4", user_id: "u_sam", product_id: "p_sensor" },
   ],
 };
 
-export const EXAMPLE_PACKS: ExamplePack[] = [commerce, finance, fitness];
+function cloneRows(rows: DownstreamRows): DownstreamRows {
+  return JSON.parse(JSON.stringify(rows)) as DownstreamRows;
+}
 
-export function buildQueryCatalog(packs: ExamplePack[]): CatalogQueryEntry[] {
-  const entries: CatalogQueryEntry[] = [];
+function withJordanExpansion(): DownstreamRows {
+  const rows = cloneRows(BASE_DOWNSTREAM_ROWS);
+  rows.orders = [
+    ...(rows.orders ?? []),
+    {
+      id: "o_1004",
+      org_id: "org_acme",
+      user_id: "u_jordan",
+      vendor_id: "v_northwind",
+      status: "paid",
+      total_cents: 64000,
+      created_at: "2026-02-12T12:00:00Z",
+    },
+  ];
+  rows.order_items = [
+    ...(rows.order_items ?? []),
+    {
+      id: "oi_6",
+      org_id: "org_acme",
+      user_id: "u_jordan",
+      order_id: "o_1004",
+      product_id: "p_router",
+      quantity: 3,
+      line_total_cents: 64000,
+    },
+  ];
+  return rows;
+}
 
-  for (const pack of packs) {
-    for (const [index, query] of pack.queries.entries()) {
-      entries.push({
-        id: `${pack.id}:${index}`,
-        packId: pack.id,
-        packLabel: pack.label,
-        queryLabel: query.label,
-        sql: query.sql,
-      });
-    }
-  }
+export const SCENARIO_PRESETS: PlaygroundScenarioPreset[] = [
+  {
+    id: "acme_alex",
+    label: "Acme: Alex",
+    description: "Alex is a buyer in Acme. Data includes multiple vendors and active/inactive products.",
+    context: {
+      orgId: "org_acme",
+      userId: "u_alex",
+    },
+    rows: cloneRows(BASE_DOWNSTREAM_ROWS),
+    defaultQueryId: "orders_with_vendors",
+  },
+  {
+    id: "acme_jordan",
+    label: "Acme: Jordan",
+    description: "Jordan is a manager in Acme with a larger paid order profile.",
+    context: {
+      orgId: "org_acme",
+      userId: "u_jordan",
+    },
+    rows: withJordanExpansion(),
+    defaultQueryId: "vendor_spend",
+  },
+  {
+    id: "globex_sam",
+    label: "Globex: Sam",
+    description: "Sam is a buyer in a different org to demonstrate strict org/user lens scoping.",
+    context: {
+      orgId: "org_globex",
+      userId: "u_sam",
+    },
+    rows: cloneRows(BASE_DOWNSTREAM_ROWS),
+    defaultQueryId: "items_with_products",
+  },
+];
 
-  return entries;
+export const DEFAULT_SCENARIO_ID = SCENARIO_PRESETS[0]?.id ?? "acme_alex";
+export const DEFAULT_QUERY_ID =
+  SCENARIO_PRESETS[0]?.defaultQueryId ?? QUERY_PRESETS[0]?.id ?? "orders_with_vendors";
+
+export function buildQueryCatalog(queries: PlaygroundQueryPreset[]): CatalogQueryEntry[] {
+  return queries.map((query) => ({
+    id: query.id,
+    label: query.label,
+    sql: query.sql,
+    ...(query.description ? { description: query.description } : {}),
+  }));
 }
 
 export function serializeJson(value: unknown): string {

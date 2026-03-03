@@ -7,6 +7,7 @@ import {
   type TableDefinition,
 } from "sqlql";
 
+import { DOWNSTREAM_ROWS_SCHEMA } from "./downstream-model";
 import {
   isColumnNullable,
   readColumnType,
@@ -16,6 +17,7 @@ import {
 } from "./types";
 
 const sqlScalarTypeSchema = z.enum(["text", "integer", "boolean", "timestamp"]);
+const physicalDialectSchema = z.enum(["postgres", "sqlite"]);
 
 const queryRejectSchema = z
   .object({
@@ -109,6 +111,10 @@ const columnObjectDefinitionSchema = z
     primaryKey: z.boolean().optional(),
     unique: z.boolean().optional(),
     enum: z.array(z.string()).min(1).optional(),
+    enumFrom: z.string().min(1).optional(),
+    enumMap: z.record(z.string().min(1), z.string().min(1)).optional(),
+    physicalType: z.string().min(1).optional(),
+    physicalDialect: physicalDialectSchema.optional(),
     foreignKey: columnForeignKeySchema.optional(),
     description: z.string().optional(),
   })
@@ -119,6 +125,13 @@ const columnObjectDefinitionSchema = z
         code: z.ZodIssueCode.custom,
         path: ["unique"],
         message: "A column cannot be both primaryKey and unique.",
+      });
+    }
+    if (value.enumMap && !value.enumFrom) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["enumMap"],
+        message: "enumMap requires enumFrom.",
       });
     }
   });
@@ -176,7 +189,7 @@ function zodIssues(error: z.ZodError): SchemaValidationIssue[] {
   }));
 }
 
-export function parseSchemaText(value: string): SchemaParseResult {
+export function parseFacadeSchemaText(value: string): SchemaParseResult {
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(value);
@@ -219,6 +232,8 @@ export function parseSchemaText(value: string): SchemaParseResult {
     };
   }
 }
+
+export const parseSchemaText = parseFacadeSchemaText;
 
 function validatorForColumn(column: TableColumnDefinition): z.ZodType<unknown> {
   const type = readColumnType(column);
@@ -295,6 +310,10 @@ export function parseRowsText(schema: SchemaDefinition, value: string): RowsPars
     rows: normalizedRows,
     issues: [],
   };
+}
+
+export function parseDownstreamRowsText(value: string): RowsParseResult {
+  return parseRowsText(DOWNSTREAM_ROWS_SCHEMA, value);
 }
 
 function toJsonSchemaType(column: TableColumnDefinition): Record<string, unknown> {
@@ -460,6 +479,16 @@ export const PLAYGROUND_SCHEMA_JSON_SCHEMA: Record<string, unknown> = {
                       type: "array",
                       minItems: 1,
                       items: { type: "string" },
+                    },
+                    enumFrom: { type: "string" },
+                    enumMap: {
+                      type: "object",
+                      additionalProperties: { type: "string" },
+                    },
+                    physicalType: { type: "string" },
+                    physicalDialect: {
+                      type: "string",
+                      enum: ["postgres", "sqlite"],
                     },
                     foreignKey: {
                       type: "object",

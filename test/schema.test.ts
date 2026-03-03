@@ -2,14 +2,269 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   asIso8601Timestamp,
+  createDataEntityHandle,
   defineSchema,
   defineTableMethods,
+  getNormalizedTableBinding,
+  resolveSchemaLinkedEnums,
   resolveTableColumnDefinition,
   resolveTableQueryBehavior,
   toSqlDDL,
 } from "../src";
 
 describe("defineSchema", () => {
+  it("supports source-neutral physical entity lens mappings", () => {
+    const ordersEntity = createDataEntityHandle({
+      entity: "orders_raw",
+      provider: "regional",
+    });
+
+    const schema = defineSchema(({ table }) => ({
+      tables: {
+        my_orders: table({
+          from: ordersEntity,
+          columns: {
+            id: { source: "id", type: "text", nullable: false },
+            total_cents: { source: "total_cents", type: "integer", nullable: false },
+          },
+        }),
+      },
+    }));
+
+    const binding = getNormalizedTableBinding(schema, "my_orders");
+    expect(binding).toEqual({
+      kind: "physical",
+      provider: "regional",
+      entity: "orders_raw",
+      columnToSource: {
+        id: "id",
+        total_cents: "total_cents",
+      },
+    });
+  });
+
+  it("supports view table bindings in schema DSL", () => {
+    const ordersEntity = createDataEntityHandle({
+      entity: "orders_raw",
+      provider: "regional",
+    });
+
+    const schema = defineSchema(({ table, view, rel, col, expr, agg }) => ({
+      tables: {
+        my_orders: table({
+          from: ordersEntity,
+          columns: {
+            id: { source: "id", type: "text", nullable: false },
+            total_cents: { source: "total_cents", type: "integer", nullable: false },
+          },
+        }),
+        my_order_stats: view({
+          rel: () =>
+            rel.aggregate({
+              from: rel.scan("my_orders"),
+              groupBy: [col("my_orders.id")],
+              measures: {
+                spend: agg.sum(col("my_orders.total_cents")),
+                rows: agg.count(),
+              },
+            }),
+          columns: {
+            order_id: col("id"),
+            spend: col("spend"),
+          },
+        }),
+      },
+    }));
+
+    const binding = getNormalizedTableBinding(schema, "my_order_stats");
+    expect(binding?.kind).toBe("view");
+    expect(binding?.columnToSource).toEqual({
+      order_id: "id",
+      spend: "spend",
+    });
+  });
+
+  it("supports typed table tokens in col(...) and rel.scan(...)", () => {
+    const ordersEntity = createDataEntityHandle({
+      entity: "orders_raw",
+      provider: "warehouse",
+    });
+    const vendorsEntity = createDataEntityHandle({
+      entity: "vendors_raw",
+      provider: "warehouse",
+    });
+
+    const schema = defineSchema(({ table, view, rel, col, expr, agg }) => {
+      const myOrders = table({
+        from: ordersEntity,
+        columns: {
+          id: { source: "id", type: "text", nullable: false },
+          vendorId: { source: "vendor_id", type: "text", nullable: false },
+          totalCents: { source: "total_cents", type: "integer", nullable: false },
+        },
+      });
+
+      const vendorsForOrg = table({
+        from: vendorsEntity,
+        columns: {
+          id: { source: "id", type: "text", nullable: false },
+          name: { source: "name", type: "text", nullable: false },
+        },
+      });
+
+      return {
+        tables: {
+          myOrders,
+          vendorsForOrg,
+          spendByVendor: view({
+            rel: () =>
+              rel.aggregate({
+                from: rel.join({
+                  left: rel.scan(myOrders),
+                  right: rel.scan(vendorsForOrg),
+                  on: expr.eq(col(myOrders, "vendorId"), col(vendorsForOrg, "id")),
+                }),
+                groupBy: [col(vendorsForOrg, "id"), col(vendorsForOrg, "name")],
+                measures: {
+                  spend: agg.sum(col(myOrders, "totalCents")),
+                },
+              }),
+            columns: {
+              vendor_id: col("id"),
+              vendor_name: col("name"),
+              spend: col("spend"),
+            },
+          }),
+        },
+      };
+    });
+
+    const binding = getNormalizedTableBinding(schema, "spendByVendor");
+    expect(binding?.kind).toBe("view");
+    expect(binding?.columnToSource).toEqual({
+      vendor_id: "id",
+      vendor_name: "name",
+      spend: "spend",
+    });
+
+    const viewRel = binding && binding.kind === "view" ? binding.rel({}) : null;
+    expect(viewRel).toEqual({
+      kind: "aggregate",
+      from: {
+        kind: "join",
+        left: { kind: "scan", table: "myOrders" },
+        right: { kind: "scan", table: "vendorsForOrg" },
+        on: {
+          kind: "eq",
+          left: { kind: "dsl_col_ref", ref: "myOrders.vendorId" },
+          right: { kind: "dsl_col_ref", ref: "vendorsForOrg.id" },
+        },
+        type: "inner",
+      },
+      groupBy: [
+        { kind: "dsl_col_ref", ref: "vendorsForOrg.id" },
+        { kind: "dsl_col_ref", ref: "vendorsForOrg.name" },
+      ],
+      measures: {
+        spend: {
+          kind: "metric",
+          fn: "sum",
+          column: { kind: "dsl_col_ref", ref: "myOrders.totalCents" },
+        },
+      },
+    });
+  });
+
+  it("supports col(dataEntityHandle, column) typed references in table lenses", () => {
+    const ordersEntity = createDataEntityHandle<"id" | "status">({
+      entity: "orders_raw",
+      provider: "warehouse",
+    });
+
+    const schema = defineSchema(({ table, col }) => ({
+      tables: {
+        myOrders: table({
+          from: ordersEntity,
+          columns: {
+            id: col(ordersEntity, "id"),
+            status: col(ordersEntity, "status"),
+          },
+        }),
+      },
+    }));
+
+    const binding = getNormalizedTableBinding(schema, "myOrders");
+    expect(binding).toEqual({
+      kind: "physical",
+      provider: "warehouse",
+      entity: "orders_raw",
+      columnToSource: {
+        id: "id",
+        status: "status",
+      },
+    });
+  });
+
+  it("materializes enumFrom links and enforces strict enumMap coverage", () => {
+    const schema = defineSchema({
+      tables: {
+        orders: {
+          provider: "db",
+          columns: {
+            status: { type: "text", enum: ["pending", "paid", "shipped"] as const },
+          },
+        },
+        my_orders: {
+          provider: "db",
+          columns: {
+            status: {
+              type: "text",
+              enumFrom: "orders.status",
+              enumMap: {
+                pending: "open",
+                paid: "settled",
+                shipped: "settled",
+              },
+              enum: ["open", "settled"] as const,
+            },
+          },
+        },
+      },
+    });
+
+    const resolved = resolveSchemaLinkedEnums(schema);
+    const status = resolveTableColumnDefinition(resolved, "my_orders", "status");
+    expect(status.enum).toEqual(["open", "settled"]);
+  });
+
+  it("rejects enumMap with unmapped upstream values by default", () => {
+    const schema = defineSchema({
+      tables: {
+        orders: {
+          provider: "db",
+          columns: {
+            status: { type: "text", enum: ["pending", "paid"] as const },
+          },
+        },
+        my_orders: {
+          provider: "db",
+          columns: {
+            status: {
+              type: "text",
+              enumFrom: "orders.status",
+              enumMap: {
+                pending: "open",
+              },
+              enum: ["open"] as const,
+            },
+          },
+        },
+      },
+    });
+
+    expect(() => resolveSchemaLinkedEnums(schema)).toThrow("Unmapped enumFrom value");
+  });
+
   it("applies default non-column query policy", () => {
     const schema = defineSchema({
       tables: {

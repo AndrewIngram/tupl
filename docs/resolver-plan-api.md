@@ -16,10 +16,11 @@ interface ProviderAdapter<TContext = unknown> {
 
 ## Fragment kinds
 
-- `sql_query`
 - `rel`
 - `scan`
 - `aggregate`
+
+`sql_query` remains in the type surface for legacy compatibility, but the planner no longer emits it.
 
 The planner can emit mixed physical plans with:
 

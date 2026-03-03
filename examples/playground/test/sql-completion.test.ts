@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { EXAMPLE_PACKS } from "../src/examples";
+import { FACADE_SCHEMA } from "../src/examples";
 import { getSqlSuggestionLabels } from "../src/sql-completion";
 
 describe("playground/sql-completion", () => {
-  const schema = EXAMPLE_PACKS[0]?.schema;
+  const schema = FACADE_SCHEMA;
 
   it("suggests table names after FROM", () => {
     if (!schema) {
@@ -15,8 +15,8 @@ describe("playground/sql-completion", () => {
     const suggestions = getSqlSuggestionLabels(sql, sql.length, schema);
 
     expect(suggestions.context).toBe("table");
-    expect(suggestions.labels).toContain("orders");
-    expect(suggestions.labels).toContain("customers");
+    expect(suggestions.labels).toContain("my_orders");
+    expect(suggestions.labels).toContain("vendors_for_org");
   });
 
   it("suggests columns for alias-qualified prefixes", () => {
@@ -24,7 +24,7 @@ describe("playground/sql-completion", () => {
       throw new Error("Missing example schema.");
     }
 
-    const sql = "SELECT o. FROM orders o";
+    const sql = "SELECT o. FROM my_orders o";
     const suggestions = getSqlSuggestionLabels(sql, "SELECT o.".length, schema);
 
     expect(suggestions.context).toBe("alias_column");
@@ -49,12 +49,13 @@ describe("playground/sql-completion", () => {
       throw new Error("Missing example schema.");
     }
 
-    const sql = "SELECT * FROM orders WHERE status = ";
+    const sql = "SELECT * FROM my_orders WHERE status = ";
     const suggestions = getSqlSuggestionLabels(sql, sql.length, schema);
 
     expect(suggestions.context).toBe("enum_value");
     expect(suggestions.labels).toContain("'pending'");
     expect(suggestions.labels).toContain("'paid'");
+    expect(suggestions.labels).toContain("'shipped'");
   });
 
   it("keeps enum suggestions active while typing inside an open string literal", () => {
@@ -62,7 +63,7 @@ describe("playground/sql-completion", () => {
       throw new Error("Missing example schema.");
     }
 
-    const sql = "SELECT * FROM orders WHERE status = 'pa";
+    const sql = "SELECT * FROM my_orders WHERE status = 'pa";
     const suggestions = getSqlSuggestionLabels(sql, sql.length, schema);
 
     expect(suggestions.context).toBe("enum_value");
@@ -75,11 +76,11 @@ describe("playground/sql-completion", () => {
     }
 
     const sql = [
-      "SELECT o.id, c.full_name, o.total_cents",
-      "FROM orders o",
-      "JOIN customers c ON o.customer_id = c.id",
+      "SELECT o.id, v.name, o.total_cents",
+      "FROM my_orders o",
+      "JOIN vendors_for_org v ON o.vendor_id = v.id",
       "WHERE o.status = ''",
-      "ORDER BY o.ordered_at DESC",
+      "ORDER BY o.created_at DESC",
       "LIMIT 10;",
     ].join("\n");
     const quoteIndex = sql.indexOf("''");

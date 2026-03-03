@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EXAMPLE_PACKS } from "../src/examples";
+import { FACADE_SCHEMA } from "../src/examples";
 import {
   buildSchemaGraphLayout,
   buildSchemaGraphModel,
@@ -9,14 +9,19 @@ import {
 
 describe("playground/schema-graph-model", () => {
   it("builds graph edges from foreign keys only", () => {
-    const schema = EXAMPLE_PACKS[0]?.schema;
+    const schema = FACADE_SCHEMA;
     if (!schema) {
       throw new Error("Expected default example schema.");
     }
 
     const layout = buildSchemaGraphLayout(schema);
 
-    expect(layout.tableOrder).toEqual(["customers", "products", "orders", "order_items"]);
+    expect(layout.tableOrder).toEqual([
+      "my_orders",
+      "my_order_items",
+      "vendors_for_org",
+      "active_products",
+    ]);
     expect(layout.edges).toHaveLength(3);
     expect(
       layout.edges
@@ -26,16 +31,16 @@ describe("playground/schema-graph-model", () => {
         )
         .sort(),
     ).toEqual([
-      "order_items.order_id->orders.id",
-      "order_items.product_id->products.id",
-      "orders.customer_id->customers.id",
+      "my_order_items.order_id->my_orders.id",
+      "my_order_items.product_id->active_products.id",
+      "my_orders.vendor_id->vendors_for_org.id",
     ]);
   });
 
   it("is deterministic across repeated runs", () => {
-    const schema = EXAMPLE_PACKS[1]?.schema;
+    const schema = FACADE_SCHEMA;
     if (!schema) {
-      throw new Error("Expected finance schema.");
+      throw new Error("Expected facade schema.");
     }
 
     const first = buildSchemaGraphLayout(schema);
@@ -66,28 +71,28 @@ describe("playground/schema-graph-model", () => {
   });
 
   it("maps relation edges to column handles", () => {
-    const schema = EXAMPLE_PACKS[0]?.schema;
+    const schema = FACADE_SCHEMA;
     if (!schema) {
       throw new Error("Expected default example schema.");
     }
 
     const layout = buildSchemaGraphLayout(schema);
-    const model = buildSchemaGraphModel(schema, layout, "orders");
+    const model = buildSchemaGraphModel(schema, layout, "my_orders");
 
     const relation = model.edges.find(
-      (edge) => edge.source === "orders" && edge.target === "customers",
+      (edge) => edge.source === "my_orders" && edge.target === "vendors_for_org",
     );
 
-    expect(relation?.sourceHandle).toBe(schemaHandleId("out", "customer_id"));
+    expect(relation?.sourceHandle).toBe(schemaHandleId("out", "vendor_id"));
     expect(relation?.targetHandle).toBe(schemaHandleId("in", "id"));
 
-    const ordersNode = model.nodes.find((node) => node.id === "orders");
+    const ordersNode = model.nodes.find((node) => node.id === "my_orders");
     expect(ordersNode?.data.columns.map((column) => column.name)).toEqual([
       "id",
-      "customer_id",
+      "vendor_id",
       "status",
       "total_cents",
-      "ordered_at",
+      "created_at",
     ]);
   });
 });

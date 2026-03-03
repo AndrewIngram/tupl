@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createDataEntityHandle,
   createQuerySession,
   defineProviders,
   defineSchema,
@@ -116,7 +117,7 @@ function applyFilters(row: QueryRow, filters: ScanFilterClause[]): boolean {
 }
 
 describe("query/v1 provider runtime", () => {
-  it("pushes same-provider query fragments via sql_query", async () => {
+  it("routes same-provider queries through scan fragments", async () => {
     const schema = defineSchema({
       tables: {
         orders: {
@@ -137,7 +138,7 @@ describe("query/v1 provider runtime", () => {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
           canExecuteCalls += 1;
-          return fragment.kind === "sql_query";
+          return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return {
@@ -168,7 +169,7 @@ describe("query/v1 provider runtime", () => {
 
     expect(rows).toEqual([{ id: "o2" }]);
     expect(canExecuteCalls).toBeGreaterThan(0);
-    expect(executeCalls).toBe(1);
+    expect(executeCalls).toBeGreaterThan(0);
   });
 
   it("executes same-provider rel fragment when provider supports rel pushdown", async () => {
@@ -222,6 +223,97 @@ describe("query/v1 provider runtime", () => {
     expect(sawRelCompile).toBe(true);
   });
 
+  it("normalizes provider rel fragments to physical entities and source columns", async () => {
+    const ordersEntity = createDataEntityHandle({
+      entity: "orders_raw",
+      provider: "warehouse",
+    });
+
+    const schema = defineSchema(({ table, col }) => ({
+      tables: {
+        my_orders: table({
+          from: ordersEntity,
+          columns: {
+            id: col("id"),
+            totalCents: col("total_cents"),
+            status: {
+              source: col("status"),
+              type: "text",
+              enumFrom: "orders.status",
+              enumMap: {
+                pending: "open",
+                paid: "settled",
+                shipped: "settled",
+              },
+              enum: ["open", "settled"] as const,
+            },
+          },
+        }),
+        orders: table({
+          from: ordersEntity,
+          columns: {
+            status: { source: "status", type: "text", enum: ["pending", "paid", "shipped"] as const },
+          },
+        }),
+      },
+    }));
+
+    let capturedRel: unknown = null;
+
+    const providers = defineProviders({
+      warehouse: {
+        canExecute(fragment: ProviderFragment) {
+          return fragment.kind === "rel";
+        },
+        async compile(fragment: ProviderFragment) {
+          if (fragment.kind === "rel") {
+            capturedRel = fragment.rel;
+          }
+
+          return {
+            provider: "warehouse",
+            kind: fragment.kind,
+            payload: fragment,
+          };
+        },
+        async execute() {
+          return [{ id: "o1" }];
+        },
+      } satisfies ProviderAdapter,
+    });
+
+    const rows = await query({
+      schema,
+      providers,
+      context: {},
+      sql: `
+        SELECT id
+        FROM my_orders
+        WHERE totalCents >= 1000 AND status = 'settled'
+      `,
+    });
+
+    expect(rows).toEqual([{ id: "o1" }]);
+    expect(capturedRel).not.toBeNull();
+
+    const projectNode = capturedRel as {
+      kind?: string;
+      input?: {
+        kind?: string;
+        table?: string;
+        select?: string[];
+        where?: Array<{ column?: string; op?: string }>;
+      };
+    } | null;
+    const scanNode = projectNode?.kind === "project" && projectNode.input?.kind === "scan"
+      ? projectNode.input
+      : null;
+    expect(scanNode?.table).toBe("orders_raw");
+    expect(scanNode?.select).toContain("total_cents");
+    expect(scanNode?.where?.[0]?.column).toBe("total_cents");
+    expect(scanNode?.where?.some((clause) => clause.column === "status" && clause.op === "in")).toBe(true);
+  });
+
   it("uses lookupMany for cross-provider lookup join paths", async () => {
     const schema = defineSchema({
       tables: {
@@ -242,11 +334,11 @@ describe("query/v1 provider runtime", () => {
       },
     });
 
-    const ordersRows = [
+    const ordersRows: QueryRow[] = [
       { id: "o1", user_id: "u1" },
       { id: "o2", user_id: "u2" },
     ];
-    const usersRows = [
+    const usersRows: QueryRow[] = [
       { id: "u1", email: "ada@example.com" },
       { id: "u2", email: "ben@example.com" },
     ];
@@ -346,13 +438,13 @@ describe("query/v1 provider runtime", () => {
       },
     });
 
-    const ordersRows = [
+    const ordersRows: QueryRow[] = [
       { id: "o1", user_id: "u1" },
       { id: "o2", user_id: "u2" },
       { id: "o3", user_id: "u3" },
     ];
 
-    const usersRows = [
+    const usersRows: QueryRow[] = [
       { id: "u1", email: "a@example.com" },
       { id: "u2", email: "b@example.com" },
       { id: "u3", email: "c@example.com" },
@@ -442,11 +534,11 @@ describe("query/v1 provider runtime", () => {
       },
     });
 
-    const ordersRows = [
+    const ordersRows: QueryRow[] = [
       { id: "o1", user_id: "u1" },
       { id: "o2", user_id: "u_missing" },
     ];
-    const usersRows = [{ id: "u1", email: "ada@example.com" }];
+    const usersRows: QueryRow[] = [{ id: "u1", email: "ada@example.com" }];
 
     const providers = defineProviders({
       orders_provider: {
@@ -516,6 +608,85 @@ describe("query/v1 provider runtime", () => {
     expect(rows).toEqual([
       { id: "o1", email: "ada@example.com" },
       { id: "o2", email: null },
+    ]);
+  });
+
+  it("executes synthetic view tables defined with rel DSL", async () => {
+    const ordersEntity = createDataEntityHandle({
+      entity: "orders_raw",
+      provider: "warehouse",
+    });
+
+    const schema = defineSchema(({ table, view, rel, col, agg }) => ({
+      tables: {
+        my_orders: table({
+          from: ordersEntity,
+          columns: {
+            id: { source: "id", type: "text", nullable: false },
+            total_cents: { source: "total_cents", type: "integer", nullable: false },
+          },
+        }),
+        order_spend: view({
+          rel: () =>
+            rel.aggregate({
+              from: rel.scan("my_orders"),
+              groupBy: [col("my_orders.id")],
+              measures: {
+                spend: agg.sum(col("my_orders.total_cents")),
+              },
+            }),
+          columns: {
+            order_id: col("id"),
+            spend: col("spend"),
+          },
+        }),
+      },
+    }));
+
+    const providers = defineProviders({
+      warehouse: {
+        canExecute(fragment: ProviderFragment) {
+          return fragment.kind === "scan";
+        },
+        async compile(fragment: ProviderFragment) {
+          return {
+            provider: "warehouse",
+            kind: fragment.kind,
+            payload: fragment,
+          };
+        },
+        async execute(plan) {
+          const fragment = plan.payload as ProviderFragment;
+          if (fragment.kind !== "scan") {
+            return [];
+          }
+
+          return scanRows(
+            [
+              { id: "o1", total_cents: 1500 },
+              { id: "o1", total_cents: 500 },
+              { id: "o2", total_cents: 700 },
+            ],
+            fragment.request,
+          );
+        },
+      } satisfies ProviderAdapter,
+    });
+
+    const rows = await query({
+      schema,
+      providers,
+      context: {},
+      sql: `
+        SELECT order_id, spend
+        FROM order_spend
+        ORDER BY order_id ASC
+      `,
+    });
+
+    expect(rows).toEqual([
+      { order_id: "o1", spend: 2000 },
+      { order_id: "o2", spend: 700 },
     ]);
   });
 

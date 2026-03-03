@@ -1,22 +1,48 @@
+import { and, eq, sql } from "drizzle-orm";
+import {
+  createDrizzleProvider,
+  type DrizzleProviderTableConfig,
+} from "../../../packages/drizzle/src/index";
 import {
   createQuerySession,
   defaultSqlAstParser,
-  type ProvidersMap,
+  defineProviders,
+  lowerSqlToRel,
+  planPhysicalQuery,
+  resolveSchemaLinkedEnums,
+  resolveTableColumnDefinition,
+  type PhysicalPlan,
+  type ProviderFragment,
   type QueryExecutionPlan,
   type QueryRow,
   type QuerySession,
   type QueryStepEvent,
+  type RelNode,
   type SchemaDefinition,
 } from "sqlql";
 
-import { createPlaygroundProviders } from "./memory-provider";
-import { parseRowsText, parseSchemaText } from "./validation";
+import {
+  DOWNSTREAM_ROWS_SCHEMA,
+  orderItemsTable,
+  ordersTable,
+  productsTable,
+  userProductAccessTable,
+  vendorsTable,
+} from "./downstream-model";
+import {
+  clearExecutedSqlQueries,
+  getExecutedSqlQueries,
+  getPlaygroundPgliteRuntime,
+  reseedDownstreamDatabase,
+  type ExecutedSqlQuery,
+} from "./pglite-runtime";
+import type { DownstreamRows, PlaygroundContext } from "./types";
+import { parseDownstreamRowsText, parseFacadeSchemaText } from "./validation";
 
 export interface PlaygroundCompileSuccess {
   ok: true;
   schema: SchemaDefinition;
-  rows: Record<string, QueryRow[]>;
-  providers: ProvidersMap<object>;
+  downstreamRows: DownstreamRows;
   sql: string;
 }
 
@@ -33,6 +59,25 @@ export interface SessionSnapshot {
   events: QueryStepEvent[];
   result: QueryRow[] | null;
   done: boolean;
+  executedQueries: ExecutedSqlQuery[];
+}
+
+export interface TranslationFragment {
+  stepId: string;
+  provider: string;
+  fragment: ProviderFragment;
+}
+
+export interface PlaygroundTranslation {
+  userSql: string;
+  facadeRel: RelNode;
+  physicalPlan: PhysicalPlan;
+  providerFragments: TranslationFragment[];
+}
+
+export interface PlaygroundSessionBundle {
+  session: QuerySession;
+  translation: PlaygroundTranslation;
 }
 
 interface SqlBindingInfo {
@@ -352,12 +397,87 @@ function validateSelectReferences(
   return null;
 }
 
+function buildProvider(context: PlaygroundContext) {
+  const tableConfigs = {
+    my_orders: {
+      table: ordersTable,
+      scope: (ctx: PlaygroundContext) =>
+        and(eq(ordersTable.org_id, ctx.orgId), eq(ordersTable.user_id, ctx.userId)),
+    },
+    my_order_items: {
+      table: orderItemsTable,
+      scope: (ctx: PlaygroundContext) =>
+        and(eq(orderItemsTable.org_id, ctx.orgId), eq(orderItemsTable.user_id, ctx.userId)),
+    },
+    vendors_for_org: {
+      table: vendorsTable,
+      scope: (ctx: PlaygroundContext) => eq(vendorsTable.org_id, ctx.orgId),
+    },
+    active_products: {
+      table: productsTable,
+      scope: (ctx: PlaygroundContext) =>
+        and(
+          eq(productsTable.org_id, ctx.orgId),
+          eq(productsTable.active, true),
+          sql`exists (select 1 from ${userProductAccessTable} where ${userProductAccessTable.product_id} = ${productsTable.id} and ${userProductAccessTable.user_id} = ${ctx.userId})`,
+        ),
+    },
+  } satisfies Record<string, DrizzleProviderTableConfig<PlaygroundContext, string>>;
+
+  return getPlaygroundPgliteRuntime().then((runtime) =>
+    createDrizzleProvider<PlaygroundContext>({
+      name: "dbProvider",
+      db: runtime.db,
+      tables: tableConfigs,
+    }));
+}
+
+function resolveDownstreamEnumValues(ref: { table: string; column: string }): readonly string[] | undefined {
+  const table = DOWNSTREAM_ROWS_SCHEMA.tables[ref.table];
+  if (!table) {
+    return undefined;
+  }
+
+  if (!(ref.column in table.columns)) {
+    return undefined;
+  }
+
+  const column = resolveTableColumnDefinition(DOWNSTREAM_ROWS_SCHEMA, ref.table, ref.column);
+  return column.enum;
+}
+
+function buildTranslation(
+  userSql: string,
+  facadeRel: RelNode,
+  physicalPlan: PhysicalPlan,
+): PlaygroundTranslation {
+  const providerFragments: TranslationFragment[] = [];
+
+  for (const step of physicalPlan.steps) {
+    if (step.kind !== "remote_fragment" || !step.fragment) {
+      continue;
+    }
+    providerFragments.push({
+      stepId: step.id,
+      provider: step.provider,
+      fragment: step.fragment,
+    });
+  }
+
+  return {
+    userSql,
+    facadeRel,
+    physicalPlan,
+    providerFragments,
+  };
+}
+
 export function compilePlaygroundInput(
   schemaText: string,
   rowsText: string,
   sqlText: string,
 ): PlaygroundCompileResult {
-  const schemaResult = parseSchemaText(schemaText);
+  const schemaResult = parseFacadeSchemaText(schemaText);
   if (!schemaResult.ok || !schemaResult.schema) {
     return {
       ok: false,
@@ -365,7 +485,21 @@ export function compilePlaygroundInput(
     };
   }
 
-  const rowsResult = parseRowsText(schemaResult.schema, rowsText);
+  let schema = schemaResult.schema;
+  try {
+    schema = resolveSchemaLinkedEnums(schema, {
+      resolveEnumValues: (ref) => resolveDownstreamEnumValues(ref),
+      onUnresolved: "throw",
+      strictUnmapped: true,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      issues: [error instanceof Error ? error.message : "Invalid enum linkage in schema."],
+    };
+  }
+
+  const rowsResult = parseDownstreamRowsText(rowsText);
   const parsedRows = rowsResult.rows;
   if (!rowsResult.ok || !parsedRows) {
     return {
@@ -400,7 +534,7 @@ export function compilePlaygroundInput(
     };
   }
 
-  const referenceIssue = validateSelectReferences(ast, schemaResult.schema, new Set<string>());
+  const referenceIssue = validateSelectReferences(ast, schema, new Set<string>());
   if (referenceIssue) {
     return {
       ok: false,
@@ -408,35 +542,60 @@ export function compilePlaygroundInput(
     };
   }
 
-  const providers = createPlaygroundProviders(schemaResult.schema, parsedRows);
-
   return {
     ok: true,
-    schema: schemaResult.schema,
-    rows: parsedRows,
-    providers,
+    schema,
+    downstreamRows: parsedRows as DownstreamRows,
     sql: normalizedSql,
   };
 }
 
-export function createSession(compiled: PlaygroundCompileSuccess): QuerySession {
-  return createQuerySession({
+export async function createSession(
+  compiled: PlaygroundCompileSuccess,
+  context: PlaygroundContext,
+): Promise<PlaygroundSessionBundle> {
+  clearExecutedSqlQueries();
+  await reseedDownstreamDatabase(compiled.downstreamRows);
+  clearExecutedSqlQueries();
+
+  const dbProvider = await buildProvider(context);
+  const providers = defineProviders({
+    dbProvider,
+  });
+
+  const lowered = lowerSqlToRel(compiled.sql, compiled.schema);
+  const physicalPlan = await planPhysicalQuery(
+    lowered.rel,
+    compiled.schema,
+    providers,
+    context,
+    compiled.sql,
+  );
+
+  const session = createQuerySession({
     schema: compiled.schema,
-    providers: compiled.providers,
-    context: {},
+    providers,
+    context,
     sql: compiled.sql,
     options: {
       maxConcurrency: 4,
       captureRows: "full",
     },
   });
+
+  return {
+    session,
+    translation: buildTranslation(compiled.sql, lowered.rel, physicalPlan),
+  };
 }
 
 export async function replaySession(
   compiled: PlaygroundCompileSuccess,
   eventCount: number,
+  context: PlaygroundContext,
 ): Promise<SessionSnapshot> {
-  const session = createSession(compiled);
+  const bundle = await createSession(compiled, context);
+  const session = bundle.session;
   const events: QueryStepEvent[] = [];
 
   while (events.length < eventCount) {
@@ -448,6 +607,7 @@ export async function replaySession(
         events,
         result: next.result,
         done: true,
+        executedQueries: getExecutedSqlQueries(),
       };
     }
 
@@ -460,6 +620,7 @@ export async function replaySession(
     events,
     result: null,
     done: false,
+    executedQueries: getExecutedSqlQueries(),
   };
 }
 
@@ -478,6 +639,7 @@ export async function runSessionToCompletion(
         events,
         result: next.result,
         done: true,
+        executedQueries: getExecutedSqlQueries(),
       };
     }
     events.push(next);

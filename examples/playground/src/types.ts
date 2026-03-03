@@ -1,18 +1,35 @@
 import type { SchemaDefinition, SqlScalarType, TableColumnDefinition } from "sqlql";
 
-export interface ExampleQuery {
+export interface PlaygroundContext {
+  orgId: string;
+  userId: string;
+}
+
+export type DownstreamRows = Record<string, Array<Record<string, unknown>>>;
+
+export interface PlaygroundQueryPreset {
+  id: string;
   label: string;
   sql: string;
+  description?: string;
+}
+
+export interface PlaygroundScenarioPreset {
+  id: string;
+  label: string;
+  description: string;
+  context: PlaygroundContext;
+  rows: DownstreamRows;
+  defaultQueryId: string;
 }
 
 export type CatalogQueryId = string;
 
 export interface CatalogQueryEntry {
   id: CatalogQueryId;
-  packId: string;
-  packLabel: string;
-  queryLabel: string;
+  label: string;
   sql: string;
+  description?: string;
 }
 
 export interface QueryCompatibility {
@@ -21,15 +38,6 @@ export interface QueryCompatibility {
 }
 
 export type QueryCompatibilityMap = Record<CatalogQueryId, QueryCompatibility>;
-
-export interface ExamplePack {
-  id: string;
-  label: string;
-  description: string;
-  schema: SchemaDefinition;
-  rows: Record<string, Array<Record<string, unknown>>>;
-  queries: ExampleQuery[];
-}
 
 export interface SchemaValidationIssue {
   path: string;

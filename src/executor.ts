@@ -5,7 +5,15 @@ import {
   type ProvidersMap,
 } from "./provider";
 import type { RelJoinNode, RelNode, RelProjectNode, RelScanNode } from "./rel";
-import type { QueryRow, ScanFilterClause, SchemaDefinition, TableScanRequest } from "./schema";
+import {
+  getNormalizedTableBinding,
+  type NormalizedPhysicalTableBinding,
+  type QueryRow,
+  type ScanFilterClause,
+  type SchemaDefinition,
+  type SchemaViewRelNode,
+  type TableScanRequest,
+} from "./schema";
 
 export interface RelExecutionGuardrails {
   maxExecutionRows: number;
@@ -81,7 +89,7 @@ async function executeRelNode<TContext>(
     case "with":
       return executeWith(node, context);
     case "sql":
-      throw new UnsupportedRelExecutionError("SQL fallback rel nodes require provider sql_query execution.");
+      throw new UnsupportedRelExecutionError("SQL-shaped rel nodes are not executable in the v1 provider runtime.");
   }
 }
 
@@ -89,6 +97,24 @@ async function executeScan<TContext>(
   scan: RelScanNode,
   context: RelExecutionContext<TContext>,
 ): Promise<InternalRow[]> {
+  const normalizedBinding = getNormalizedTableBinding(context.schema, scan.table);
+  if (normalizedBinding?.kind === "view") {
+    const rel = compileViewRelToExecutable(scan.table, normalizedBinding.rel(context.context), context.schema);
+    const viewRows = await executeRelNode(rel, context);
+    const scanned = scanLocalRows(viewRows, {
+      table: scan.table,
+      ...(scan.alias ? { alias: scan.alias } : {}),
+      select: scan.select,
+      ...(scan.where ? { where: scan.where } : {}),
+      ...(scan.orderBy ? { orderBy: scan.orderBy } : {}),
+      ...(scan.limit != null ? { limit: scan.limit } : {}),
+      ...(scan.offset != null ? { offset: scan.offset } : {}),
+    });
+
+    const alias = scan.alias ?? scan.table;
+    return scanned.map((row) => prefixRow(row, alias));
+  }
+
   const cteRows = context.cteRows.get(scan.table);
   if (cteRows) {
     const scanned = scanLocalRows(cteRows, {
@@ -111,12 +137,13 @@ async function executeScan<TContext>(
     throw new Error(`Missing provider adapter: ${providerName}`);
   }
 
+  const physicalBinding = normalizedBinding?.kind === "physical" ? normalizedBinding : null;
   const request: TableScanRequest = {
-    table: scan.table,
+    table: physicalBinding?.entity ?? scan.table,
     ...(scan.alias ? { alias: scan.alias } : {}),
-    select: scan.select,
-    ...(scan.where ? { where: scan.where } : {}),
-    ...(scan.orderBy ? { orderBy: scan.orderBy } : {}),
+    select: mapLogicalColumnsToSource(scan.select, physicalBinding),
+    ...(scan.where ? { where: mapWhereToSource(scan.where, physicalBinding) } : {}),
+    ...(scan.orderBy ? { orderBy: mapOrderToSource(scan.orderBy, physicalBinding) } : {}),
     ...(scan.limit != null ? { limit: scan.limit } : {}),
     ...(scan.offset != null ? { offset: scan.offset } : {}),
   };
@@ -124,7 +151,7 @@ async function executeScan<TContext>(
   const fragment: ProviderFragment = {
     kind: "scan",
     provider: providerName,
-    table: scan.table,
+    table: request.table,
     request,
   };
 
@@ -139,9 +166,10 @@ async function executeScan<TContext>(
 
   const compiled = await provider.compile(fragment, context.context);
   const rows = await provider.execute(compiled, context.context);
+  const projected = mapRowsToLogical(rows, scan.select, physicalBinding);
 
   const alias = scan.alias ?? scan.table;
-  return rows.map((row) => prefixRow(row, alias));
+  return projected.map((row) => prefixRow(row, alias));
 }
 
 async function executeFilter<TContext>(
@@ -188,6 +216,12 @@ async function maybeExecuteLookupJoin<TContext>(
     return null;
   }
 
+  const leftBinding = getNormalizedTableBinding(context.schema, leftScan.table);
+  const rightBinding = getNormalizedTableBinding(context.schema, rightScan.table);
+  if (leftBinding?.kind === "view" || rightBinding?.kind === "view") {
+    return null;
+  }
+
   const leftProviderName = resolveTableProvider(context.schema, leftScan.table);
   const rightProviderName = resolveTableProvider(context.schema, rightScan.table);
   if (leftProviderName === rightProviderName) {
@@ -200,7 +234,9 @@ async function maybeExecuteLookupJoin<TContext>(
   }
 
   const leftKey = `${join.leftKey.alias}.${join.leftKey.column}`;
-  const rightKey = join.rightKey.column;
+  const rightKey = rightBinding?.kind === "physical"
+    ? (rightBinding.columnToSource[join.rightKey.column] ?? join.rightKey.column)
+    : join.rightKey.column;
   const dedupedKeys = [...new Set(leftRows.map((row) => row[leftKey]).filter((value) => value != null))];
 
   const rightRows: InternalRow[] = [];
@@ -223,17 +259,19 @@ async function maybeExecuteLookupJoin<TContext>(
 
     const lookedUp = await rightProvider.lookupMany(
       {
-        table: rightScan.table,
+        table: rightBinding?.kind === "physical" ? rightBinding.entity : rightScan.table,
         key: rightKey,
         keys: batch,
-        select: rightScan.select,
-        ...(rightScan.where ? { where: rightScan.where } : {}),
+        select: mapLogicalColumnsToSource(rightScan.select, rightBinding?.kind === "physical" ? rightBinding : null),
+        ...(rightScan.where
+          ? { where: mapWhereToSource(rightScan.where, rightBinding?.kind === "physical" ? rightBinding : null) }
+          : {}),
       },
       context.context,
     );
 
     const rightAlias = rightScan.alias ?? rightScan.table;
-    for (const row of lookedUp) {
+    for (const row of mapRowsToLogical(lookedUp, rightScan.select, rightBinding?.kind === "physical" ? rightBinding : null)) {
       rightRows.push(prefixRow(row, rightAlias));
     }
   }
@@ -305,9 +343,7 @@ async function executeProject<TContext>(
   return rows.map((row) => {
     const out: QueryRow = {};
     for (const mapping of project.columns) {
-      const alias = mapping.source.alias;
-      const key = `${alias}.${mapping.source.column}`;
-      out[mapping.output] = row[key] ?? null;
+      out[mapping.output] = readRowValue(row, toColumnKey(mapping.source)) ?? null;
     }
     return out;
   });
@@ -371,8 +407,10 @@ async function executeSort<TContext>(
 
   sorted.sort((left, right) => {
     for (const term of sort.orderBy) {
-      const key = `${term.source.alias}.${term.source.column}`;
-      const comparison = compareNullableValues(left[key], right[key]);
+      const comparison = compareNullableValues(
+        readRowValue(left, toColumnKey(term.source)),
+        readRowValue(right, toColumnKey(term.source)),
+      );
       if (comparison !== 0) {
         return term.direction === "asc" ? comparison : -comparison;
       }
@@ -439,6 +477,192 @@ async function executeWith<TContext>(
   }
 
   return executeRelNode(withNode.body, nested);
+}
+
+function compileViewRelToExecutable(
+  viewName: string,
+  definition: SchemaViewRelNode | unknown,
+  schema: SchemaDefinition,
+): RelNode {
+  if (isRelNode(definition)) {
+    return definition;
+  }
+
+  if (!definition || typeof definition !== "object" || typeof (definition as { kind?: unknown }).kind !== "string") {
+    throw new Error(`View ${viewName} returned an unsupported rel definition.`);
+  }
+
+  const rel = compileSchemaViewRelNode(definition as SchemaViewRelNode, schema);
+  const binding = getNormalizedTableBinding(schema, viewName);
+  if (!binding || binding.kind !== "view") {
+    return rel;
+  }
+
+  const columns = Object.entries(binding.columnToSource);
+  return {
+    id: nextSyntheticRelId("view_project"),
+    kind: "project",
+    convention: "local",
+    input: rel,
+    columns: columns.map(([output, source]) => ({
+      source: parseRef(source),
+      output,
+    })),
+    output: columns.map(([name]) => ({ name })),
+  };
+}
+
+function compileSchemaViewRelNode(node: SchemaViewRelNode, schema: SchemaDefinition): RelNode {
+  switch (node.kind) {
+    case "scan": {
+      const table = schema.tables[node.table];
+      if (!table) {
+        throw new Error(`Unknown table in view rel scan: ${node.table}`);
+      }
+      const select = Object.keys(table.columns);
+      return {
+        id: nextSyntheticRelId("view_scan"),
+        kind: "scan",
+        convention: "local",
+        table: node.table,
+        alias: node.table,
+        select,
+        output: select.map((column) => ({ name: `${node.table}.${column}` })),
+      };
+    }
+    case "join": {
+      const left = compileSchemaViewRelNode(node.left, schema);
+      const right = compileSchemaViewRelNode(node.right, schema);
+      return {
+        id: nextSyntheticRelId("view_join"),
+        kind: "join",
+        convention: "local",
+        joinType: node.type,
+        left,
+        right,
+        leftKey: parseRef(resolveSchemaColRef(node.on.left)),
+        rightKey: parseRef(resolveSchemaColRef(node.on.right)),
+        output: [...left.output, ...right.output],
+      };
+    }
+    case "aggregate": {
+      const input = compileSchemaViewRelNode(node.from, schema);
+      const groupBy = node.groupBy.map((column) => parseRef(resolveSchemaColRef(column)));
+      const metrics = Object.entries(node.measures).map(([output, metric]) => ({
+        fn: metric.fn,
+        as: output,
+        ...(metric.column ? { column: parseRef(resolveSchemaColRef(metric.column)) } : {}),
+      }));
+
+      return {
+        id: nextSyntheticRelId("view_aggregate"),
+        kind: "aggregate",
+        convention: "local",
+        input,
+        groupBy,
+        metrics,
+        output: [
+          ...groupBy.map((column) => ({ name: column.column })),
+          ...metrics.map((metric) => ({ name: metric.as })),
+        ],
+      };
+    }
+  }
+}
+
+function resolveSchemaColRef(ref: { ref?: string }): string {
+  if (!ref.ref) {
+    throw new Error("View rel column reference was not normalized to a string reference.");
+  }
+  return ref.ref;
+}
+
+function isRelNode(value: unknown): value is RelNode {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    typeof (value as { kind?: unknown }).kind === "string" &&
+    typeof (value as { convention?: unknown }).convention === "string"
+  );
+}
+
+function parseRef(ref: string): { alias?: string; table?: string; column: string } {
+  const parts = ref.split(".");
+  if (parts.length === 1) {
+    return {
+      column: parts[0] ?? ref,
+    };
+  }
+  const column = parts[parts.length - 1] ?? ref;
+  const alias = parts.slice(0, -1).join(".");
+  return {
+    alias,
+    column,
+  };
+}
+
+let syntheticRelIdCounter = 0;
+
+function nextSyntheticRelId(prefix: string): string {
+  syntheticRelIdCounter += 1;
+  return `${prefix}_${syntheticRelIdCounter}`;
+}
+
+function mapLogicalColumnsToSource(
+  columns: string[],
+  binding: NormalizedPhysicalTableBinding | null,
+): string[] {
+  if (!binding) {
+    return columns;
+  }
+  return columns.map((column) => binding.columnToSource[column] ?? column);
+}
+
+function mapWhereToSource(
+  where: ScanFilterClause[],
+  binding: NormalizedPhysicalTableBinding | null,
+): ScanFilterClause[] {
+  if (!binding) {
+    return where;
+  }
+
+  return where.map((clause) => ({
+    ...clause,
+    column: binding.columnToSource[clause.column] ?? clause.column,
+  }));
+}
+
+function mapOrderToSource(
+  orderBy: NonNullable<TableScanRequest["orderBy"]>,
+  binding: NormalizedPhysicalTableBinding | null,
+): NonNullable<TableScanRequest["orderBy"]> {
+  if (!binding) {
+    return orderBy;
+  }
+
+  return orderBy.map((term) => ({
+    ...term,
+    column: binding.columnToSource[term.column] ?? term.column,
+  }));
+}
+
+function mapRowsToLogical(
+  rows: QueryRow[],
+  selectedLogicalColumns: string[],
+  binding: NormalizedPhysicalTableBinding | null,
+): QueryRow[] {
+  if (!binding) {
+    return rows;
+  }
+
+  return rows.map((row) => {
+    const out: QueryRow = {};
+    for (const logical of selectedLogicalColumns) {
+      const source = binding.columnToSource[logical] ?? logical;
+      out[logical] = row[source] ?? null;
+    }
+    return out;
+  });
 }
 
 function findFirstScan(node: RelNode): RelScanNode | null {
