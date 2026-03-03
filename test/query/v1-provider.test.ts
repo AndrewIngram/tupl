@@ -371,6 +371,103 @@ describe("query/v1 provider runtime", () => {
     ).rejects.toThrow("maxLookupBatches guardrail");
   });
 
+  it("preserves LEFT JOIN null semantics on lookup joins", async () => {
+    const schema = defineSchema({
+      tables: {
+        orders: {
+          provider: "orders_provider",
+          columns: {
+            id: "text",
+            user_id: "text",
+          },
+        },
+        users: {
+          provider: "users_provider",
+          columns: {
+            id: "text",
+            email: "text",
+          },
+        },
+      },
+    });
+
+    const ordersRows = [
+      { id: "o1", user_id: "u1" },
+      { id: "o2", user_id: "u_missing" },
+    ];
+    const usersRows = [{ id: "u1", email: "ada@example.com" }];
+
+    const providers = defineProviders({
+      orders_provider: {
+        canExecute(fragment: ProviderFragment) {
+          return fragment.kind === "scan";
+        },
+        async compile(fragment: ProviderFragment) {
+          return {
+            provider: "orders_provider",
+            kind: fragment.kind,
+            payload: fragment,
+          };
+        },
+        async execute(plan) {
+          const fragment = plan.payload as ProviderFragment;
+          if (fragment.kind !== "scan") {
+            return [];
+          }
+          return scanRows(ordersRows, fragment.request);
+        },
+      } satisfies ProviderAdapter,
+      users_provider: {
+        canExecute(fragment: ProviderFragment) {
+          return fragment.kind === "scan";
+        },
+        async compile(fragment: ProviderFragment) {
+          return {
+            provider: "users_provider",
+            kind: fragment.kind,
+            payload: fragment,
+          };
+        },
+        async execute(plan) {
+          const fragment = plan.payload as ProviderFragment;
+          if (fragment.kind !== "scan") {
+            return [];
+          }
+          return scanRows(usersRows, fragment.request);
+        },
+        async lookupMany(request) {
+          const keys = new Set(request.keys);
+          return usersRows
+            .filter((row) => keys.has(row[request.key]))
+            .map((row) => {
+              const out: QueryRow = {};
+              for (const column of request.select) {
+                out[column] = row[column] ?? null;
+              }
+              return out;
+            });
+        },
+      } satisfies ProviderAdapter,
+    });
+
+    const rows = await query({
+      schema,
+      providers,
+      context: {},
+      sql: `
+        SELECT o.id, u.email
+        FROM orders o
+        LEFT JOIN users u ON o.user_id = u.id
+        ORDER BY o.id ASC
+      `,
+    });
+
+    expect(rows).toEqual([
+      { id: "o1", email: "ada@example.com" },
+      { id: "o2", email: null },
+    ]);
+  });
+
   it("maps session plan scan stages to remote_fragment kind", () => {
     const schema = defineSchema({
       tables: {
