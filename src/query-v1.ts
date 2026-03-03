@@ -596,21 +596,35 @@ export async function query<TContext>(input: QueryInput<TContext>): Promise<Quer
   }
 
   try {
-    await planPhysicalQuery(lowered.rel, input.schema, input.providers, input.context, input.sql);
-    const rows = await withTimeout(
-      executeRelWithProviders(
-        lowered.rel,
-        input.schema,
-        input.providers,
-        input.context,
-        {
-          maxExecutionRows: guardrails.maxExecutionRows,
-          maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
-          maxLookupBatches: guardrails.maxLookupBatches,
-        },
-      ),
-      guardrails.timeoutMs,
+    const physicalPlan = await planPhysicalQuery(
+      lowered.rel,
+      input.schema,
+      input.providers,
+      input.context,
+      input.sql,
     );
+
+    const singleStep = physicalPlan.steps.length === 1 ? physicalPlan.steps[0] : null;
+    const rows =
+      singleStep?.kind === "remote_fragment"
+        ? await withTimeout(
+            executeProviderFragmentStep(singleStep, input.providers, input.context),
+            guardrails.timeoutMs,
+          )
+        : await withTimeout(
+            executeRelWithProviders(
+              lowered.rel,
+              input.schema,
+              input.providers,
+              input.context,
+              {
+                maxExecutionRows: guardrails.maxExecutionRows,
+                maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
+                maxLookupBatches: guardrails.maxLookupBatches,
+              },
+            ),
+            guardrails.timeoutMs,
+          );
 
     enforceExecutionRowLimit(rows, guardrails);
     return rows;
@@ -668,4 +682,17 @@ export function asProviderCompiledPlan(
     kind,
     payload,
   };
+}
+
+async function executeProviderFragmentStep<TContext>(
+  step: { kind: "remote_fragment"; provider: string; fragment: ProviderFragment },
+  providers: ProvidersMap<TContext>,
+  context: TContext,
+): Promise<QueryRow[]> {
+  const provider = providers[step.provider];
+  if (!provider) {
+    throw new Error(`Missing provider adapter: ${step.provider}`);
+  }
+  const compiled = await provider.compile(step.fragment, context);
+  return provider.execute(compiled, context);
 }

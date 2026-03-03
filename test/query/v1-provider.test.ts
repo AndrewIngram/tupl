@@ -171,6 +171,57 @@ describe("query/v1 provider runtime", () => {
     expect(executeCalls).toBe(1);
   });
 
+  it("executes same-provider rel fragment when provider supports rel pushdown", async () => {
+    const schema = defineSchema({
+      tables: {
+        orders: {
+          provider: "warehouse",
+          columns: {
+            id: "text",
+            org_id: "text",
+          },
+        },
+      },
+    });
+
+    let sawRelCompile = false;
+
+    const providers = defineProviders({
+      warehouse: {
+        canExecute(fragment: ProviderFragment) {
+          return fragment.kind === "rel" || fragment.kind === "scan";
+        },
+        async compile(fragment: ProviderFragment) {
+          if (fragment.kind === "rel") {
+            sawRelCompile = true;
+          }
+          return {
+            provider: "warehouse",
+            kind: fragment.kind,
+            payload: fragment,
+          };
+        },
+        async execute() {
+          return [{ id: "o1" }];
+        },
+      } satisfies ProviderAdapter,
+    });
+
+    const rows = await query({
+      schema,
+      providers,
+      context: {},
+      sql: `
+        SELECT id
+        FROM orders
+        WHERE org_id = 'org_1'
+      `,
+    });
+
+    expect(rows).toEqual([{ id: "o1" }]);
+    expect(sawRelCompile).toBe(true);
+  });
+
   it("uses lookupMany for cross-provider lookup join paths", async () => {
     const schema = defineSchema({
       tables: {
