@@ -1210,8 +1210,15 @@ function collectTablesFromSelectAst(ast: SelectAst): string[] {
     }
 
     const record = value as Record<string, unknown>;
-    if (typeof record.name === "string") {
-      cteNames.add(record.name);
+    const rawName = record.name;
+    if (typeof rawName === "string") {
+      cteNames.add(rawName);
+    } else if (
+      rawName &&
+      typeof rawName === "object" &&
+      typeof (rawName as { value?: unknown }).value === "string"
+    ) {
+      cteNames.add((rawName as { value: string }).value);
     }
 
     const from = record.from;

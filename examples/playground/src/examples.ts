@@ -7,6 +7,7 @@ const commerce: ExamplePack = {
   schema: {
     tables: {
       customers: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           full_name: { type: "text", nullable: false },
@@ -14,6 +15,7 @@ const commerce: ExamplePack = {
         },
       },
       products: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           sku: { type: "text", nullable: false, unique: true },
@@ -22,6 +24,7 @@ const commerce: ExamplePack = {
         },
       },
       orders: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           customer_id: {
@@ -38,6 +41,7 @@ const commerce: ExamplePack = {
         },
       },
       order_items: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           order_id: {
@@ -183,6 +187,7 @@ const finance: ExamplePack = {
   schema: {
     tables: {
       accounts: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           owner_name: { type: "text", nullable: false },
@@ -194,6 +199,7 @@ const finance: ExamplePack = {
         },
       },
       transactions: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           account_id: {
@@ -211,6 +217,7 @@ const finance: ExamplePack = {
         },
       },
       monthly_budgets: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           account_id: {
@@ -332,6 +339,7 @@ const fitness: ExamplePack = {
   schema: {
     tables: {
       athletes: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           display_name: { type: "text", nullable: false },
@@ -343,6 +351,7 @@ const fitness: ExamplePack = {
         },
       },
       workouts: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           athlete_id: {
@@ -363,6 +372,7 @@ const fitness: ExamplePack = {
         },
       },
       runs: {
+        provider: "memory",
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
           athlete_id: {

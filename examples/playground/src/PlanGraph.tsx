@@ -37,7 +37,7 @@ interface PlanGraphProps {
 type StepExecutionClass = "domain_call" | "local_over_fetched_rows" | "internal_op";
 
 function isCteScanStep(step: QueryExecutionPlanStep): boolean {
-  if (step.kind !== "scan" || step.operation.name !== "scan") {
+  if (step.kind !== "scan" || step.operation?.name !== "scan") {
     return false;
   }
 
@@ -54,6 +54,10 @@ function classifyStepExecution(
   step: QueryExecutionPlanStep,
   state: QueryStepState | null,
 ): StepExecutionClass {
+  if (step.kind.startsWith("local_")) {
+    return "internal_op";
+  }
+
   if (isCteScanStep(step)) {
     return "local_over_fetched_rows";
   }
@@ -66,11 +70,7 @@ function classifyStepExecution(
   }
 
   if (state?.routeUsed) {
-    if (
-      state.routeUsed === "scan" ||
-      state.routeUsed === "lookup" ||
-      state.routeUsed === "aggregate"
-    ) {
+    if (["scan", "lookup", "aggregate", "provider_fragment", "lookup_join"].includes(state.routeUsed)) {
       return "domain_call";
     }
     return "internal_op";
@@ -85,7 +85,13 @@ function classifyStepExecution(
     return "local_over_fetched_rows";
   }
 
-  if (step.phase === "fetch" || step.kind === "scan" || step.kind === "aggregate") {
+  if (
+    step.phase === "fetch" ||
+    step.kind === "scan" ||
+    step.kind === "aggregate" ||
+    step.kind === "remote_fragment" ||
+    step.kind === "lookup_join"
+  ) {
     return "domain_call";
   }
 

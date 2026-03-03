@@ -1,11 +1,10 @@
 import {
-  createArrayTableMethods,
   createQuerySession,
   defaultSqlAstParser,
-  defineTableMethods,
   type SchemaDefinition,
 } from "sqlql";
 
+import { createPlaygroundProviders } from "./memory-provider";
 import type {
   CatalogQueryEntry,
   QueryCompatibility,
@@ -128,13 +127,13 @@ export function checkQueryCompatibility(
       }
     }
 
-    const methodEntries = Object.keys(schema.tables).map((tableName) => {
-      return [tableName, createArrayTableMethods([])] as const;
-    });
-    const methods = defineTableMethods(schema, Object.fromEntries(methodEntries));
+    const emptyRows = Object.fromEntries(
+      Object.keys(schema.tables).map((tableName) => [tableName, []]),
+    );
+    const providers = createPlaygroundProviders(schema, emptyRows);
     const session = createQuerySession({
       schema,
-      methods,
+      providers,
       context: {},
       sql: normalizedSql,
       options: {

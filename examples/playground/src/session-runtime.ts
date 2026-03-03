@@ -1,23 +1,22 @@
 import {
-  createArrayTableMethods,
   createQuerySession,
   defaultSqlAstParser,
-  defineTableMethods,
+  type ProvidersMap,
   type QueryExecutionPlan,
   type QueryRow,
   type QuerySession,
   type QueryStepEvent,
   type SchemaDefinition,
-  type TableMethodsMap,
 } from "sqlql";
 
+import { createPlaygroundProviders } from "./memory-provider";
 import { parseRowsText, parseSchemaText } from "./validation";
 
 export interface PlaygroundCompileSuccess {
   ok: true;
   schema: SchemaDefinition;
   rows: Record<string, QueryRow[]>;
-  methods: TableMethodsMap<object>;
+  providers: ProvidersMap<object>;
   sql: string;
 }
 
@@ -409,18 +408,13 @@ export function compilePlaygroundInput(
     };
   }
 
-  const methodEntries = Object.keys(schemaResult.schema.tables).map((tableName) => {
-    const tableRows = parsedRows[tableName] ?? [];
-    return [tableName, createArrayTableMethods(tableRows)] as const;
-  });
-
-  const methods = defineTableMethods(schemaResult.schema, Object.fromEntries(methodEntries));
+  const providers = createPlaygroundProviders(schemaResult.schema, parsedRows);
 
   return {
     ok: true,
     schema: schemaResult.schema,
     rows: parsedRows,
-    methods,
+    providers,
     sql: normalizedSql,
   };
 }
@@ -428,7 +422,7 @@ export function compilePlaygroundInput(
 export function createSession(compiled: PlaygroundCompileSuccess): QuerySession {
   return createQuerySession({
     schema: compiled.schema,
-    methods: compiled.methods,
+    providers: compiled.providers,
     context: {},
     sql: compiled.sql,
     options: {

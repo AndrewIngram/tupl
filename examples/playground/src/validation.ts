@@ -127,6 +127,7 @@ const columnDefinitionSchema = z.union([sqlScalarTypeSchema, columnObjectDefinit
 
 const tableSchema = z
   .object({
+    provider: z.string().min(1),
     columns: z.record(z.string().min(1), columnDefinitionSchema),
     query: queryDefaultsSchema.optional(),
     constraints: z
@@ -430,8 +431,9 @@ export const PLAYGROUND_SCHEMA_JSON_SCHEMA: Record<string, unknown> = {
       additionalProperties: {
         type: "object",
         additionalProperties: false,
-        required: ["columns"],
+        required: ["provider", "columns"],
         properties: {
+          provider: { type: "string" },
           columns: {
             type: "object",
             additionalProperties: {
