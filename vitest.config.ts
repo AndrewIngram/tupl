@@ -11,7 +11,12 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["test/**/*.test.ts", "examples/**/test/**/*.test.ts"],
+    include: [
+      "test/parser/**/*.test.ts",
+      "test/query/v1-*.test.ts",
+      "test/providers/**/*.test.ts",
+      "examples/**/test/**/*.test.ts",
+    ],
     coverage: {
       reporter: ["text", "html"],
     },

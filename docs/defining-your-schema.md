@@ -122,9 +122,9 @@ const schema = defineSchema({
 });
 ```
 
-## Query policy (table-level)
+## Query policy metadata (optional)
 
-Non-column governance lives under `table.query`:
+`table.query` is still accepted as schema metadata and appears in generated DDL comments:
 
 ```ts
 orders: {
@@ -146,7 +146,7 @@ orders: {
 }
 ```
 
-Global defaults can be set at `schema.defaults.query` and overridden per table.
+In v1, execution safety limits should be enforced through `queryGuardrails` on `query(...)`. Treat `table.query` as metadata unless your provider layer explicitly consumes it.
 
 ## Generating DDL
 

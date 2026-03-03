@@ -17,6 +17,7 @@ interface ProviderAdapter<TContext = unknown> {
 ## Fragment kinds
 
 - `sql_query`
+- `rel`
 - `scan`
 - `aggregate`
 

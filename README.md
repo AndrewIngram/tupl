@@ -26,6 +26,7 @@ For LLM-driven tools specifically, a SQL interface gives the model flexible retr
 - Schema guide: [`docs/defining-your-schema.md`](./docs/defining-your-schema.md)
 - Integration guide: [`docs/integrating-with-your-system.md`](./docs/integrating-with-your-system.md)
 - Planner and provider API overview: [`docs/resolver-plan-api.md`](./docs/resolver-plan-api.md)
+- Upgrade guide (v0 -> v1): [`docs/upgrade-v1.md`](./docs/upgrade-v1.md)
 
 ## Conceptual limits and non-goals
 
@@ -130,7 +131,7 @@ First-party provider packages:
 
 Prisma is intentionally not shipped in v1. The recommended path is a custom provider using raw SQL execution hooks until a dedicated adapter lands.
 
-## Column capabilities and query policy
+## Column capabilities
 
 Capabilities are defined per column:
 
@@ -139,7 +140,7 @@ Capabilities are defined per column:
 - `enum?: readonly string[]` (text columns only)
 - `description?: string`
 
-`sqlql` v1 guardrails are query-level (`queryGuardrails` input) rather than table fallback/reject policy.
+`sqlql` v1 execution safety is query-level (`queryGuardrails` input).
 
 ## Query guardrails
 
@@ -160,23 +161,14 @@ Capabilities are defined per column:
 - `toSqlDDL(...)` emits compact column metadata comments (`filterable:*`, `sortable:*`, `format:iso8601` for timestamps) and table-level policy metadata as JSON (`sqlql: query:{...}`).
 - Optional runtime `constraintValidation` modes (`warn`/`error`) include enum/CHECK violations on returned rows.
 
-## JSON helper methods (optional)
+## In-memory prototyping
 
-For demos, tests, and rapid prototypes, `createArrayTableMethods(...)` generates table methods from in-memory rows:
-
-```ts
-import { createArrayTableMethods, defineTableMethods } from "sqlql";
-
-const methods = defineTableMethods(schema, {
-  orders: createArrayTableMethods(ordersRows),
-  users: createArrayTableMethods(usersRows),
-});
-```
+For demos/tests, register a lightweight provider that reads from in-memory row arrays and implements `scan` + optional `lookupMany`.
 
 ## Security model
 
 - `sqlql` does not provide authorization or tenancy guarantees by itself.
-- Domain methods (`scan`, `lookup`, `aggregate`) must enforce access control and data security.
+- Provider adapters must enforce access control and data security.
 - `sqlql` can add query-shape guardrails, but security guarantees come from your domain/storage layer.
 
 ## Performance philosophy
