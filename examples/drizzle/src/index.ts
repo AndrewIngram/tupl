@@ -52,6 +52,9 @@ async function main(): Promise<void> {
   const providers = defineProviders({
     drizzle: createDrizzleProvider({
       db,
+      executeSql: async (sqlText) => {
+        return sqlite.prepare(sqlText).all() as Array<Record<string, unknown>>;
+      },
       tables: {
         users: {
           table: usersTable,

@@ -58,7 +58,10 @@ export interface RelFilterNode extends RelNodeBase {
 export interface RelProjectNode extends RelNodeBase {
   kind: "project";
   input: RelNode;
-  select: string[];
+  columns: Array<{
+    source: RelColumnRef;
+    output: string;
+  }>;
 }
 
 export interface RelJoinNode extends RelNodeBase {
@@ -87,7 +90,10 @@ export interface RelAggregateNode extends RelNodeBase {
 export interface RelSortNode extends RelNodeBase {
   kind: "sort";
   input: RelNode;
-  orderBy: ScanOrderBy[];
+  orderBy: Array<{
+    source: RelColumnRef;
+    direction: "asc" | "desc";
+  }>;
 }
 
 export interface RelLimitOffsetNode extends RelNodeBase {

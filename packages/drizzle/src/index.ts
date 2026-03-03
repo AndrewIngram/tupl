@@ -1,4 +1,5 @@
 import {
+  type AnyColumn,
   and,
   asc,
   desc,
@@ -14,8 +15,6 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import type {
   ProviderAdapter,
   ProviderCapabilityReport,
@@ -28,7 +27,11 @@ import type {
   TableScanRequest,
 } from "sqlql";
 
-export type DrizzleColumnMap<TColumn extends string = string> = Record<TColumn, AnySQLiteColumn>;
+export type DrizzleColumnMap<TColumn extends string = string> = Record<TColumn, AnyColumn>;
+
+export interface DrizzleQueryExecutor {
+  select: (...args: unknown[]) => unknown;
+}
 
 export interface DrizzleProviderTableConfig<
   TContext,
@@ -42,8 +45,9 @@ export interface DrizzleProviderTableConfig<
 }
 
 export interface CreateDrizzleProviderOptions<TContext> {
-  db: BetterSQLite3Database;
+  db: DrizzleQueryExecutor;
   tables: Record<string, DrizzleProviderTableConfig<TContext, string>>;
+  executeSql?: (sqlText: string, context: TContext) => Promise<QueryRow[]>;
 }
 
 export function createDrizzleProvider<TContext>(
@@ -55,6 +59,13 @@ export function createDrizzleProvider<TContext>(
         case "scan":
           return !!options.tables[fragment.table];
         case "sql_query": {
+          if (!options.executeSql) {
+            return {
+              supported: false,
+              reason: "executeSql is required for sql_query fragments.",
+            };
+          }
+
           // Scope predicates are table-level closures; do not bypass them with raw SQL.
           const hasScopedTable = fragment.rel.kind === "sql"
             ? fragment.rel.tables.some((table) => !!options.tables[table]?.scope)
@@ -98,7 +109,10 @@ async function executeDrizzlePlan<TContext>(
 
   switch (fragment.kind) {
     case "sql_query":
-      return executeRawSql(options.db, fragment.sql);
+      if (!options.executeSql) {
+        throw new Error("Drizzle provider missing executeSql callback for sql_query fragments.");
+      }
+      return options.executeSql(fragment.sql, context);
     case "scan": {
       const tableConfig = options.tables[fragment.table];
       if (!tableConfig) {
@@ -118,10 +132,6 @@ async function executeDrizzlePlan<TContext>(
     default:
       throw new Error(`Unsupported drizzle compiled plan kind: ${fragment.kind}`);
   }
-}
-
-function executeRawSql(db: BetterSQLite3Database, sqlText: string): QueryRow[] {
-  return db.$client.prepare(sqlText).all() as QueryRow[];
 }
 
 async function lookupManyWithDrizzle<TContext>(
@@ -159,7 +169,7 @@ async function lookupManyWithDrizzle<TContext>(
 }
 
 export interface RunDrizzleScanOptions<TTable extends string, TColumn extends string> {
-  db: BetterSQLite3Database;
+  db: DrizzleQueryExecutor;
   tableName: TTable;
   table: object;
   columns: DrizzleColumnMap<TColumn>;
@@ -167,9 +177,9 @@ export interface RunDrizzleScanOptions<TTable extends string, TColumn extends st
   scope?: SQL | SQL[];
 }
 
-export function runDrizzleScan<TTable extends string, TColumn extends string>(
+export async function runDrizzleScan<TTable extends string, TColumn extends string>(
   options: RunDrizzleScanOptions<TTable, TColumn>,
-): QueryRow[] {
+): Promise<QueryRow[]> {
   const selection = buildSelection(options.request.select, options.columns, options.tableName);
   const filterConditions = (options.request.where ?? []).map((clause) =>
     toSqlCondition(clause, options.columns, options.tableName),
@@ -182,7 +192,7 @@ export function runDrizzleScan<TTable extends string, TColumn extends string>(
     orderBy: (...clauses: SQL[]) => unknown;
     limit: (value: number) => unknown;
     offset: (value: number) => unknown;
-    all: () => QueryRow[];
+    execute: () => Promise<QueryRow[]>;
   };
 
   const where = and(...whereConditions);
@@ -203,7 +213,7 @@ export function runDrizzleScan<TTable extends string, TColumn extends string>(
     builder = builder.offset(options.request.offset) as typeof builder;
   }
 
-  return builder.all();
+  return builder.execute();
 }
 
 export function impossibleCondition(): SQL {
@@ -221,8 +231,8 @@ function buildSelection<TColumn extends string>(
   selectedColumns: TColumn[],
   columns: DrizzleColumnMap<TColumn>,
   tableName: string,
-): Record<TColumn, AnySQLiteColumn> {
-  const out = {} as Record<TColumn, AnySQLiteColumn>;
+): Record<TColumn, AnyColumn> {
+  const out = {} as Record<TColumn, AnyColumn>;
   for (const column of selectedColumns) {
     const source = columns[column];
     if (!source) {

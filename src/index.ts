@@ -6,3 +6,4 @@ export * from "./provider";
 export * from "./rel";
 export * from "./physical";
 export * from "./planning";
+export * from "./executor";

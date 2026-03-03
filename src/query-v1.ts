@@ -22,7 +22,8 @@ import {
   type ProvidersMap,
 } from "./provider";
 import { collectRelTables, countRelNodes, type RelNode } from "./rel";
-import { lowerSqlToRel } from "./planning";
+import { executeRelWithProviders, UnsupportedRelExecutionError } from "./executor";
+import { lowerSqlToRel, planPhysicalQuery } from "./planning";
 import type {
   QueryRow,
   SchemaDefinition,
@@ -256,7 +257,7 @@ function buildLegacyMethodsMap<TContext>(
                     key: request.key,
                     keys: batch,
                     select: request.select,
-                    where: request.where,
+                    ...(request.where ? { where: request.where } : {}),
                   },
                   context,
                 );
@@ -307,7 +308,7 @@ function mapPlan(plan: LegacyQueryExecutionPlan): QueryExecutionPlan {
       ...step,
       kind: mapStepKind(step),
     })),
-    scopes: plan.scopes,
+    ...(plan.scopes ? { scopes: plan.scopes } : {}),
   };
 }
 
@@ -316,21 +317,22 @@ function mapStepState(state: LegacyQueryStepState | undefined): QueryStepState |
     return undefined;
   }
 
+  const { kind, routeUsed, ...rest } = state;
+  const mappedRoute = mapRoute(routeUsed);
   return {
-    ...state,
-    kind:
-      state.kind === "scan"
-        ? "remote_fragment"
-        : (state.kind as QueryStepKind),
-    routeUsed: mapRoute(state.routeUsed),
+    ...rest,
+    kind: kind === "scan" ? "remote_fragment" : (kind as QueryStepKind),
+    ...(mappedRoute ? { routeUsed: mappedRoute } : {}),
   };
 }
 
 function mapStepEvent(event: LegacyQueryStepEvent): QueryStepEvent {
+  const { kind, routeUsed, ...rest } = event;
+  const mappedRoute = mapRoute(routeUsed);
   return {
-    ...event,
-    kind: event.kind === "scan" ? "remote_fragment" : (event.kind as QueryStepKind),
-    routeUsed: mapRoute(event.routeUsed),
+    ...rest,
+    kind: kind === "scan" ? "remote_fragment" : (kind as QueryStepKind),
+    ...(mappedRoute ? { routeUsed: mappedRoute } : {}),
   };
 }
 
@@ -432,9 +434,9 @@ function createProviderFragmentSession<TContext>(
           startedAt: state.startedAt ?? Date.now(),
           endedAt: state.endedAt ?? Date.now(),
           durationMs: state.durationMs ?? 0,
-          rowCount: state.rowCount,
-          outputRowCount: state.outputRowCount,
           routeUsed: "provider_fragment",
+          ...(state.rowCount != null ? { rowCount: state.rowCount } : {}),
+          ...(state.outputRowCount != null ? { outputRowCount: state.outputRowCount } : {}),
           ...(input.options?.captureRows === "full" ? { rows: result ?? [] } : {}),
         };
 
@@ -465,16 +467,23 @@ function createLegacyBackedSession<TContext>(
   };
   const methods = buildLegacyMethodsMap(input, guardrails, runtimeState);
 
+  const legacyOptions = input.options
+    ? {
+        ...(input.options.maxConcurrency != null
+          ? { maxConcurrency: input.options.maxConcurrency }
+          : {}),
+        ...(input.options.eventOrder ? { eventOrder: input.options.eventOrder } : {}),
+        ...(input.options.captureRows ? { captureRows: input.options.captureRows } : {}),
+      }
+    : undefined;
+
   const legacyInput: LegacyQuerySessionInput<TContext> = {
     schema: input.schema,
     methods,
     context: input.context,
     sql: input.sql,
-    constraintValidation: input.constraintValidation,
-    options: {
-      ...input.options,
-      onEvent: undefined,
-    },
+    ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
+    ...(legacyOptions ? { options: legacyOptions } : {}),
   };
 
   const legacySession: LegacyQuerySession = createLegacyQuerySession(legacyInput);
@@ -586,6 +595,31 @@ export async function query<TContext>(input: QueryInput<TContext>): Promise<Quer
     return remoteRows;
   }
 
+  try {
+    await planPhysicalQuery(lowered.rel, input.schema, input.providers, input.context, input.sql);
+    const rows = await withTimeout(
+      executeRelWithProviders(
+        lowered.rel,
+        input.schema,
+        input.providers,
+        input.context,
+        {
+          maxExecutionRows: guardrails.maxExecutionRows,
+          maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
+          maxLookupBatches: guardrails.maxLookupBatches,
+        },
+      ),
+      guardrails.timeoutMs,
+    );
+
+    enforceExecutionRowLimit(rows, guardrails);
+    return rows;
+  } catch (error) {
+    if (!(error instanceof UnsupportedRelExecutionError)) {
+      throw error;
+    }
+  }
+
   const runtimeState: GuardrailRuntimeState = {
     lookupBatches: 0,
   };
@@ -597,7 +631,7 @@ export async function query<TContext>(input: QueryInput<TContext>): Promise<Quer
       methods,
       context: input.context,
       sql: input.sql,
-      constraintValidation: input.constraintValidation,
+      ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
     }),
     guardrails.timeoutMs,
   );
