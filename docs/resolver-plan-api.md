@@ -1,53 +1,47 @@
-# Resolver and Planning API
+# Provider and Planner API (v1)
 
-`sqlql` keeps planning internal, but table methods can now participate in pushdown decisions.
+`sqlql` v1 uses a provider-first planner/runtime.
 
-## Runtime surface
+## Provider contract
 
-Users of the library still write:
+```ts
+interface ProviderAdapter<TContext = unknown> {
+  canExecute(fragment, context): boolean | ProviderCapabilityReport | Promise<boolean | ProviderCapabilityReport>;
+  compile(fragment, context): ProviderCompiledPlan | Promise<ProviderCompiledPlan>;
+  execute(plan, context): Promise<QueryRow[]>;
+  lookupMany?(request, context): Promise<QueryRow[]>;
+  estimate?(fragment, context): { rows: number; cost: number } | Promise<{ rows: number; cost: number }>;
+}
+```
 
-1. `defineSchema(...)`
-2. `defineTableMethods(schema, ...)`
-3. `query({ sql, ... })`
+## Fragment kinds
 
-## Schema policy model
+- `sql_query`
+- `scan`
+- `aggregate`
 
-- Column-level capabilities (default `true`):
-  - `filterable`
-  - `sortable`
-- Table-level non-column policy:
-  - `maxRows`
-  - `reject` (`requiresLimit`, `forbidFullScan`, `requireAnyFilterOn`)
-  - `fallback` (`allow_local` or `require_pushdown` per category)
+The planner can emit mixed physical plans with:
 
-Static schema policy is enforced before table method execution.
+- `remote_fragment`
+- `lookup_join`
+- local fallback operators
 
-## Planner hooks
+## Relational IR exports
 
-Table methods may define optional hooks:
+`sqlql` exports relational and physical planning types:
 
-- `planScan(request, context)`
-- `planLookup(request, context)`
-- `planAggregate(request, context)`
+- `RelNode`, `RelExpr`
+- `PhysicalPlan`, `PhysicalStep`
+- `ProviderFragment`
 
-Planned requests carry stable IDs:
+## Guardrails
 
-- `where: [{ id, clause }]`
-- `orderBy: [{ id, term }]`
-- `metrics: [{ id, metric }]`
+`query(...)` accepts global guardrails:
 
-Hooks can return:
+- `maxPlannerNodes`
+- `maxExecutionRows`
+- `maxLookupKeysPerBatch`
+- `maxLookupBatches`
+- `timeoutMs`
 
-- ID-based pushdown decisions (`whereIds`, `orderByIds`, `metricIds`, etc.)
-- explicit `mode: "remote_residual"` with separate `remote` and `residual` sections
-- `reject: { code, message }`
-- `notes`
-
-Residual work is executed locally unless blocked by fallback policy (`require_pushdown`).
-
-## Enums and checks
-
-- Column `enum` metadata is first-class.
-- DDL includes generated `CHECK ... IN (...)` for enums.
-- Structured table checks are supported via `constraints.checks` (`kind: "in"`).
-- Optional runtime constraint validation (`warn`/`error`) reports enum/check violations in returned rows.
+These are planner/executor safety limits and are provider-agnostic.

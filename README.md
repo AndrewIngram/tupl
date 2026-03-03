@@ -3,7 +3,7 @@
 _Warning:_ Currently very rough and LLM-generated, not ready for production use.
 
 `sqlql` is a TypeScript library for exposing a SQL interface over arbitrary data sources.
-You define a logical schema and table methods, then users write SQL and `sqlql` executes by calling your methods.
+You define a logical schema and provider adapters, then users write SQL and `sqlql` executes by planning relational fragments across providers.
 
 ## Why
 
@@ -14,7 +14,7 @@ If you are building tools that accept SQL input, directly exposing production da
 `sqlql` gives you a controlled middle layer:
 
 - expose only an allowlisted logical schema
-- map table access to domain-aware methods (`scan`, optional `lookup`, optional `aggregate`)
+- map table access to provider adapters (`canExecute`, `compile`, `execute`, optional `lookupMany`)
 - keep control over what data is queryable and how it is fetched
 
 This keeps SQL ergonomics for agents and developers without requiring direct DB connectivity from the tool runtime.
@@ -25,7 +25,7 @@ For LLM-driven tools specifically, a SQL interface gives the model flexible retr
 
 - Schema guide: [`docs/defining-your-schema.md`](./docs/defining-your-schema.md)
 - Integration guide: [`docs/integrating-with-your-system.md`](./docs/integrating-with-your-system.md)
-- Planner hooks overview: [`docs/resolver-plan-api.md`](./docs/resolver-plan-api.md)
+- Planner and provider API overview: [`docs/resolver-plan-api.md`](./docs/resolver-plan-api.md)
 
 ## Conceptual limits and non-goals
 
@@ -43,9 +43,9 @@ Currently unsupported query shapes:
 
 Accepted limitation (relational data sources):
 
-- `sqlql` executes relational workflows in staged table-method calls.
-- `sqlql` does not currently collapse multi-stage relational work into a single provider-native joined query.
-- Even when a relational backing store could answer in one SQL statement, execution may still involve multiple stage calls.
+- provider pushdown is capability-driven; unsupported fragments fall back to local execution paths.
+- cross-provider joins can route via lookup joins when the target provider exposes `lookupMany`.
+- recursive CTE pushdown and correlated-subquery pushdown are still limited.
 
 ## Quick usage
 
@@ -58,11 +58,12 @@ pnpm add sqlql
 Minimal end-to-end flow:
 
 ```ts
-import { defineSchema, defineTableMethods, query } from "sqlql";
+import { defineProviders, defineSchema, query } from "sqlql";
 
 const schema = defineSchema({
   tables: {
     orders: {
+      provider: "warehouse",
       columns: {
         id: "text",
         org_id: "text",
@@ -71,6 +72,7 @@ const schema = defineSchema({
       },
     },
     users: {
+      provider: "warehouse",
       columns: {
         id: "text",
         email: "text",
@@ -79,14 +81,18 @@ const schema = defineSchema({
   },
 });
 
-const methods = defineTableMethods(schema, {
-  orders: {
-    async scan(_request, _context) {
+const providers = defineProviders({
+  warehouse: {
+    canExecute() {
+      return true;
+    },
+    async compile(fragment) {
+      return { provider: "warehouse", kind: fragment.kind, payload: fragment };
+    },
+    async execute(_plan) {
       return [];
     },
-  },
-  users: {
-    async scan(_request, _context) {
+    async lookupMany(_request) {
       return [];
     },
   },
@@ -94,7 +100,7 @@ const methods = defineTableMethods(schema, {
 
 const rows = await query({
   schema,
-  methods,
+  providers,
   context: {},
   sql: `
     SELECT o.id, u.email
@@ -106,74 +112,23 @@ const rows = await query({
 });
 ```
 
-## Method contract examples (scan + aggregate)
+## Provider contract
 
-Inside `defineTableMethods(schema, ...)`, request parameter types are inferred from your schema, so typical implementations can stay concise:
+Providers expose fragment planning/execution and optional lookup joins:
 
-```ts
-import { defineTableMethods } from "sqlql";
+- `canExecute(fragment, context)`
+- `compile(fragment, context)`
+- `execute(compiled, context)`
+- `lookupMany(request, context)` (optional, used for cross-provider lookup joins)
+- `estimate(fragment, context)` (optional)
 
-const methods = defineTableMethods(schema, {
-  orders: {
-    async scan(request, context) {
-      return context.ordersRepo.scan({
-        table: request.table,
-        alias: request.alias,
-        select: request.select,
-        where: request.where,
-        orderBy: request.orderBy,
-        limit: request.limit,
-        offset: request.offset,
-      });
-    },
-    async aggregate(request, context) {
-      return context.ordersRepo.aggregate({
-        table: request.table,
-        alias: request.alias,
-        where: request.where,
-        groupBy: request.groupBy,
-        metrics: request.metrics,
-        limit: request.limit,
-      });
-    },
-  },
-  users: {
-    async scan(request, context) {
-      return context.usersRepo.scan({
-        table: request.table,
-        alias: request.alias,
-        select: request.select,
-        where: request.where,
-        orderBy: request.orderBy,
-        limit: request.limit,
-        offset: request.offset,
-      });
-    },
-  },
-});
-```
+First-party provider packages:
 
-`scan(request, context)` argument shape:
+- `@sqlql/drizzle`
+- `@sqlql/objection`
+- `@sqlql/kysely`
 
-- `request.table`: logical table name for the method call.
-- `request.alias`: optional SQL alias for the table binding.
-- `request.select`: projected column list to return.
-- `request.where`: optional normalized filter clauses (`eq`, `in`, `is_null`, etc.).
-- `request.orderBy`: optional sort terms (`column`, `direction`).
-- `request.limit` / `request.offset`: optional pagination bounds.
-- `context`: your app/domain context from `query({ context })`.
-- return type: `Promise<QueryRow[]>`.
-
-`aggregate(request, context)` argument shape:
-
-- `request.table`: logical table name for the method call.
-- `request.alias`: optional SQL alias for the table binding.
-- `request.where`: optional normalized filter clauses before grouping.
-- `request.groupBy`: optional grouping columns.
-- `request.metrics`: aggregate spec list (`fn`, optional `column`, `as`, optional `distinct`).
-- `request.limit`: optional output row cap.
-- `context`: your app/domain context from `query({ context })`.
-- return type: `Promise<QueryRow[]>` with grouped rows and metric outputs.
+Prisma is intentionally not shipped in v1. The recommended path is a custom provider using raw SQL execution hooks until a dedicated adapter lands.
 
 ## Column capabilities and query policy
 
@@ -184,32 +139,17 @@ Capabilities are defined per column:
 - `enum?: readonly string[]` (text columns only)
 - `description?: string`
 
-Table-level query policy is for non-column governance:
+`sqlql` v1 guardrails are query-level (`queryGuardrails` input) rather than table fallback/reject policy.
 
-- `query.maxRows`
-- `query.reject.requiresLimit`
-- `query.reject.forbidFullScan`
-- `query.reject.requireAnyFilterOn`
-- `query.fallback.*` (`allow_local` or `require_pushdown`)
+## Query guardrails
 
-When a query violates static schema policy, `sqlql` rejects it before calling table methods.
-Legacy `query.filterable` / `query.sortable` are still accepted for migration, but deprecated (column-level flags win when both are present).
+`query(...)` accepts optional global guardrails:
 
-## Planner hooks (optional)
-
-Resolvers can optionally provide planning hooks:
-
-- `planScan(request, context)`
-- `planLookup(request, context)`
-- `planAggregate(request, context)`
-
-Each planned request contains stable term IDs for `where`/`orderBy`/metrics, so hooks can:
-
-- choose pushdown by term ID (`whereIds`, `orderByIds`, `metricIds`)
-- or use explicit `remote/residual` mode
-- or reject with a structured `code/message`
-
-Residual work runs locally unless table fallback policy requires full pushdown.
+- `maxPlannerNodes`
+- `maxExecutionRows`
+- `maxLookupKeysPerBatch`
+- `maxLookupBatches`
+- `timeoutMs`
 
 ## Enums and CHECK constraints
 

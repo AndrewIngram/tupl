@@ -1,16 +1,150 @@
 import {
-  createArrayTableMethods,
+  defineProviders,
   defineSchema,
-  defineTableMethods,
-  toSqlDDL,
-  type QueryRow,
   query,
+  toSqlDDL,
+  type ProviderAdapter,
+  type QueryRow,
+  type ScanFilterClause,
+  type TableScanRequest,
 } from "sqlql";
+
+function createMemoryProvider<TContext>(tables: Record<string, QueryRow[]>): ProviderAdapter<TContext> {
+  return {
+    canExecute(fragment) {
+      return fragment.kind === "scan";
+    },
+    async compile(fragment) {
+      return {
+        provider: "memory",
+        kind: fragment.kind,
+        payload: fragment,
+      };
+    },
+    async execute(plan) {
+      const fragment = plan.payload as { kind: "scan"; table: string; request: TableScanRequest };
+      const rows = tables[fragment.table] ?? [];
+      return scanRows(rows, fragment.request);
+    },
+    async lookupMany(request) {
+      const rows = tables[request.table] ?? [];
+      const keys = new Set(request.keys);
+      return rows
+        .filter((row) => keys.has(row[request.key]))
+        .map((row) => projectRow(row, request.select));
+    },
+  };
+}
+
+function scanRows(rows: QueryRow[], request: TableScanRequest): QueryRow[] {
+  let out = rows.filter((row) => matchesFilters(row, request.where ?? []));
+
+  if (request.orderBy && request.orderBy.length > 0) {
+    out = [...out].sort((left, right) => {
+      for (const term of request.orderBy ?? []) {
+        const leftValue = left[term.column] ?? null;
+        const rightValue = right[term.column] ?? null;
+        if (leftValue === rightValue) {
+          continue;
+        }
+
+        if (leftValue == null) {
+          return term.direction === "asc" ? -1 : 1;
+        }
+        if (rightValue == null) {
+          return term.direction === "asc" ? 1 : -1;
+        }
+
+        const comparison = String(leftValue).localeCompare(String(rightValue));
+        if (comparison !== 0) {
+          return term.direction === "asc" ? comparison : -comparison;
+        }
+      }
+
+      return 0;
+    });
+  }
+
+  if (request.offset != null) {
+    out = out.slice(request.offset);
+  }
+
+  if (request.limit != null) {
+    out = out.slice(0, request.limit);
+  }
+
+  return out.map((row) => projectRow(row, request.select));
+}
+
+function matchesFilters(row: QueryRow, filters: ScanFilterClause[]): boolean {
+  for (const clause of filters) {
+    const value = row[clause.column];
+
+    switch (clause.op) {
+      case "eq":
+        if (value !== clause.value) {
+          return false;
+        }
+        break;
+      case "neq":
+        if (value === clause.value) {
+          return false;
+        }
+        break;
+      case "gt":
+        if (value == null || clause.value == null || Number(value) <= Number(clause.value)) {
+          return false;
+        }
+        break;
+      case "gte":
+        if (value == null || clause.value == null || Number(value) < Number(clause.value)) {
+          return false;
+        }
+        break;
+      case "lt":
+        if (value == null || clause.value == null || Number(value) >= Number(clause.value)) {
+          return false;
+        }
+        break;
+      case "lte":
+        if (value == null || clause.value == null || Number(value) > Number(clause.value)) {
+          return false;
+        }
+        break;
+      case "in":
+        if (!clause.values.includes(value)) {
+          return false;
+        }
+        break;
+      case "is_null":
+        if (value != null) {
+          return false;
+        }
+        break;
+      case "is_not_null":
+        if (value == null) {
+          return false;
+        }
+        break;
+    }
+  }
+
+  return true;
+}
+
+function projectRow(row: QueryRow, select: string[]): QueryRow {
+  const out: QueryRow = {};
+  for (const column of select) {
+    out[column] = row[column] ?? null;
+  }
+  return out;
+}
 
 async function main(): Promise<void> {
   const schema = defineSchema({
     tables: {
       orders: {
+        provider: "memory",
         columns: {
           id: "text",
           org_id: "text",
@@ -20,6 +154,7 @@ async function main(): Promise<void> {
         },
       },
       users: {
+        provider: "memory",
         columns: {
           id: "text",
           team_id: "text",
@@ -27,6 +162,7 @@ async function main(): Promise<void> {
         },
       },
       teams: {
+        provider: "memory",
         columns: {
           id: "text",
           name: "text",
@@ -76,32 +212,17 @@ async function main(): Promise<void> {
       { id: "team_enterprise", name: "Enterprise", tier: "enterprise" },
       { id: "team_smb", name: "SMB", tier: "smb" },
     ],
-  } satisfies { orders: QueryRow[]; users: QueryRow[]; teams: QueryRow[] };
+  };
 
-  const methods = defineTableMethods(schema, {
-    orders: createArrayTableMethods(tableData.orders),
-    users: createArrayTableMethods(tableData.users),
-    teams: createArrayTableMethods(tableData.teams),
+  const providers = defineProviders({
+    memory: createMemoryProvider(tableData),
   });
 
   const ddl = toSqlDDL(schema, { ifNotExists: true });
 
-  const basicRows = await query({
-    schema,
-    methods,
-    context: {},
-    sql: `
-      SELECT o.id, o.total_cents
-      FROM orders o
-      WHERE o.org_id = 'org_1'
-      ORDER BY o.created_at DESC
-      LIMIT 2 OFFSET 1
-    `,
-  });
-
   const joinRows = await query({
     schema,
-    methods,
+    providers,
     context: {},
     sql: `
       SELECT o.id, o.total_cents, u.email
@@ -113,64 +234,11 @@ async function main(): Promise<void> {
     `,
   });
 
-  const threeWayJoinRows = await query({
-    schema,
-    methods,
-    context: {},
-    sql: `
-      SELECT o.id, u.email, t.name
-      FROM orders o
-      JOIN users u ON o.user_id = u.id
-      JOIN teams t ON u.team_id = t.id
-      WHERE o.org_id = 'org_1' AND t.tier = 'enterprise'
-      ORDER BY o.created_at DESC
-      LIMIT 10
-    `,
-  });
-
-  const aggregateRows = await query({
-    schema,
-    methods,
-    context: {},
-    sql: `
-      SELECT o.user_id, COUNT(*) AS order_count, SUM(o.total_cents) AS total_cents
-      FROM orders o
-      WHERE o.org_id = 'org_1'
-      GROUP BY o.user_id
-      ORDER BY total_cents DESC
-    `,
-  });
-
-  const cteRows = await query({
-    schema,
-    methods,
-    context: {},
-    sql: `
-      WITH recent_orders AS (
-        SELECT id, user_id, total_cents
-        FROM orders
-        WHERE org_id = 'org_1' AND total_cents >= 1800
-      )
-      SELECT r.user_id, COUNT(*) AS recent_order_count, SUM(r.total_cents) AS total_cents
-      FROM recent_orders r
-      GROUP BY r.user_id
-      ORDER BY total_cents DESC
-    `,
-  });
-
   console.log("Generated DDL:");
   console.log(ddl);
   console.log("");
-  console.log("Basic query result:");
-  console.log(basicRows);
   console.log("Join result:");
   console.log(joinRows);
-  console.log("Three-way join result:");
-  console.log(threeWayJoinRows);
-  console.log("Aggregate result:");
-  console.log(aggregateRows);
-  console.log("CTE + aggregate result:");
-  console.log(cteRows);
 }
 
 main().catch((error: unknown) => {

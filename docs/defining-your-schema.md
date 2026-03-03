@@ -15,6 +15,7 @@ import { defineSchema } from "sqlql";
 const schema = defineSchema({
   tables: {
     orders: {
+      provider: "warehouse",
       columns: {
         id: { type: "text", nullable: false, primaryKey: true },
         customer_id: { type: "text", nullable: false },
@@ -26,6 +27,8 @@ const schema = defineSchema({
   },
 });
 ```
+
+Each table must declare `provider`, which maps table access to a registered provider adapter.
 
 `type` supports:
 

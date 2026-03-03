@@ -17,89 +17,145 @@ import {
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import type {
+  ProviderAdapter,
+  ProviderCapabilityReport,
+  ProviderCompiledPlan,
+  ProviderFragment,
+  ProviderLookupManyRequest,
   QueryRow,
   ScanFilterClause,
   ScanOrderBy,
-  TableLookupRequest,
-  TableMethods,
   TableScanRequest,
 } from "sqlql";
 
-export type DrizzleColumnMap<TColumn extends string> = Record<TColumn, AnySQLiteColumn>;
+export type DrizzleColumnMap<TColumn extends string = string> = Record<TColumn, AnySQLiteColumn>;
 
-export interface CreateDrizzleTableMethodsOptions<
+export interface DrizzleProviderTableConfig<
   TContext,
-  TTable extends string,
-  TColumn extends string,
+  TColumn extends string = string,
 > {
-  db: BetterSQLite3Database;
-  tableName: TTable;
   table: object;
   columns: DrizzleColumnMap<TColumn>;
-  scope:
+  scope?:
     | ((context: TContext) => SQL | SQL[] | undefined | Promise<SQL | SQL[] | undefined>)
     | undefined;
-  includeLookup?: boolean;
 }
 
-export function createDrizzleTableMethods<TContext, TTable extends string, TColumn extends string>(
-  options: CreateDrizzleTableMethodsOptions<TContext, TTable, TColumn>,
-): TableMethods<TContext, TTable, TColumn, any> {
-  const includeLookup = options.includeLookup ?? true;
+export interface CreateDrizzleProviderOptions<TContext> {
+  db: BetterSQLite3Database;
+  tables: Record<string, DrizzleProviderTableConfig<TContext, string>>;
+}
 
-  const scan = async (
-    request: TableScanRequest<TTable, TColumn>,
-    context: TContext,
-  ): Promise<QueryRow[]> => {
-    const scope = options.scope ? await options.scope(context) : undefined;
-    const payload = {
-      db: options.db,
-      tableName: options.tableName,
-      table: options.table,
-      columns: options.columns,
-      request,
-    } as const;
+export function createDrizzleProvider<TContext>(
+  options: CreateDrizzleProviderOptions<TContext>,
+): ProviderAdapter<TContext> {
+  return {
+    canExecute(fragment): boolean | ProviderCapabilityReport {
+      switch (fragment.kind) {
+        case "scan":
+          return !!options.tables[fragment.table];
+        case "sql_query": {
+          // Scope predicates are table-level closures; do not bypass them with raw SQL.
+          const hasScopedTable = fragment.rel.kind === "sql"
+            ? fragment.rel.tables.some((table) => !!options.tables[table]?.scope)
+            : false;
 
-    if (scope) {
+          if (hasScopedTable) {
+            return {
+              supported: false,
+              reason: "Raw SQL fragment pushdown is disabled for scoped tables.",
+            };
+          }
+
+          return true;
+        }
+        default:
+          return false;
+      }
+    },
+    async compile(fragment): Promise<ProviderCompiledPlan> {
+      return {
+        provider: "drizzle",
+        kind: fragment.kind,
+        payload: fragment,
+      };
+    },
+    async execute(plan, context): Promise<QueryRow[]> {
+      return executeDrizzlePlan(plan, options, context);
+    },
+    async lookupMany(request, context): Promise<QueryRow[]> {
+      return lookupManyWithDrizzle(options, request, context);
+    },
+  };
+}
+
+async function executeDrizzlePlan<TContext>(
+  plan: ProviderCompiledPlan,
+  options: CreateDrizzleProviderOptions<TContext>,
+  context: TContext,
+): Promise<QueryRow[]> {
+  const fragment = plan.payload as ProviderFragment;
+
+  switch (fragment.kind) {
+    case "sql_query":
+      return executeRawSql(options.db, fragment.sql);
+    case "scan": {
+      const tableConfig = options.tables[fragment.table];
+      if (!tableConfig) {
+        throw new Error(`Unknown drizzle table config: ${fragment.table}`);
+      }
+
+      const scope = tableConfig.scope ? await tableConfig.scope(context) : undefined;
       return runDrizzleScan({
-        ...payload,
+        db: options.db,
+        tableName: fragment.table,
+        table: tableConfig.table,
+        columns: tableConfig.columns,
+        request: fragment.request,
         scope,
       });
     }
+    default:
+      throw new Error(`Unsupported drizzle compiled plan kind: ${fragment.kind}`);
+  }
+}
 
-    return runDrizzleScan(payload);
-  };
+function executeRawSql(db: BetterSQLite3Database, sqlText: string): QueryRow[] {
+  return db.$client.prepare(sqlText).all() as QueryRow[];
+}
 
-  const methods: TableMethods<TContext, TTable, TColumn, any> = {
-    scan,
-  };
-
-  if (includeLookup) {
-    methods.lookup = async (
-      request: TableLookupRequest<TTable, TColumn>,
-      context: TContext,
-    ): Promise<QueryRow[]> => {
-      const where: ScanFilterClause<TColumn>[] = [
-        ...(request.where ?? []),
-        {
-          column: request.key,
-          op: "in",
-          values: request.values,
-        } as ScanFilterClause<TColumn>,
-      ];
-
-      const scanRequest: TableScanRequest<TTable, TColumn> = {
-        table: request.table,
-        select: request.select,
-        where,
-        ...(request.alias ? { alias: request.alias } : {}),
-      };
-
-      return scan(scanRequest, context);
-    };
+async function lookupManyWithDrizzle<TContext>(
+  options: CreateDrizzleProviderOptions<TContext>,
+  request: ProviderLookupManyRequest,
+  context: TContext,
+): Promise<QueryRow[]> {
+  const tableConfig = options.tables[request.table];
+  if (!tableConfig) {
+    throw new Error(`Unknown drizzle table config: ${request.table}`);
   }
 
-  return methods;
+  const where: ScanFilterClause[] = [
+    ...(request.where ?? []),
+    {
+      op: "in",
+      column: request.key,
+      values: request.keys,
+    } as ScanFilterClause,
+  ];
+
+  const scope = tableConfig.scope ? await tableConfig.scope(context) : undefined;
+  return runDrizzleScan({
+    db: options.db,
+    tableName: request.table,
+    table: tableConfig.table,
+    columns: tableConfig.columns,
+    request: {
+      table: request.table,
+      select: request.select,
+      where,
+    },
+    scope,
+  });
 }
 
 export interface RunDrizzleScanOptions<TTable extends string, TColumn extends string> {

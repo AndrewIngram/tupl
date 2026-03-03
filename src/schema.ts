@@ -128,6 +128,11 @@ export interface TableConstraints {
 }
 
 export interface TableDefinition {
+  /**
+   * Provider binding used by the provider-first planner/executor.
+   * This is required in v1.
+   */
+  provider: string;
   columns: TableColumns;
   query?: TableQueryOverrides;
   constraints?: TableConstraints;
@@ -213,9 +218,20 @@ export const DEFAULT_QUERY_BEHAVIOR: ResolvedTableQueryBehavior = {
 const warnedDeprecatedQueryCapabilities = new Set<string>();
 
 export function defineSchema<TSchema extends SchemaDefinition>(schema: TSchema): TSchema {
+  validateTableProviders(schema);
   validateSchemaConstraints(schema);
   warnDeprecatedQueryCapabilities(schema);
   return schema;
+}
+
+function validateTableProviders(schema: SchemaDefinition): void {
+  for (const [tableName, table] of Object.entries(schema.tables)) {
+    if (typeof table.provider !== "string" || table.provider.trim().length === 0) {
+      throw new Error(
+        `Table ${tableName} must define a non-empty provider binding (table.provider).`,
+      );
+    }
+  }
 }
 
 export function getTable(schema: SchemaDefinition, tableName: string): TableDefinition {
