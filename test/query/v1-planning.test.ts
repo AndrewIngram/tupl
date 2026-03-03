@@ -62,6 +62,7 @@ describe("query/v1 planning", () => {
     }
 
     expect(limitNode.limit).toBe(5);
+    expect(project.convention).toBe("local");
   });
 
   it("plans lookup_join for cross-provider joins with lookupMany", async () => {
@@ -142,5 +143,136 @@ describe("query/v1 planning", () => {
     );
 
     expect(physical.steps.some((step) => step.kind === "lookup_join")).toBe(true);
+  });
+
+  it("plans same-provider subtree as a remote rel fragment when supported", async () => {
+    const schema = defineSchema({
+      tables: {
+        orders: {
+          provider: "warehouse",
+          columns: {
+            id: "text",
+            user_id: "text",
+            total_cents: "integer",
+          },
+        },
+        users: {
+          provider: "warehouse",
+          columns: {
+            id: "text",
+            email: "text",
+          },
+        },
+      },
+    });
+
+    const providers = defineProviders({
+      warehouse: {
+        canExecute(fragment) {
+          return fragment.kind === "rel";
+        },
+        async compile(fragment) {
+          return {
+            provider: "warehouse",
+            kind: fragment.kind,
+            payload: fragment,
+          };
+        },
+        async execute() {
+          return [];
+        },
+      },
+    });
+
+    const lowered = lowerSqlToRel(
+      `
+        SELECT o.id, u.email
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+      `,
+      schema,
+    );
+
+    const physical = await planPhysicalQuery(
+      lowered.rel,
+      schema,
+      providers,
+      {},
+      `
+        SELECT o.id, u.email
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+      `,
+    );
+
+    expect(physical.steps).toHaveLength(1);
+    expect(physical.steps[0]?.kind).toBe("remote_fragment");
+    if (physical.steps[0]?.kind !== "remote_fragment") {
+      throw new Error("Expected remote fragment step.");
+    }
+    expect(physical.steps[0].fragment.kind).toBe("rel");
+  });
+
+  it("splits deterministically to remote scans + local join when rel pushdown is rejected", async () => {
+    const schema = defineSchema({
+      tables: {
+        orders: {
+          provider: "warehouse",
+          columns: {
+            id: "text",
+            user_id: "text",
+          },
+        },
+        users: {
+          provider: "warehouse",
+          columns: {
+            id: "text",
+            email: "text",
+          },
+        },
+      },
+    });
+
+    const providers = defineProviders({
+      warehouse: {
+        canExecute(fragment) {
+          return fragment.kind === "scan";
+        },
+        async compile(fragment) {
+          return {
+            provider: "warehouse",
+            kind: fragment.kind,
+            payload: fragment,
+          };
+        },
+        async execute() {
+          return [];
+        },
+      },
+    });
+
+    const lowered = lowerSqlToRel(
+      `
+        SELECT o.id, u.email
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+      `,
+      schema,
+    );
+
+    const physical = await planPhysicalQuery(
+      lowered.rel,
+      schema,
+      providers,
+      {},
+      `
+        SELECT o.id, u.email
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+      `,
+    );
+
+    expect(physical.steps.some((step) => step.kind === "remote_fragment")).toBe(true);
+    expect(physical.steps.some((step) => step.kind === "local_hash_join")).toBe(true);
   });
 });

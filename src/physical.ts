@@ -5,6 +5,8 @@ export type PhysicalStepKind =
   | "remote_fragment"
   | "lookup_join"
   | "local_hash_join"
+  | "local_set_op"
+  | "local_with"
   | "local_filter"
   | "local_project"
   | "local_aggregate"
@@ -38,6 +40,8 @@ export interface LookupJoinPhysicalStep extends PhysicalStepBase {
 export interface LocalPhysicalStep extends PhysicalStepBase {
   kind:
     | "local_hash_join"
+    | "local_set_op"
+    | "local_with"
     | "local_filter"
     | "local_project"
     | "local_aggregate"

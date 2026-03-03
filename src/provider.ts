@@ -41,6 +41,12 @@ export interface SqlQueryProviderFragment {
   rel: RelNode;
 }
 
+export interface RelProviderFragment {
+  kind: "rel";
+  provider: string;
+  rel: RelNode;
+}
+
 export interface ScanProviderFragment {
   kind: "scan";
   provider: string;
@@ -57,6 +63,7 @@ export interface AggregateProviderFragment {
 
 export type ProviderFragment =
   | SqlQueryProviderFragment
+  | RelProviderFragment
   | ScanProviderFragment
   | AggregateProviderFragment;
 

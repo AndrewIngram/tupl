@@ -107,111 +107,300 @@ export async function planPhysicalQuery<TContext>(
   context: TContext,
   sql: string,
 ): Promise<PhysicalPlan> {
-  const tables = collectRelTables(rel);
-  const providerByTable = new Map<string, string>();
+  const plannedRel = assignConventions(rel, schema);
+  const state: { steps: PhysicalStep[] } = { steps: [] };
 
-  for (const table of tables) {
-    providerByTable.set(table, resolveTableProvider(schema, table));
-  }
-
-  const uniqueProviders = new Set(providerByTable.values());
-
-  if (uniqueProviders.size === 1) {
-    const provider = [...uniqueProviders][0];
-    if (!provider) {
-      throw new Error("Unable to resolve provider for relational fragment.");
-    }
-
-    const adapter = providers[provider];
-    if (!adapter) {
-      throw new Error(`Missing provider adapter: ${provider}`);
-    }
-
-    const fragment: ProviderFragment = {
-      kind: "sql_query",
-      provider,
-      sql,
-      rel,
-    };
-
-    const capability = normalizeCapability(await adapter.canExecute(fragment, context));
-    if (capability.supported) {
-      const step: PhysicalStep = {
-        id: nextPhysicalStepId("remote_fragment"),
-        kind: "remote_fragment",
-        dependsOn: [],
-        summary: `Execute provider fragment (${provider})`,
-        provider,
-        fragment,
-      };
-
-      return {
-        rel,
-        rootStepId: step.id,
-        steps: [step],
-      };
-    }
-  }
-
-  const lookupJoin = findLookupJoinCandidate(rel, schema, providers);
-  if (lookupJoin) {
-    const leftScanRequest = {
-      table: lookupJoin.leftScan.table,
-      ...(lookupJoin.leftScan.alias ? { alias: lookupJoin.leftScan.alias } : {}),
-      select: lookupJoin.leftScan.select,
-      ...(lookupJoin.leftScan.where ? { where: lookupJoin.leftScan.where } : {}),
-      ...(lookupJoin.leftScan.orderBy ? { orderBy: lookupJoin.leftScan.orderBy } : {}),
-      ...(lookupJoin.leftScan.limit != null ? { limit: lookupJoin.leftScan.limit } : {}),
-      ...(lookupJoin.leftScan.offset != null ? { offset: lookupJoin.leftScan.offset } : {}),
-    };
-
-    const leftStep: PhysicalStep = {
-      id: nextPhysicalStepId("remote_fragment"),
-      kind: "remote_fragment",
-      dependsOn: [],
-      summary: `Fetch driver rows from ${lookupJoin.leftProvider}`,
-      provider: lookupJoin.leftProvider,
-      fragment: {
-        kind: "scan",
-        provider: lookupJoin.leftProvider,
-        table: lookupJoin.leftScan.table,
-        request: leftScanRequest,
-      },
-    };
-
-    const joinStep: PhysicalStep = {
-      id: nextPhysicalStepId("lookup_join"),
-      kind: "lookup_join",
-      dependsOn: [leftStep.id],
-      summary: `Lookup join ${lookupJoin.leftScan.table}.${lookupJoin.leftKey} -> ${lookupJoin.rightScan.table}.${lookupJoin.rightKey}`,
-      leftProvider: lookupJoin.leftProvider,
-      rightProvider: lookupJoin.rightProvider,
-      leftTable: lookupJoin.leftScan.table,
-      rightTable: lookupJoin.rightScan.table,
-      leftKey: lookupJoin.leftKey,
-      rightKey: lookupJoin.rightKey,
-      joinType: lookupJoin.joinType,
-    };
-
-    return {
-      rel,
-      rootStepId: joinStep.id,
-      steps: [leftStep, joinStep],
-    };
-  }
-
-  const localStep: PhysicalStep = {
-    id: nextPhysicalStepId("local_hash_join"),
-    kind: "local_hash_join",
-    dependsOn: [],
-    summary: "Execute mixed-provider plan locally",
-  };
+  const rootStepId = await planPhysicalNode(
+    plannedRel,
+    schema,
+    providers,
+    context,
+    sql,
+    state,
+  );
 
   return {
-    rel,
-    rootStepId: localStep.id,
-    steps: [localStep],
+    rel: plannedRel,
+    rootStepId,
+    steps: state.steps,
   };
+}
+
+async function planPhysicalNode<TContext>(
+  node: RelNode,
+  schema: SchemaDefinition,
+  providers: ProvidersMap<TContext>,
+  context: TContext,
+  sql: string,
+  state: { steps: PhysicalStep[] },
+): Promise<string> {
+  const remoteStepId = await tryPlanRemoteFragment(node, schema, providers, context, sql, state);
+  if (remoteStepId) {
+    return remoteStepId;
+  }
+
+  switch (node.kind) {
+    case "scan": {
+      const step: PhysicalStep = {
+        id: nextPhysicalStepId("local_project"),
+        kind: "local_project",
+        dependsOn: [],
+        summary: `Local fallback scan for ${node.table}`,
+      };
+      state.steps.push(step);
+      return step.id;
+    }
+    case "filter":
+    case "project":
+    case "aggregate":
+    case "sort":
+    case "limit_offset": {
+      const input = await planPhysicalNode(node.input, schema, providers, context, sql, state);
+      const kind =
+        node.kind === "filter"
+          ? "local_filter"
+          : node.kind === "project"
+            ? "local_project"
+            : node.kind === "aggregate"
+              ? "local_aggregate"
+              : node.kind === "sort"
+                ? "local_sort"
+                : "local_limit_offset";
+
+      const step: PhysicalStep = {
+        id: nextPhysicalStepId(kind),
+        kind,
+        dependsOn: [input],
+        summary: `Local ${node.kind} execution`,
+      };
+      state.steps.push(step);
+      return step.id;
+    }
+    case "join": {
+      const lookup = resolveLookupJoinCandidate(node, schema, providers);
+      if (lookup) {
+        const left = await planPhysicalNode(node.left, schema, providers, context, sql, state);
+        const step: PhysicalStep = {
+          id: nextPhysicalStepId("lookup_join"),
+          kind: "lookup_join",
+          dependsOn: [left],
+          summary: `Lookup join ${lookup.leftScan.table}.${lookup.leftKey} -> ${lookup.rightScan.table}.${lookup.rightKey}`,
+          leftProvider: lookup.leftProvider,
+          rightProvider: lookup.rightProvider,
+          leftTable: lookup.leftScan.table,
+          rightTable: lookup.rightScan.table,
+          leftKey: lookup.leftKey,
+          rightKey: lookup.rightKey,
+          joinType: lookup.joinType,
+        };
+        state.steps.push(step);
+        return step.id;
+      }
+
+      const left = await planPhysicalNode(node.left, schema, providers, context, sql, state);
+      const right = await planPhysicalNode(node.right, schema, providers, context, sql, state);
+      const step: PhysicalStep = {
+        id: nextPhysicalStepId("local_hash_join"),
+        kind: "local_hash_join",
+        dependsOn: [left, right],
+        summary: `Local ${node.joinType} join execution`,
+      };
+      state.steps.push(step);
+      return step.id;
+    }
+    case "set_op": {
+      const left = await planPhysicalNode(node.left, schema, providers, context, sql, state);
+      const right = await planPhysicalNode(node.right, schema, providers, context, sql, state);
+      const step: PhysicalStep = {
+        id: nextPhysicalStepId("local_set_op"),
+        kind: "local_set_op",
+        dependsOn: [left, right],
+        summary: `Local ${node.op} execution`,
+      };
+      state.steps.push(step);
+      return step.id;
+    }
+    case "with": {
+      const dependencies: string[] = [];
+      for (const cte of node.ctes) {
+        dependencies.push(
+          await planPhysicalNode(cte.query, schema, providers, context, sql, state),
+        );
+      }
+      dependencies.push(
+        await planPhysicalNode(node.body, schema, providers, context, sql, state),
+      );
+
+      const step: PhysicalStep = {
+        id: nextPhysicalStepId("local_with"),
+        kind: "local_with",
+        dependsOn: dependencies,
+        summary: "Local WITH materialization",
+      };
+      state.steps.push(step);
+      return step.id;
+    }
+    case "sql": {
+      const step: PhysicalStep = {
+        id: nextPhysicalStepId("local_project"),
+        kind: "local_project",
+        dependsOn: [],
+        summary: "Local SQL fallback execution",
+      };
+      state.steps.push(step);
+      return step.id;
+    }
+  }
+}
+
+async function tryPlanRemoteFragment<TContext>(
+  node: RelNode,
+  schema: SchemaDefinition,
+  providers: ProvidersMap<TContext>,
+  context: TContext,
+  sql: string,
+  state: { steps: PhysicalStep[] },
+): Promise<string | null> {
+  const provider = resolveSingleProvider(node, schema);
+  if (!provider) {
+    return null;
+  }
+
+  const adapter = providers[provider];
+  if (!adapter) {
+    throw new Error(`Missing provider adapter: ${provider}`);
+  }
+
+  const fragment = buildProviderFragmentForNode(node, provider, sql);
+  const capability = normalizeCapability(await adapter.canExecute(fragment, context));
+  if (!capability.supported) {
+    return null;
+  }
+
+  const step: PhysicalStep = {
+    id: nextPhysicalStepId("remote_fragment"),
+    kind: "remote_fragment",
+    dependsOn: [],
+    summary: `Execute provider fragment (${provider})`,
+    provider,
+    fragment,
+  };
+
+  state.steps.push(step);
+  return step.id;
+}
+
+function buildProviderFragmentForNode(node: RelNode, provider: string, sql: string): ProviderFragment {
+  if (node.kind === "scan") {
+    return {
+      kind: "scan",
+      provider,
+      table: node.table,
+      request: {
+        table: node.table,
+        ...(node.alias ? { alias: node.alias } : {}),
+        select: node.select,
+        ...(node.where ? { where: node.where } : {}),
+        ...(node.orderBy ? { orderBy: node.orderBy } : {}),
+        ...(node.limit != null ? { limit: node.limit } : {}),
+        ...(node.offset != null ? { offset: node.offset } : {}),
+      },
+    };
+  }
+
+  if (node.kind === "sql") {
+    return {
+      kind: "sql_query",
+      provider,
+      sql: node.sql,
+      rel: node,
+    };
+  }
+
+  return {
+    kind: "rel",
+    provider,
+    rel: node,
+  };
+}
+
+function resolveSingleProvider(node: RelNode, schema: SchemaDefinition): string | null {
+  const tables = collectRelTables(node);
+  if (tables.length === 0) {
+    return null;
+  }
+
+  const providers = new Set(tables.map((table) => resolveTableProvider(schema, table)));
+  if (providers.size !== 1) {
+    return null;
+  }
+
+  return [...providers][0] ?? null;
+}
+
+function assignConventions(node: RelNode, schema: SchemaDefinition): RelNode {
+  switch (node.kind) {
+    case "scan": {
+      const provider = resolveTableProvider(schema, node.table);
+      return {
+        ...node,
+        convention: `provider:${provider}`,
+      };
+    }
+    case "filter":
+    case "project":
+    case "aggregate":
+    case "sort":
+    case "limit_offset": {
+      const input = assignConventions(node.input, schema);
+      const provider = resolveSingleProvider(input, schema);
+      return {
+        ...node,
+        input,
+        convention: provider ? (`provider:${provider}` as const) : "local",
+      };
+    }
+    case "join":
+    case "set_op": {
+      const left = assignConventions(node.left, schema);
+      const right = assignConventions(node.right, schema);
+      const provider = resolveSingleProvider(
+        {
+          ...node,
+          left,
+          right,
+        } as RelNode,
+        schema,
+      );
+      return {
+        ...node,
+        left,
+        right,
+        convention: provider ? (`provider:${provider}` as const) : "local",
+      };
+    }
+    case "with": {
+      const ctes = node.ctes.map((cte) => ({
+        ...cte,
+        query: assignConventions(cte.query, schema),
+      }));
+      const body = assignConventions(node.body, schema);
+      const provider = resolveSingleProvider(body, schema);
+      return {
+        ...node,
+        ctes,
+        body,
+        convention: provider ? (`provider:${provider}` as const) : "local",
+      };
+    }
+    case "sql": {
+      const provider = resolveSingleProvider(node, schema);
+      return {
+        ...node,
+        convention: provider ? (`provider:${provider}` as const) : "local",
+      };
+    }
+  }
 }
 
 function tryLowerSimpleSelect(ast: SelectAst, schema: SchemaDefinition): RelNode | null {
@@ -939,8 +1128,8 @@ function appearsInRel(node: RelNode, alias: string): boolean {
   }
 }
 
-function findLookupJoinCandidate<TContext>(
-  rel: RelNode,
+function resolveLookupJoinCandidate<TContext>(
+  join: RelJoinNode,
   schema: SchemaDefinition,
   providers: ProvidersMap<TContext>,
 ): {
@@ -952,8 +1141,7 @@ function findLookupJoinCandidate<TContext>(
   rightKey: string;
   joinType: "inner" | "left";
 } | null {
-  const join = findFirstJoinNode(rel);
-  if (!join || (join.joinType !== "inner" && join.joinType !== "left")) {
+  if (join.joinType !== "inner" && join.joinType !== "left") {
     return null;
   }
 
@@ -1001,25 +1189,6 @@ function findFirstScanNode(node: RelNode): RelScanNode | null {
     case "with":
       return findFirstScanNode(node.body);
     case "sql":
-      return null;
-  }
-}
-
-function findFirstJoinNode(node: RelNode): RelJoinNode | null {
-  switch (node.kind) {
-    case "join":
-      return node;
-    case "filter":
-    case "project":
-    case "aggregate":
-    case "sort":
-    case "limit_offset":
-      return findFirstJoinNode(node.input);
-    case "set_op":
-      return findFirstJoinNode(node.left) ?? findFirstJoinNode(node.right);
-    case "with":
-      return findFirstJoinNode(node.body);
-    default:
       return null;
   }
 }
