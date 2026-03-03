@@ -64,7 +64,7 @@ export function createKyselyProvider<TContext>(
     async execute(plan, context): Promise<QueryRow[]> {
       switch (plan.kind) {
         case "sql_query": {
-          const fragment = plan.payload as ProviderFragment;
+          const fragment = plan.payload as Extract<ProviderFragment, { kind: "sql_query" }>;
           return options.executor.executeSql({
             sql: fragment.sql,
             params: [],
@@ -80,7 +80,7 @@ export function createKyselyProvider<TContext>(
           });
         }
         case "scan": {
-          const fragment = plan.payload as ProviderFragment;
+          const fragment = plan.payload as Extract<ProviderFragment, { kind: "scan" }>;
           const compiled = await compileScanSql(options, fragment.request, context);
           return options.executor.executeSql({
             sql: compiled.sql,

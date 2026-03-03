@@ -135,7 +135,7 @@ async function executeDrizzlePlan<TContext>(
 ): Promise<QueryRow[]> {
   switch (plan.kind) {
     case "sql_query": {
-      const fragment = plan.payload as ProviderFragment;
+      const fragment = plan.payload as Extract<ProviderFragment, { kind: "sql_query" }>;
       if (!options.executeSql) {
         throw new Error("Drizzle provider missing executeSql callback for sql_query fragments.");
       }
@@ -149,7 +149,7 @@ async function executeDrizzlePlan<TContext>(
       return options.executeSql(compiled.sql, context);
     }
     case "scan": {
-      const fragment = plan.payload as ProviderFragment;
+      const fragment = plan.payload as Extract<ProviderFragment, { kind: "scan" }>;
       const tableConfig = options.tables[fragment.table];
       if (!tableConfig) {
         throw new Error(`Unknown drizzle table config: ${fragment.table}`);
@@ -162,7 +162,7 @@ async function executeDrizzlePlan<TContext>(
         table: tableConfig.table,
         columns: tableConfig.columns,
         request: fragment.request,
-        scope,
+        ...(scope ? { scope } : {}),
       });
     }
     default:
@@ -200,7 +200,7 @@ async function lookupManyWithDrizzle<TContext>(
       select: request.select,
       where,
     },
-    scope,
+    ...(scope ? { scope } : {}),
   });
 }
 
@@ -223,7 +223,17 @@ export async function runDrizzleScan<TTable extends string, TColumn extends stri
   const scopeConditions = normalizeScope(options.scope);
   const whereConditions = [...scopeConditions, ...filterConditions];
 
-  let builder = options.db.select(selection).from(options.table as never) as {
+  const selectable = options.db.select(selection) as {
+    from: (table: never) => {
+      where: (condition: SQL) => unknown;
+      orderBy: (...clauses: SQL[]) => unknown;
+      limit: (value: number) => unknown;
+      offset: (value: number) => unknown;
+      execute: () => Promise<QueryRow[]>;
+    };
+  };
+
+  let builder = selectable.from(options.table as never) as {
     where: (condition: SQL) => unknown;
     orderBy: (...clauses: SQL[]) => unknown;
     limit: (value: number) => unknown;

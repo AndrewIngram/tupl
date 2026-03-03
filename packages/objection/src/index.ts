@@ -57,7 +57,7 @@ export function createObjectionProvider<TContext>(
     async execute(plan, context): Promise<QueryRow[]> {
       switch (plan.kind) {
         case "sql_query": {
-          const fragment = plan.payload as ProviderFragment;
+          const fragment = plan.payload as Extract<ProviderFragment, { kind: "sql_query" }>;
           return executeRawSql(options.knex, fragment.sql);
         }
         case "rel": {
@@ -65,7 +65,7 @@ export function createObjectionProvider<TContext>(
           return executeRawSql(options.knex, compiled.sql);
         }
         case "scan": {
-          const fragment = plan.payload as ProviderFragment;
+          const fragment = plan.payload as Extract<ProviderFragment, { kind: "scan" }>;
           return executeScan(options, fragment.request, context);
         }
         default:
