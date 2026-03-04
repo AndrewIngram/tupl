@@ -21,8 +21,10 @@ describe("playground/schema-graph-model", () => {
       "my_order_items",
       "vendors_for_org",
       "active_products",
+      "my_order_lines",
+      "product_view_counts",
     ]);
-    expect(layout.edges).toHaveLength(3);
+    expect(layout.edges).toHaveLength(6);
     expect(
       layout.edges
         .map(
@@ -33,7 +35,10 @@ describe("playground/schema-graph-model", () => {
     ).toEqual([
       "my_order_items.order_id->my_orders.id",
       "my_order_items.product_id->active_products.id",
+      "my_order_lines.order_id->my_orders.id",
+      "my_order_lines.product_id->active_products.id",
       "my_orders.vendor_id->vendors_for_org.id",
+      "product_view_counts.product_id->active_products.id",
     ]);
   });
 

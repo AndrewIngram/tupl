@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { FACADE_SCHEMA, QUERY_PRESETS, SCENARIO_PRESETS, serializeJson } from "../src/examples";
+import {
+  DEFAULT_FACADE_SCHEMA_CODE,
+  QUERY_PRESETS,
+  SCENARIO_PRESETS,
+  serializeJson,
+} from "../src/examples";
 import {
   compilePlaygroundInput,
   createSession,
   replaySession,
   runSessionToCompletion,
 } from "../src/session-runtime";
+import type { ExecutedProviderOperation } from "../src/types";
+
+function isSqlProviderOperation(
+  entry: ExecutedProviderOperation,
+): entry is Extract<ExecutedProviderOperation, { kind: "sql_query" }> {
+  return entry.kind === "sql_query";
+}
 
 describe("playground/session-replay", () => {
   it("replays to a specific step count deterministically", async () => {
@@ -16,8 +28,8 @@ describe("playground/session-replay", () => {
       throw new Error("Expected example pack with at least one query.");
     }
 
-    const compiled = compilePlaygroundInput(
-      serializeJson(FACADE_SCHEMA),
+    const compiled = await compilePlaygroundInput(
+      DEFAULT_FACADE_SCHEMA_CODE,
       serializeJson(scenario.rows),
       query.sql,
     );
@@ -44,8 +56,8 @@ describe("playground/session-replay", () => {
       throw new Error("Expected example pack with at least one query.");
     }
 
-    const compiled = compilePlaygroundInput(
-      serializeJson(FACADE_SCHEMA),
+    const compiled = await compilePlaygroundInput(
+      DEFAULT_FACADE_SCHEMA_CODE,
       serializeJson(scenario.rows),
       query.sql,
     );
@@ -59,5 +71,18 @@ describe("playground/session-replay", () => {
     expect(snapshot.done).toBe(true);
     expect(snapshot.result).not.toBeNull();
     expect((snapshot.result ?? []).length).toBeGreaterThan(0);
+    expect(Array.isArray(snapshot.executedOperations)).toBe(true);
+    expect(Array.isArray(snapshot.executedQueries)).toBe(true);
+    expect(snapshot.executedQueries).toEqual(
+      snapshot.executedOperations
+        .filter(isSqlProviderOperation)
+        .map((entry) => ({
+          id: entry.id,
+          timestamp: entry.timestamp,
+          provider: entry.provider,
+          sql: entry.sql,
+          params: entry.variables,
+        })),
+    );
   });
 });

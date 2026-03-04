@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import {
   Background,
@@ -7,6 +7,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  useNodesInitialized,
   useReactFlow,
   type NodeProps,
   type NodeTypes,
@@ -26,6 +27,7 @@ interface SchemaRelationsGraphProps {
   selectedTableName: string | null;
   onSelectTable(tableName: string): void;
   onClearSelection?(): void;
+  isVisible?: boolean;
   heightClassName?: string;
   frameClassName?: string;
   embedded?: boolean;
@@ -90,6 +92,7 @@ function SchemaRelationsGraphCanvas({
   selectedTableName,
   onSelectTable,
   onClearSelection,
+  isVisible = true,
   heightClassName,
   frameClassName,
   embedded = false,
@@ -101,19 +104,65 @@ function SchemaRelationsGraphCanvas({
   );
 
   const { fitView, setCenter } = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const hasInitialFitRef = useRef(false);
+  const previousSelectedTableRef = useRef<string | null>(selectedTableName);
+  const [isContainerReady, setIsContainerReady] = useState(false);
 
   useEffect(() => {
-    if (model.nodes.length === 0) {
+    hasInitialFitRef.current = false;
+  }, [layout]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
       return;
     }
 
-    void fitView({ padding: 0.15, duration: 200, maxZoom: 1 });
-  }, [fitView, layout, model.nodes.length]);
+    const updateReady = (): void => {
+      const rect = container.getBoundingClientRect();
+      setIsContainerReady(rect.width > 0 && rect.height > 0);
+    };
 
-  useEffect(() => {
-    if (!selectedTableName) {
+    updateReady();
+
+    if (typeof ResizeObserver === "undefined") {
       return;
     }
+
+    const observer = new ResizeObserver(() => updateReady());
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible || hasInitialFitRef.current || !nodesInitialized || !isContainerReady || model.nodes.length === 0) {
+      return;
+    }
+
+    hasInitialFitRef.current = true;
+    void fitView({ padding: 0.15, duration: 0, maxZoom: 1 });
+  }, [fitView, isContainerReady, isVisible, model.nodes.length, nodesInitialized]);
+
+  useEffect(() => {
+    if (!isVisible || !selectedTableName) {
+      previousSelectedTableRef.current = null;
+      return;
+    }
+
+    if (!hasInitialFitRef.current) {
+      previousSelectedTableRef.current = selectedTableName;
+      return;
+    }
+
+    if (previousSelectedTableRef.current === selectedTableName) {
+      return;
+    }
+    previousSelectedTableRef.current = selectedTableName;
 
     const selectedNode = model.nodes.find((node) => node.id === selectedTableName);
     if (!selectedNode) {
@@ -121,10 +170,10 @@ function SchemaRelationsGraphCanvas({
     }
 
     void setCenter(selectedNode.position.x + 160, selectedNode.position.y + 90, {
-      duration: 220,
+      duration: 0,
       zoom: 0.9,
     });
-  }, [model.nodes, selectedTableName, setCenter]);
+  }, [isVisible, model.nodes, selectedTableName, setCenter]);
 
   if (model.nodes.length === 0) {
     return <div className="text-sm text-slate-500">No tables in schema.</div>;
@@ -132,6 +181,7 @@ function SchemaRelationsGraphCanvas({
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         embedded
           ? "overflow-hidden bg-slate-50"
@@ -148,7 +198,6 @@ function SchemaRelationsGraphCanvas({
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable
-        fitView
         minZoom={0.25}
         maxZoom={1.5}
         onNodeClick={(_event, node) => onSelectTable(node.id)}

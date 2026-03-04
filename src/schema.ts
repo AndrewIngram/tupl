@@ -238,11 +238,14 @@ export interface SchemaColumnLensDefinition {
   nullable?: boolean;
   filterable?: boolean;
   sortable?: boolean;
+  primaryKey?: boolean;
+  unique?: boolean;
   enum?: readonly string[];
   enumFrom?: SchemaColRefToken | string;
   enumMap?: Record<string, string>;
   physicalType?: string;
   physicalDialect?: PhysicalDialect;
+  foreignKey?: ColumnForeignKeyReference;
   description?: string;
 }
 
@@ -333,13 +336,25 @@ export interface NormalizedPhysicalTableBinding {
   kind: "physical";
   provider?: string;
   entity: string;
+  columnBindings: Record<string, NormalizedColumnBinding>;
+  /**
+   * @deprecated Use columnBindings.
+   */
   columnToSource: Record<string, string>;
 }
 
 export interface NormalizedViewTableBinding<TContext = unknown> {
   kind: "view";
   rel: (context: TContext) => SchemaViewRelNode | unknown;
+  columnBindings: Record<string, NormalizedColumnBinding>;
+  /**
+   * @deprecated Use columnBindings.
+   */
   columnToSource: Record<string, string>;
+}
+
+export interface NormalizedColumnBinding {
+  source: string;
 }
 
 export type NormalizedTableBinding<TContext = unknown> =
@@ -449,6 +464,40 @@ export function getNormalizedTableBinding(
   return normalizedSchemaState.get(schema)?.tables[tableName];
 }
 
+export function getNormalizedColumnBindings(
+  binding: Pick<NormalizedPhysicalTableBinding | NormalizedViewTableBinding, "columnBindings" | "columnToSource">,
+): Record<string, NormalizedColumnBinding> {
+  if (binding.columnBindings && Object.keys(binding.columnBindings).length > 0) {
+    return binding.columnBindings;
+  }
+
+  return Object.fromEntries(
+    Object.entries(binding.columnToSource).map(([column, source]) => [column, { source }]),
+  );
+}
+
+export function getNormalizedColumnSourceMap(
+  binding: Pick<NormalizedPhysicalTableBinding | NormalizedViewTableBinding, "columnBindings" | "columnToSource">,
+): Record<string, string> {
+  const entries = Object.entries(getNormalizedColumnBindings(binding));
+  return Object.fromEntries(entries.map(([column, columnBinding]) => [column, columnBinding.source]));
+}
+
+export function resolveNormalizedColumnSource(
+  binding: Pick<NormalizedPhysicalTableBinding | NormalizedViewTableBinding, "columnBindings" | "columnToSource">,
+  logicalColumn: string,
+): string {
+  return getNormalizedColumnBindings(binding)[logicalColumn]?.source ?? logicalColumn;
+}
+
+function buildColumnSourceMapFromBindings(
+  columnBindings: Record<string, NormalizedColumnBinding>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(columnBindings).map(([column, binding]) => [column, binding.source]),
+  );
+}
+
 function normalizeDslSchema<TContext>(
   schemaBuilder: (helpers: SchemaDslHelpers<TContext>) => SchemaDslDefinition<TContext>,
 ): SchemaDefinition {
@@ -483,7 +532,7 @@ function normalizeDslSchema<TContext>(
   for (const [tableName, rawTable] of Object.entries(built.tables)) {
     if (isDslTableDefinition(rawTable)) {
       const normalizedColumns: TableColumns = {};
-      const columnToSource: Record<string, string> = {};
+      const columnBindings: Record<string, NormalizedColumnBinding> = {};
       for (const [columnName, rawColumn] of Object.entries(rawTable.columns)) {
         const normalized = normalizeColumnLens(columnName, rawColumn, {
           preserveQualifiedRef: false,
@@ -491,7 +540,7 @@ function normalizeDslSchema<TContext>(
           resolveEntityToken,
         });
         normalizedColumns[columnName] = normalized.definition;
-        columnToSource[columnName] = normalized.source;
+        columnBindings[columnName] = { source: normalized.source };
       }
 
       tables[tableName] = {
@@ -505,14 +554,15 @@ function normalizeDslSchema<TContext>(
         kind: "physical",
         provider: rawTable.from.provider,
         entity: rawTable.from.entity,
-        columnToSource,
+        columnBindings,
+        columnToSource: buildColumnSourceMapFromBindings(columnBindings),
       };
       continue;
     }
 
     if (isDslViewDefinition(rawTable)) {
       const normalizedColumns: TableColumns = {};
-      const columnToSource: Record<string, string> = {};
+      const columnBindings: Record<string, NormalizedColumnBinding> = {};
       for (const [columnName, rawColumn] of Object.entries(rawTable.columns)) {
         const normalized = normalizeColumnLens(columnName, rawColumn, {
           preserveQualifiedRef: true,
@@ -520,7 +570,7 @@ function normalizeDslSchema<TContext>(
           resolveEntityToken,
         });
         normalizedColumns[columnName] = normalized.definition;
-        columnToSource[columnName] = normalized.source;
+        columnBindings[columnName] = { source: normalized.source };
       }
 
       tables[tableName] = {
@@ -536,7 +586,8 @@ function normalizeDslSchema<TContext>(
           const definition = rawTable.rel(context as TContext);
           return resolveViewRelDefinition(definition, resolveTableToken, resolveEntityToken);
         },
-        columnToSource,
+        columnBindings,
+        columnToSource: buildColumnSourceMapFromBindings(columnBindings),
       };
       continue;
     }
@@ -566,6 +617,7 @@ function attachIdentityBindingsIfMissing(schema: SchemaDefinition): void {
         kind: "physical",
         ...(table.provider ? { provider: table.provider } : {}),
         entity: tableName,
+        columnBindings: Object.fromEntries(columns.map((column) => [column, { source: column }])),
         columnToSource: Object.fromEntries(columns.map((column) => [column, column])),
       };
     }
@@ -580,6 +632,7 @@ function attachIdentityBindingsIfMissing(schema: SchemaDefinition): void {
       kind: "physical",
       ...(table.provider ? { provider: table.provider } : {}),
       entity: tableName,
+      columnBindings: Object.fromEntries(columns.map((column) => [column, { source: column }])),
       columnToSource: Object.fromEntries(columns.map((column) => [column, column])),
     };
   }
@@ -627,22 +680,35 @@ function normalizeColumnLens(
         )
       : undefined;
 
-    return {
-      source: options.preserveQualifiedRef
-        ? sourceRef
-        : parseColumnSource(sourceRef),
-      definition: {
+    const definition = {
         type: rawColumn.type ?? "text",
         ...(rawColumn.nullable != null ? { nullable: rawColumn.nullable } : {}),
         ...(rawColumn.filterable != null ? { filterable: rawColumn.filterable } : {}),
         ...(rawColumn.sortable != null ? { sortable: rawColumn.sortable } : {}),
+        ...(rawColumn.primaryKey === true
+          ? { primaryKey: true as const }
+          : rawColumn.primaryKey === false
+            ? { primaryKey: false as const }
+            : {}),
+        ...(rawColumn.unique === true
+          ? { unique: true as const }
+          : rawColumn.unique === false
+            ? { unique: false as const }
+            : {}),
         ...(rawColumn.enum ? { enum: rawColumn.enum } : {}),
         ...(enumFromRef ? { enumFrom: enumFromRef } : {}),
         ...(rawColumn.enumMap ? { enumMap: rawColumn.enumMap } : {}),
         ...(rawColumn.physicalType ? { physicalType: rawColumn.physicalType } : {}),
         ...(rawColumn.physicalDialect ? { physicalDialect: rawColumn.physicalDialect } : {}),
+        ...(rawColumn.foreignKey ? { foreignKey: rawColumn.foreignKey } : {}),
         ...(rawColumn.description ? { description: rawColumn.description } : {}),
-      },
+      } as TableColumnDefinition;
+
+    return {
+      source: options.preserveQualifiedRef
+        ? sourceRef
+        : parseColumnSource(sourceRef),
+      definition,
     };
   }
 

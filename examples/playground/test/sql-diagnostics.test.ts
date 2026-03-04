@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { FACADE_SCHEMA, SCENARIO_PRESETS, serializeJson } from "../src/examples";
+import { DEFAULT_FACADE_SCHEMA_CODE, SCENARIO_PRESETS, serializeJson } from "../src/examples";
 import { compilePlaygroundInput } from "../src/session-runtime";
 
 describe("playground/sql-diagnostics", () => {
-  it("reports unknown table references during compile", () => {
+  it("reports unknown table references during compile", async () => {
     const scenario = SCENARIO_PRESETS[0];
     if (!scenario) {
       throw new Error("Expected default scenario.");
     }
 
-    const compiled = compilePlaygroundInput(
-      serializeJson(FACADE_SCHEMA),
+    const compiled = await compilePlaygroundInput(
+      DEFAULT_FACADE_SCHEMA_CODE,
       serializeJson(scenario.rows),
       "SELECT * FROM missing_table",
     );
@@ -23,14 +23,14 @@ describe("playground/sql-diagnostics", () => {
     expect(compiled.issues[0]).toBe("Unknown table: missing_table");
   });
 
-  it("reports unknown column references during compile", () => {
+  it("reports unknown column references during compile", async () => {
     const scenario = SCENARIO_PRESETS[0];
     if (!scenario) {
       throw new Error("Expected default scenario.");
     }
 
-    const compiled = compilePlaygroundInput(
-      serializeJson(FACADE_SCHEMA),
+    const compiled = await compilePlaygroundInput(
+      DEFAULT_FACADE_SCHEMA_CODE,
       serializeJson(scenario.rows),
       "SELECT o.missing_column FROM my_orders o",
     );

@@ -24,7 +24,12 @@ import {
   type ProvidersMap,
 } from "./provider";
 import type { ScanFilterClause, SchemaDefinition } from "./schema";
-import { getNormalizedTableBinding, type ColumnDefinition } from "./schema";
+import {
+  getNormalizedColumnSourceMap,
+  getNormalizedTableBinding,
+  resolveNormalizedColumnSource,
+  type ColumnDefinition,
+} from "./schema";
 
 export interface RelLoweringResult {
   rel: RelNode;
@@ -438,7 +443,7 @@ function normalizeScanForProvider(node: RelScanNode, schema: SchemaDefinition): 
   }
   const table = schema.tables[node.table];
 
-  const mapColumn = (column: string): string => binding.columnToSource[column] ?? column;
+  const mapColumn = (column: string): string => resolveNormalizedColumnSource(binding, column);
   const mapClause = (clause: ScanFilterClause): ScanFilterClause => {
     const mapped = mapEnumFilterForProvider(table?.columns[clause.column], clause);
     return {
@@ -540,7 +545,7 @@ function collectAliasToSourceMappings(node: RelNode, schema: SchemaDefinition): 
           return;
         }
         const alias = current.alias ?? current.table;
-        mappings.set(alias, binding.columnToSource);
+        mappings.set(alias, getNormalizedColumnSourceMap(binding));
         return;
       }
       case "filter":

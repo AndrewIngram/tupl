@@ -2,7 +2,13 @@ import { PGlite } from "../node_modules/@electric-sql/pglite/dist/index.js";
 import { drizzle } from "drizzle-orm/pglite";
 import type { QueryRow } from "sqlql";
 
-import type { DownstreamRows } from "./types";
+import type {
+  DownstreamRows,
+  ExecutedKvLookupProviderOperation,
+  ExecutedProviderOperation,
+  ExecutedSqlProviderOperation,
+  ExecutedSqlQuery,
+} from "./types";
 import {
   orderItemsTable,
   ordersTable,
@@ -18,13 +24,39 @@ interface PlaygroundPgliteRuntime {
   db: ReturnType<typeof drizzle>;
 }
 
-export interface ExecutedSqlQuery {
-  sql: string;
-  params: unknown[];
+let runtimePromise: Promise<PlaygroundPgliteRuntime> | null = null;
+const executedProviderOperations: ExecutedProviderOperation[] = [];
+let nextOperationId = 1;
+
+type NewExecutedProviderOperation =
+  | Omit<ExecutedSqlProviderOperation, "id" | "timestamp">
+  | Omit<ExecutedKvLookupProviderOperation, "id" | "timestamp">;
+
+function makeOperationId(): string {
+  const id = `op_${nextOperationId}`;
+  nextOperationId += 1;
+  return id;
 }
 
-let runtimePromise: Promise<PlaygroundPgliteRuntime> | null = null;
-const executedSqlQueries: ExecutedSqlQuery[] = [];
+export function recordExecutedProviderOperation(
+  operation: NewExecutedProviderOperation,
+): ExecutedProviderOperation {
+  const id = makeOperationId();
+  const timestamp = Date.now();
+  const entry = operation.kind === "sql_query"
+    ? {
+        ...operation,
+        id,
+        timestamp,
+      } satisfies ExecutedSqlProviderOperation
+    : {
+        ...operation,
+        id,
+        timestamp,
+      } satisfies ExecutedKvLookupProviderOperation;
+  executedProviderOperations.push(entry);
+  return entry;
+}
 
 const CREATE_SCHEMA_STATEMENTS = [
   `DO $$ BEGIN CREATE TYPE user_role AS ENUM ('buyer', 'manager'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
@@ -128,9 +160,11 @@ async function createRuntime(): Promise<PlaygroundPgliteRuntime> {
 
   const logger = {
     logQuery(query: string, params: unknown[]): void {
-      executedSqlQueries.push({
+      recordExecutedProviderOperation({
+        kind: "sql_query",
+        provider: "dbProvider",
         sql: query,
-        params,
+        variables: params,
       });
     },
   };
@@ -182,10 +216,33 @@ export async function reseedDownstreamDatabase(rows: DownstreamRows): Promise<vo
   }
 }
 
-export function clearExecutedSqlQueries(): void {
-  executedSqlQueries.length = 0;
+export function clearExecutedProviderOperations(): void {
+  executedProviderOperations.length = 0;
+  nextOperationId = 1;
 }
 
+export function getExecutedProviderOperations(): ExecutedProviderOperation[] {
+  return [...executedProviderOperations];
+}
+
+/**
+ * @deprecated Use clearExecutedProviderOperations().
+ */
+export function clearExecutedSqlQueries(): void {
+  clearExecutedProviderOperations();
+}
+
+/**
+ * @deprecated Use getExecutedProviderOperations().
+ */
 export function getExecutedSqlQueries(): ExecutedSqlQuery[] {
-  return [...executedSqlQueries];
+  return getExecutedProviderOperations()
+    .filter((entry): entry is ExecutedSqlProviderOperation => entry.kind === "sql_query")
+    .map((entry) => ({
+      id: entry.id,
+      timestamp: entry.timestamp,
+      provider: entry.provider,
+      sql: entry.sql,
+      params: entry.variables,
+    }));
 }

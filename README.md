@@ -227,23 +227,21 @@ Not yet supported:
 
 The playground is a Vite + React app for interactive exploration with three top-level tabs:
 
-- `Schema`:
-  - JSON editor for the **facade schema** exposed to SQL users
+- `PostgreSQL`:
+  - editable downstream data/structure workspace for pglite + Drizzle
+  - table browser + row editor + generated downstream DDL
+- `SQLQL Schema`:
+  - TypeScript module editor for the **facade schema** (`export const schema = defineSchema(...)`)
+  - Monaco TypeScript diagnostics + API IntelliSense (typed refs and DSL helpers)
   - relation diagram (React Flow) from declared foreign keys
   - generated DDL viewer (syntax-highlighted SQL)
-- `Data`:
-  - editable rows for a fixed **downstream database** (`orgs`, `users`, `vendors`, `products`, `orders`, `order_items`)
-  - per-table `JSON` editor and `Table` grid editor
-  - enum/type-aware editing and schema-driven validation
 - `Query`:
   - scenario selector (context + downstream seed data) and query preset selector
   - runtime lens context controls (`orgId`, `userId`)
   - compatibility-aware query picker (incompatible queries are disabled with reasons)
   - compact one-line SQL preview that expands into Monaco on focus
   - auto-run on valid schema/data/query (no manual run button)
-  - `Result` tab for rows and `Explain` tab for:
-    - translation pipeline (`user SQL -> facade rel -> provider fragment`)
-    - plan graph + step overlay details
+  - `Result` and `Explain` tabs with plan graph + step overlay details
 
 Run:
 

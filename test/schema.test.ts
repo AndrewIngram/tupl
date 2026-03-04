@@ -36,6 +36,10 @@ describe("defineSchema", () => {
       kind: "physical",
       provider: "regional",
       entity: "orders_raw",
+      columnBindings: {
+        id: { source: "id" },
+        total_cents: { source: "total_cents" },
+      },
       columnToSource: {
         id: "id",
         total_cents: "total_cents",
@@ -78,6 +82,10 @@ describe("defineSchema", () => {
 
     const binding = getNormalizedTableBinding(schema, "my_order_stats");
     expect(binding?.kind).toBe("view");
+    expect(binding?.columnBindings).toEqual({
+      order_id: { source: "id" },
+      spend: { source: "spend" },
+    });
     expect(binding?.columnToSource).toEqual({
       order_id: "id",
       spend: "spend",
@@ -141,6 +149,11 @@ describe("defineSchema", () => {
 
     const binding = getNormalizedTableBinding(schema, "spendByVendor");
     expect(binding?.kind).toBe("view");
+    expect(binding?.columnBindings).toEqual({
+      vendor_id: { source: "id" },
+      vendor_name: { source: "name" },
+      spend: { source: "spend" },
+    });
     expect(binding?.columnToSource).toEqual({
       vendor_id: "id",
       vendor_name: "name",
@@ -198,6 +211,10 @@ describe("defineSchema", () => {
       kind: "physical",
       provider: "warehouse",
       entity: "orders_raw",
+      columnBindings: {
+        id: { source: "id" },
+        status: { source: "status" },
+      },
       columnToSource: {
         id: "id",
         status: "status",

@@ -455,6 +455,153 @@ function createProviderFragmentSession<TContext>(
   };
 }
 
+function createRelExecutionSession<TContext>(
+  input: QuerySessionInput<TContext>,
+  guardrails: QueryGuardrails,
+  rel: RelNode,
+): QuerySession | null {
+  const providers = input.providers;
+  if (!providers) {
+    return null;
+  }
+
+  let executed = false;
+  let result: QueryRow[] | null = null;
+  let eventDispatched = false;
+
+  const stepId = "remote_fragment_1";
+  const plan: QueryExecutionPlan = {
+    steps: [
+      {
+        id: stepId,
+        kind: "remote_fragment",
+        dependsOn: [],
+        summary: "Execute relational runtime plan (provider + local operators)",
+        phase: "fetch",
+        operation: {
+          name: "provider_fragment",
+          details: {
+            provider: "mixed",
+          },
+        },
+        request: {
+          fragment: "rel",
+        },
+      },
+    ],
+    scopes: [
+      {
+        id: "scope_root",
+        kind: "root",
+        label: "Root query",
+      },
+    ],
+  };
+
+  let state: QueryStepState = {
+    id: stepId,
+    kind: "remote_fragment",
+    status: "ready",
+    summary: "Execute relational runtime plan (provider + local operators)",
+    dependsOn: [],
+  };
+
+  const run = async (): Promise<QueryRow[]> => {
+    if (executed) {
+      return result ?? [];
+    }
+
+    executed = true;
+    const startedAt = Date.now();
+    state = {
+      ...state,
+      status: "running",
+      startedAt,
+    };
+
+    try {
+      const rows = await withTimeout(
+        executeRelWithProviders(
+          rel,
+          input.schema,
+          providers,
+          input.context,
+          {
+            maxExecutionRows: guardrails.maxExecutionRows,
+            maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
+            maxLookupBatches: guardrails.maxLookupBatches,
+          },
+        ),
+        guardrails.timeoutMs,
+      );
+      enforceExecutionRowLimit(rows, guardrails);
+      result = rows;
+
+      const endedAt = Date.now();
+      state = {
+        ...state,
+        status: "done",
+        routeUsed: "provider_fragment",
+        rowCount: rows.length,
+        outputRowCount: rows.length,
+        startedAt,
+        endedAt,
+        durationMs: endedAt - startedAt,
+        ...(input.options?.captureRows === "full" ? { rows } : {}),
+      };
+
+      return rows;
+    } catch (error) {
+      const endedAt = Date.now();
+      state = {
+        ...state,
+        status: "failed",
+        startedAt,
+        endedAt,
+        durationMs: endedAt - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      throw error;
+    }
+  };
+
+  return {
+    getPlan: () => plan,
+    next: async () => {
+      await run();
+      if (!eventDispatched) {
+        eventDispatched = true;
+        const event: QueryStepEvent = {
+          id: stepId,
+          kind: "remote_fragment",
+          status: "done",
+          summary: state.summary,
+          dependsOn: [],
+          executionIndex: 1,
+          startedAt: state.startedAt ?? Date.now(),
+          endedAt: state.endedAt ?? Date.now(),
+          durationMs: state.durationMs ?? 0,
+          routeUsed: "provider_fragment",
+          ...(state.rowCount != null ? { rowCount: state.rowCount } : {}),
+          ...(state.outputRowCount != null ? { outputRowCount: state.outputRowCount } : {}),
+          ...(input.options?.captureRows === "full" ? { rows: result ?? [] } : {}),
+        };
+
+        input.options?.onEvent?.(event);
+        return event;
+      }
+
+      return {
+        done: true as const,
+        result: result ?? [],
+      };
+    },
+    runToCompletion: async () => run(),
+    getResult: () => result,
+    getStepState: (id: string) => (id === stepId ? state : undefined),
+  };
+}
+
 function createLegacyBackedSession<TContext>(
   input: QuerySessionInput<TContext>,
   guardrails: QueryGuardrails,
@@ -609,8 +756,15 @@ export function createQuerySession<TContext>(input: QuerySessionInput<TContext>)
     );
   }
 
+  const referencesView = collectRelTables(lowered.rel).some(
+    (table) => getNormalizedTableBinding(resolvedInput.schema, table)?.kind === "view",
+  );
+
   return (
     tryCreateSyncProviderFragmentSession(resolvedInput, guardrails, lowered.rel) ??
+    (referencesView
+      ? createRelExecutionSession(resolvedInput, guardrails, lowered.rel)
+      : null) ??
     createLegacyBackedSession(resolvedInput, guardrails)
   );
 }

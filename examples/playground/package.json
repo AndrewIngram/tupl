@@ -33,6 +33,7 @@
     "sqlql": "workspace:*",
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5.9.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {

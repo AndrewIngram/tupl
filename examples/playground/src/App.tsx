@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { ChevronDown, ChevronRight, Database, SearchCode, Table2, Trash2, X } from "lucide-react";
@@ -26,8 +26,14 @@ import {
 } from "@/data-editing";
 import {
   buildQueryCatalog,
+  DB_PROVIDER_MODULE_ID,
+  DEFAULT_DB_PROVIDER_CODE,
+  DEFAULT_KV_PROVIDER_CODE,
   DEFAULT_QUERY_ID,
   DEFAULT_SCENARIO_ID,
+  DEFAULT_FACADE_SCHEMA_CODE,
+  GENERATED_DB_MODULE_ID,
+  KV_PROVIDER_MODULE_ID,
   FACADE_SCHEMA,
   QUERY_PRESETS,
   SCENARIO_PRESETS,
@@ -50,19 +56,23 @@ import {
 } from "@/session-runtime";
 import { SqlPreviewLine } from "@/SqlPreviewLine";
 import { registerSqlCompletionProvider } from "@/sql-completion";
+import { configureSchemaTypescriptProject } from "@/schema-monaco";
+import { KV_DATA_TABLE_DEFINITION, KV_DATA_TABLE_NAME } from "@/kv-provider";
 import {
   parseDownstreamRowsText,
-  parseFacadeSchemaText,
-  PLAYGROUND_SCHEMA_JSON_SCHEMA,
+  parseFacadeSchemaCode,
+  coerceSchemaEditorTextToCode,
 } from "@/validation";
+import schemaEditorSqlqlTypesText from "@/schema-editor-sqlql.d.ts.txt?raw";
 import { DOWNSTREAM_ROWS_SCHEMA, DOWNSTREAM_TABLE_NAMES } from "@/downstream-model";
-import type { ExecutedSqlQuery } from "@/pglite-runtime";
 import {
+  type ExecutedProviderOperation,
   isColumnNullable,
   readColumnEnumValues,
   readColumnType,
   type DownstreamRows,
   type PlaygroundContext,
+  type SchemaParseResult,
 } from "@/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -90,21 +100,29 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
-const SCHEMA_MODEL_PATH = "inmemory://sqlql/schema.json";
+const SCHEMA_MODEL_PATH = "file:///playground/schema.ts";
+const SCHEMA_PROVIDER_MODEL_PATH = "file:///playground/db-provider.ts";
+const SCHEMA_KV_PROVIDER_MODEL_PATH = "file:///playground/kv-provider.ts";
+const SCHEMA_GENERATED_MODEL_PATH = "file:///playground/generated-db.ts";
 const SCHEMA_DDL_MODEL_PATH = "inmemory://sqlql/schema.ddl.sql";
 const DOWNSTREAM_DDL_MODEL_PATH = "inmemory://sqlql/downstream-schema.ddl.sql";
 const SQL_MODEL_PATH = "inmemory://sqlql/query.sql";
+const SCHEMA_SQLQL_TYPES_LIB_PATH = "file:///types/sqlql/index.d.ts";
 const CUSTOM_SCENARIO_ID = "__custom_scenario__";
 const EXPANDED_QUERY_EDITOR_PADDING_Y_PX = 16;
 const EXPANDED_QUERY_EDITOR_DEFAULT_HEIGHT_PX = 120;
 const SCHEMA_SPLIT_MIN_PERCENT = 30;
 const SCHEMA_SPLIT_MAX_PERCENT = 70;
+const QUERY_SPLIT_MIN_PERCENT = 35;
+const QUERY_SPLIT_MAX_PERCENT = 80;
 
 type TopTab = "postgres" | "sqlql_schema" | "query";
 type SchemaTab = "diagram" | "ddl";
 type QueryTab = "result" | "explain";
 type PostgresWorkspaceMode = "data" | "structure";
 type PostgresStructureTab = "table" | "diagram" | "ddl";
+type SchemaSourceTab = "schema" | "provider" | "kv_provider" | "generated";
+type DataSourceSection = "postgres" | "kv";
 
 interface EditableStructureColumn {
   name: string;
@@ -116,8 +134,8 @@ interface EditableStructureColumn {
   foreignColumn: string;
 }
 
-function executedSqlModelPath(index: number): string {
-  return `inmemory://sqlql/executed-${index}.sql`;
+function executedOperationSqlModelPath(index: number): string {
+  return `inmemory://sqlql/executed-operation-${index}.sql`;
 }
 
 function escapeRegExp(value: string): string {
@@ -513,9 +531,14 @@ function inferSqlErrorRange(sql: string, message: string) {
 }
 
 function findTableLineNumber(schemaText: string, tableName: string): number | null {
-  const regex = new RegExp(`^\\s*"${escapeRegExp(tableName)}"\\s*:`, "mu");
+  const regex = new RegExp(
+    `^\\s*(?:"${escapeRegExp(tableName)}"|${escapeRegExp(tableName)})\\s*:`,
+    "mu",
+  );
   const match = regex.exec(schemaText);
-  const index = match?.index ?? schemaText.indexOf(`"${tableName}"`);
+  const quoted = schemaText.indexOf(`"${tableName}"`);
+  const unquoted = schemaText.indexOf(`${tableName}:`);
+  const index = match?.index ?? (quoted >= 0 ? quoted : unquoted);
 
   if (index < 0) {
     return null;
@@ -745,6 +768,86 @@ function buildPostgresDdlFromRows(
   return [...enumTypeStatements, tableStatements].join("\n\n");
 }
 
+function buildGeneratedDbModuleCode(schema: SchemaDefinition): string {
+  const tableNames = Object.keys(schema.tables);
+  const tableVarByName = new Map<string, string>();
+
+  const toCamelCase = (value: string): string => {
+    const normalized = value
+      .replace(/[^A-Za-z0-9]+/gu, " ")
+      .trim()
+      .split(/\s+/u)
+      .map((part, index) => {
+        const lower = part.toLowerCase();
+        return index === 0
+          ? lower
+          : `${lower.slice(0, 1).toUpperCase()}${lower.slice(1)}`;
+      })
+      .join("");
+    return normalized.length > 0 ? normalized : "table";
+  };
+
+  for (const tableName of tableNames) {
+    tableVarByName.set(tableName, `${toCamelCase(tableName)}Table`);
+  }
+
+  const tableDefinitions = tableNames.map((tableName) => {
+    const table = schema.tables[tableName];
+    const tableVar = tableVarByName.get(tableName) ?? `${toCamelCase(tableName)}Table`;
+    const columns = Object.entries(table?.columns ?? {}).map(([columnName, columnDefinition]) => {
+      const scalarType = readColumnType(columnDefinition);
+      const baseBuilder = scalarType === "timestamp"
+        ? `timestamp(${JSON.stringify(columnName)}, { mode: "string" })`
+        : `${scalarType}(${JSON.stringify(columnName)})`;
+
+      const modifiers: string[] = [];
+      if (typeof columnDefinition !== "string" && columnDefinition.primaryKey) {
+        modifiers.push("primaryKey()");
+      }
+      if (!isColumnNullable(columnDefinition)) {
+        modifiers.push("notNull()");
+      }
+      if (typeof columnDefinition !== "string" && columnDefinition.foreignKey) {
+        const refVar = tableVarByName.get(columnDefinition.foreignKey.table);
+        if (refVar) {
+          modifiers.push(
+            `references(() => ${refVar}[${JSON.stringify(columnDefinition.foreignKey.column)}])`,
+          );
+        }
+      }
+
+      const chain = modifiers.length > 0 ? `.${modifiers.join(".")}` : "";
+      return `  ${JSON.stringify(columnName)}: ${baseBuilder}${chain},`;
+    }).join("\n");
+
+    return `const ${tableVar} = pgTable(${JSON.stringify(tableName)}, {\n${columns}\n});`;
+  }).join("\n\n");
+
+  const tableEntries = tableNames
+    .map((tableName) => {
+      const tableVar = tableVarByName.get(tableName) ?? `${toCamelCase(tableName)}Table`;
+      return `  ${JSON.stringify(tableName)}: ${tableVar},`;
+    })
+    .join("\n");
+
+  return `
+// Generated from the downstream Postgres model used by the playground.
+// This file is read-only in the editor.
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+
+${tableDefinitions}
+
+export const tables = {
+${tableEntries}
+} as const;
+
+const client = new PGlite();
+export const db = drizzle({ client });
+`.trim();
+}
+
 function toDateTimeLocalValue(value: unknown): string {
   if (typeof value !== "string") {
     return "";
@@ -776,51 +879,70 @@ function JsonBlock({ value }: { value: unknown }): React.JSX.Element {
   );
 }
 
-function ExecutedQueriesPanel({
-  queries,
+function ExecutedProviderOperationsPanel({
+  operations,
   onMonacoMount,
+  className,
 }: {
-  queries: ExecutedSqlQuery[];
+  operations: ExecutedProviderOperation[];
   onMonacoMount: OnMount;
+  className?: string;
 }): React.JSX.Element {
   return (
-    <div className="shrink-0 overflow-hidden rounded-md border bg-white">
+    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-white", className)}>
       <div className="border-b bg-slate-50 px-3 py-2">
         <div className="text-sm font-semibold text-slate-900">
-          Executed PostgreSQL Queries ({queries.length})
+          Executed provider operations ({operations.length})
         </div>
       </div>
-      {queries.length === 0 ? (
+      {operations.length === 0 ? (
         <div className="px-3 py-4 text-xs text-slate-500">
-          No remote PostgreSQL queries executed for this run.
+          No provider operations executed for this run.
         </div>
       ) : (
-        <ScrollArea className="h-56 px-3 py-2">
+        <ScrollArea className="min-h-0 flex-1 px-3 py-2">
           <div className="space-y-3">
-            {queries.map((entry, index) => {
-              const editorHeight = Math.max(72, Math.min(220, (entry.sql.split("\n").length + 1) * 20));
+            {operations.map((entry, index) => {
+              const isSql = entry.kind === "sql_query";
+              const editorHeight = isSql
+                ? Math.max(72, Math.min(220, (entry.sql.split("\n").length + 1) * 20))
+                : 120;
               return (
                 <div key={`executed-query-${index}`} className="overflow-hidden rounded-md border">
-                  <div className="border-b bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
-                    Query {index + 1}
+                  <div className="border-b bg-slate-50 px-2 py-1">
+                    <div className="flex items-center gap-2 text-[11px] text-slate-600">
+                      <span>Operation {index + 1}</span>
+                      <Badge variant="secondary" className="h-5 rounded-sm px-1.5 text-[10px] font-medium">
+                        {entry.provider}
+                      </Badge>
+                      <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px] font-medium">
+                        {isSql ? "SQL query" : "KV lookup"}
+                      </Badge>
+                    </div>
                   </div>
-                  <Editor
-                    path={executedSqlModelPath(index)}
-                    language="sql"
-                    value={entry.sql}
-                    onMount={onMonacoMount}
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 12,
-                      readOnly: true,
-                      scrollBeyondLastLine: false,
-                      lineNumbers: "off",
-                      wordWrap: "on",
-                    }}
-                    height={`${editorHeight}px`}
-                  />
+                  {isSql ? (
+                    <Editor
+                      path={executedOperationSqlModelPath(index)}
+                      language="sql"
+                      value={entry.sql}
+                      onMount={onMonacoMount}
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 12,
+                        readOnly: true,
+                        scrollBeyondLastLine: false,
+                        lineNumbers: "off",
+                        wordWrap: "on",
+                      }}
+                      height={`${editorHeight}px`}
+                    />
+                  ) : (
+                    <div className="px-2 py-2">
+                      <JsonBlock value={entry.lookup} />
+                    </div>
+                  )}
                   <div className="border-t bg-slate-50 px-2 py-1 font-mono text-[11px] text-slate-600">
-                    params: {JSON.stringify(entry.params)}
+                    variables: {JSON.stringify(entry.variables)}
                   </div>
                 </div>
               );
@@ -834,7 +956,7 @@ function ExecutedQueriesPanel({
 
 function renderRows(
   rows: Array<Record<string, unknown>>,
-  options?: { heightClassName?: string; expandNestedObjects?: boolean },
+  options?: { heightClassName?: string; frameClassName?: string; expandNestedObjects?: boolean },
 ): React.JSX.Element {
   if (rows.length === 0) {
     return <div className="text-sm text-slate-500">No rows.</div>;
@@ -865,7 +987,12 @@ function renderRows(
   const columns = [...new Set(normalizedRows.flatMap((row) => Object.keys(row)))];
 
   return (
-    <ScrollArea className={cn(options?.heightClassName ?? "h-[460px]", "rounded-md border bg-white")}>
+    <ScrollArea
+      className={cn(
+        options?.heightClassName ?? "h-[460px]",
+        options?.frameClassName ?? "rounded-md border bg-white",
+      )}
+    >
       <Table>
         <TableHeader>
           <TableRow>
@@ -928,10 +1055,13 @@ export function App(): React.JSX.Element {
   const [activeQueryTab, setActiveQueryTab] = useState<QueryTab>("result");
   const [postgresWorkspaceMode, setPostgresWorkspaceMode] = useState<PostgresWorkspaceMode>("data");
   const [postgresStructureTab, setPostgresStructureTab] = useState<PostgresStructureTab>("table");
+  const [activeSchemaSourceTab, setActiveSchemaSourceTab] = useState<SchemaSourceTab>("schema");
 
-  const [schemaJsonText, setSchemaJsonText] = useState(
-    serializeJson(FACADE_SCHEMA),
+  const [schemaCodeText, setSchemaCodeText] = useState(
+    () => coerceSchemaEditorTextToCode(DEFAULT_FACADE_SCHEMA_CODE),
   );
+  const [providerCodeText, setProviderCodeText] = useState(DEFAULT_DB_PROVIDER_CODE);
+  const [kvProviderCodeText, setKvProviderCodeText] = useState(DEFAULT_KV_PROVIDER_CODE);
   const [rowsJsonText, setRowsJsonText] = useState(
     defaultScenario ? serializeJson(defaultScenario.rows) : "{}\n",
   );
@@ -947,6 +1077,7 @@ export function App(): React.JSX.Element {
   );
   const [selectedDataRowIndex, setSelectedDataRowIndex] = useState<number | null>(0);
   const [downstreamTableFilter, setDownstreamTableFilter] = useState("");
+  const [openDataSourceSection, setOpenDataSourceSection] = useState<DataSourceSection>("postgres");
   const [rowEditorDrafts, setRowEditorDrafts] = useState<Record<string, string>>({});
   const [rowEditorErrors, setRowEditorErrors] = useState<Record<string, string>>({});
   const [downstreamStructureRowsByTable, setDownstreamStructureRowsByTable] = useState<
@@ -954,7 +1085,7 @@ export function App(): React.JSX.Element {
   >(() => buildEditableStructureRows(DOWNSTREAM_ROWS_SCHEMA));
 
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
-  const [executedQueries, setExecutedQueries] = useState<ExecutedSqlQuery[]>([]);
+  const [executedOperations, setExecutedOperations] = useState<ExecutedProviderOperation[]>([]);
   const [planSteps, setPlanSteps] = useState<QueryExecutionPlanStep[]>([]);
   const [planScopes, setPlanScopes] = useState<QueryExecutionPlanScope[]>([]);
   const [events, setEvents] = useState<QueryStepEvent[]>([]);
@@ -970,27 +1101,45 @@ export function App(): React.JSX.Element {
   );
   const [schemaSplitPercent, setSchemaSplitPercent] = useState(50);
   const [isSchemaSplitDragging, setIsSchemaSplitDragging] = useState(false);
+  const [querySplitPercent, setQuerySplitPercent] = useState(62);
+  const [isQuerySplitDragging, setIsQuerySplitDragging] = useState(false);
   const [sessionTick, setSessionTick] = useState(0);
+  const [schemaParse, setSchemaParse] = useState<SchemaParseResult>(() => ({
+    ok: true,
+    schema: FACADE_SCHEMA,
+    issues: [],
+  }));
 
   const monacoRef = useRef<typeof Monaco | null>(null);
   const schemaEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const sqlEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const sqlProviderDisposableRef = useRef<Monaco.IDisposable | null>(null);
   const schemaDecorationIdsRef = useRef<string[]>([]);
+  const schemaTypesRegisteredRef = useRef(false);
+  const schemaParseRequestIdRef = useRef(0);
+  const sqlMarkerRequestIdRef = useRef(0);
   const queryEditorShellRef = useRef<HTMLDivElement | null>(null);
   const contextPopoverRef = useRef<HTMLDivElement | null>(null);
   const schemaWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const queryWorkspaceRef = useRef<HTMLDivElement | null>(null);
 
   const sessionRef = useRef<QuerySession | null>(null);
   const executionRequestIdRef = useRef(0);
-  const schemaForCompletionRef = useRef<SchemaDefinition | null>(null);
+  const schemaForCompletionRef = useRef<SchemaDefinition | null>(FACADE_SCHEMA);
   const clampSchemaSplitPercent = useCallback((value: number): number => {
     return Math.min(SCHEMA_SPLIT_MAX_PERCENT, Math.max(SCHEMA_SPLIT_MIN_PERCENT, value));
+  }, []);
+  const clampQuerySplitPercent = useCallback((value: number): number => {
+    return Math.min(QUERY_SPLIT_MAX_PERCENT, Math.max(QUERY_SPLIT_MIN_PERCENT, value));
   }, []);
   const schemaSplitGridTemplate = useMemo(() => {
     const right = 100 - schemaSplitPercent;
     return `calc(${schemaSplitPercent}% - 5px) 10px calc(${right}% - 5px)`;
   }, [schemaSplitPercent]);
+  const querySplitGridTemplate = useMemo(() => {
+    const bottom = 100 - querySplitPercent;
+    return `calc(${querySplitPercent}% - 0.5px) 1px calc(${bottom}% - 0.5px)`;
+  }, [querySplitPercent]);
   const recalculateExpandedQueryEditorHeight = useCallback(() => {
     if (!isQueryEditorExpanded) {
       return;
@@ -1017,15 +1166,102 @@ export function App(): React.JSX.Element {
     event.preventDefault();
     setIsSchemaSplitDragging(true);
   }, []);
+  const startQuerySplitDrag = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setIsQuerySplitDragging(true);
+  }, []);
 
   const queryCatalog = useMemo(() => buildQueryCatalog(QUERY_PRESETS), []);
+  const generatedDbCodeText = useMemo(
+    () => buildGeneratedDbModuleCode(buildPostgresSchemaFromRows(downstreamStructureRowsByTable)),
+    [downstreamStructureRowsByTable],
+  );
+  const schemaProgramModules = useMemo(
+    () => ({
+      [DB_PROVIDER_MODULE_ID]: providerCodeText,
+      [GENERATED_DB_MODULE_ID]: generatedDbCodeText,
+      [KV_PROVIDER_MODULE_ID]: kvProviderCodeText,
+    }),
+    [generatedDbCodeText, kvProviderCodeText, providerCodeText],
+  );
+  const schemaEditorPath = useMemo(() => {
+    switch (activeSchemaSourceTab) {
+      case "provider":
+        return SCHEMA_PROVIDER_MODEL_PATH;
+      case "kv_provider":
+        return SCHEMA_KV_PROVIDER_MODEL_PATH;
+      case "generated":
+        return SCHEMA_GENERATED_MODEL_PATH;
+      case "schema":
+      default:
+        return SCHEMA_MODEL_PATH;
+    }
+  }, [activeSchemaSourceTab]);
+  const schemaEditorReadOnly = activeSchemaSourceTab === "generated";
+  const syncSchemaSourceModels = useCallback((): void => {
+    const monaco = monacoRef.current;
+    if (!monaco) {
+      return;
+    }
 
-  const schemaParse = useMemo(() => parseFacadeSchemaText(schemaJsonText), [schemaJsonText]);
+    const ensureModel = (path: string, value: string): void => {
+      const uri = monaco.Uri.parse(path);
+      const existing = monaco.editor.getModel(uri);
+      if (!existing) {
+        monaco.editor.createModel(value, "typescript", uri);
+        return;
+      }
+      if (existing.getValue() !== value) {
+        existing.setValue(value);
+      }
+    };
+
+    ensureModel(SCHEMA_MODEL_PATH, schemaCodeText);
+    ensureModel(SCHEMA_PROVIDER_MODEL_PATH, providerCodeText);
+    ensureModel(SCHEMA_KV_PROVIDER_MODEL_PATH, kvProviderCodeText);
+    ensureModel(SCHEMA_GENERATED_MODEL_PATH, generatedDbCodeText);
+  }, [generatedDbCodeText, kvProviderCodeText, providerCodeText, schemaCodeText]);
   const queryCompatibilityById = useMemo(
     () => buildQueryCompatibilityMap(schemaParse, queryCatalog),
     [queryCatalog, schemaParse],
   );
   const rowsParse = useMemo(() => parseDownstreamRowsText(rowsJsonText), [rowsJsonText]);
+
+  useEffect(() => {
+    const requestId = schemaParseRequestIdRef.current + 1;
+    schemaParseRequestIdRef.current = requestId;
+
+    void parseFacadeSchemaCode(schemaCodeText, {
+      modules: schemaProgramModules,
+    }).then((nextParse) => {
+      if (schemaParseRequestIdRef.current !== requestId) {
+        return;
+      }
+      setSchemaParse(nextParse);
+      schemaForCompletionRef.current = nextParse.ok ? nextParse.schema ?? null : null;
+    }).catch((error: unknown) => {
+      if (schemaParseRequestIdRef.current !== requestId) {
+        return;
+      }
+      setSchemaParse({
+        ok: false,
+        issues: [
+          {
+            path: "schema.ts",
+            message: error instanceof Error ? error.message : "Failed to parse schema module.",
+          },
+        ],
+      });
+      schemaForCompletionRef.current = null;
+    });
+  }, [schemaCodeText, schemaProgramModules]);
+
+  useEffect(() => {
+    syncSchemaSourceModels();
+  }, [syncSchemaSourceModels]);
+  useEffect(() => {
+    syncSchemaSourceModels();
+  }, [activeSchemaSourceTab, syncSchemaSourceModels]);
 
   const facadeDdlText = useMemo(() => {
     if (!schemaParse.ok || !schemaParse.schema) {
@@ -1052,7 +1288,10 @@ export function App(): React.JSX.Element {
     () => (schemaParse.ok && schemaParse.schema ? Object.keys(schemaParse.schema.tables) : []),
     [schemaParse],
   );
-  const downstreamTableNames = useMemo(() => DOWNSTREAM_TABLE_NAMES, []);
+  const downstreamTableNames = useMemo(
+    () => [...DOWNSTREAM_TABLE_NAMES, KV_DATA_TABLE_NAME],
+    [],
+  );
 
   const editableRowsByTable = useMemo(
     () =>
@@ -1069,25 +1308,38 @@ export function App(): React.JSX.Element {
     : downstreamTableNames[0] ?? null;
 
   const currentDataTableDefinition =
-    currentDataTable
-      ? downstreamStructureSchema.tables[currentDataTable]
-      : undefined;
+    currentDataTable === KV_DATA_TABLE_NAME
+      ? KV_DATA_TABLE_DEFINITION
+      : currentDataTable
+        ? downstreamStructureSchema.tables[currentDataTable]
+        : undefined;
 
   const currentDataRows = currentDataTable ? editableRowsByTable[currentDataTable] ?? [] : [];
   const currentStructureRows =
-    currentDataTable ? downstreamStructureRowsByTable[currentDataTable] ?? [] : [];
+    currentDataTable && currentDataTable !== KV_DATA_TABLE_NAME
+      ? downstreamStructureRowsByTable[currentDataTable] ?? []
+      : [];
+  const selectedTableSupportsStructure = currentDataTable !== KV_DATA_TABLE_NAME;
 
   const currentTableIssues =
     !rowsParse.ok && currentDataTable
       ? tableIssueLines(rowsParse.issues, currentDataTable)
       : [];
-  const filteredDownstreamTableNames = useMemo(() => {
+  const filteredPostgresTableNames = useMemo(() => {
     const query = downstreamTableFilter.trim().toLowerCase();
     if (query.length === 0) {
-      return downstreamTableNames;
+      return DOWNSTREAM_TABLE_NAMES;
     }
-    return downstreamTableNames.filter((tableName) => tableName.toLowerCase().includes(query));
-  }, [downstreamTableFilter, downstreamTableNames]);
+    return DOWNSTREAM_TABLE_NAMES.filter((tableName) => tableName.toLowerCase().includes(query));
+  }, [downstreamTableFilter]);
+  const filteredKvTableNames = useMemo(() => {
+    const query = downstreamTableFilter.trim().toLowerCase();
+    if (query.length === 0) {
+      return [KV_DATA_TABLE_NAME];
+    }
+    return KV_DATA_TABLE_NAME.toLowerCase().includes(query) ? [KV_DATA_TABLE_NAME] : [];
+  }, [downstreamTableFilter]);
+  const hasAnyFilteredTables = filteredPostgresTableNames.length > 0 || filteredKvTableNames.length > 0;
   const selectedDataRow =
     selectedDataRowIndex != null && selectedDataRowIndex >= 0 && selectedDataRowIndex < currentDataRows.length
       ? currentDataRows[selectedDataRowIndex]
@@ -1182,25 +1434,18 @@ export function App(): React.JSX.Element {
     : null;
   const selectedStepState = selectedStep ? statesById[selectedStep.id] : undefined;
 
-  const applyJsonSchemas = useCallback((): void => {
-    schemaForCompletionRef.current = schemaParse.ok ? schemaParse.schema ?? null : null;
+  const configureSchemaTypescript = useCallback((): void => {
     const monaco = monacoRef.current;
-    if (!monaco) {
+    if (!monaco || schemaTypesRegisteredRef.current) {
       return;
     }
 
-    monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
-      validate: true,
-      allowComments: false,
-      schemas: [
-        {
-          uri: "sqlql://schema-format",
-          fileMatch: [SCHEMA_MODEL_PATH],
-          schema: PLAYGROUND_SCHEMA_JSON_SCHEMA,
-        },
-      ],
+    configureSchemaTypescriptProject(monaco, {
+      sqlqlTypesText: schemaEditorSqlqlTypesText,
+      sqlqlTypesLibPath: SCHEMA_SQLQL_TYPES_LIB_PATH,
     });
-  }, [schemaParse]);
+    schemaTypesRegisteredRef.current = true;
+  }, []);
 
   const applySqlMarkers = useCallback((): void => {
     const monaco = monacoRef.current;
@@ -1219,7 +1464,7 @@ export function App(): React.JSX.Element {
       monaco.editor.setModelMarkers(model, "sqlql", [
         {
           severity: monaco.MarkerSeverity.Error,
-          message: "Fix schema JSON before validating SQL.",
+          message: "Fix schema TypeScript before validating SQL.",
           startLineNumber: 1,
           startColumn: 1,
           endLineNumber: 1,
@@ -1250,25 +1495,36 @@ export function App(): React.JSX.Element {
         };
       });
 
-    const compileResult = compilePlaygroundInput(schemaJsonText, rowsJsonText, sqlText);
+    const requestId = sqlMarkerRequestIdRef.current + 1;
+    sqlMarkerRequestIdRef.current = requestId;
 
-    if (!compileResult.ok) {
-      const messages = compileResult.issues.length > 0 ? compileResult.issues : ["Invalid SQL."];
-      monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers(messages));
-      return;
-    }
+    void compilePlaygroundInput(schemaCodeText, rowsJsonText, sqlText, {
+      modules: schemaProgramModules,
+    }).then((compileResult) => {
+      if (sqlMarkerRequestIdRef.current !== requestId) {
+        return;
+      }
 
-    if (runtimeError) {
-      monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([runtimeError]));
-      return;
-    }
+      if (!compileResult.ok) {
+        const messages = compileResult.issues.length > 0 ? compileResult.issues : ["Invalid SQL."];
+        monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers(messages));
+        return;
+      }
 
-    monaco.editor.setModelMarkers(model, "sqlql", []);
-  }, [rowsJsonText, runtimeError, schemaJsonText, schemaParse, sqlText]);
+      if (runtimeError) {
+        monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([runtimeError]));
+        return;
+      }
 
-  useEffect(() => {
-    applyJsonSchemas();
-  }, [applyJsonSchemas]);
+      monaco.editor.setModelMarkers(model, "sqlql", []);
+    }).catch((error: unknown) => {
+      if (sqlMarkerRequestIdRef.current !== requestId) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Invalid SQL.";
+      monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([message]));
+    });
+  }, [rowsJsonText, runtimeError, schemaCodeText, schemaParse, schemaProgramModules, sqlText]);
 
   useEffect(() => {
     if (!schemaParse.ok || !schemaParse.schema) {
@@ -1286,11 +1542,25 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     setSelectedDataTable((current) =>
-      current && DOWNSTREAM_TABLE_NAMES.includes(current)
+      current && downstreamTableNames.includes(current)
         ? current
-        : (DOWNSTREAM_TABLE_NAMES[0] ?? null),
+        : (downstreamTableNames[0] ?? null),
     );
-  }, []);
+  }, [downstreamTableNames]);
+
+  useEffect(() => {
+    if (!selectedTableSupportsStructure && postgresWorkspaceMode === "structure") {
+      setPostgresWorkspaceMode("data");
+    }
+  }, [postgresWorkspaceMode, selectedTableSupportsStructure]);
+
+  useEffect(() => {
+    if (currentDataTable === KV_DATA_TABLE_NAME) {
+      setOpenDataSourceSection("kv");
+      return;
+    }
+    setOpenDataSourceSection("postgres");
+  }, [currentDataTable]);
 
   useEffect(() => {
     setSelectedDataRowIndex((current) => {
@@ -1330,12 +1600,17 @@ export function App(): React.JSX.Element {
       return;
     }
 
+    if (activeSchemaSourceTab !== "schema") {
+      schemaDecorationIdsRef.current = editor.deltaDecorations(schemaDecorationIdsRef.current, []);
+      return;
+    }
+
     if (!selectedSchemaTable) {
       schemaDecorationIdsRef.current = editor.deltaDecorations(schemaDecorationIdsRef.current, []);
       return;
     }
 
-    const line = findTableLineNumber(schemaJsonText, selectedSchemaTable);
+    const line = findTableLineNumber(schemaCodeText, selectedSchemaTable);
     if (!line) {
       schemaDecorationIdsRef.current = editor.deltaDecorations(schemaDecorationIdsRef.current, []);
       return;
@@ -1351,7 +1626,7 @@ export function App(): React.JSX.Element {
         },
       },
     ]);
-  }, [schemaJsonText, selectedSchemaTable]);
+  }, [activeSchemaSourceTab, schemaCodeText, selectedSchemaTable]);
 
   useEffect(() => {
     applySqlMarkers();
@@ -1369,7 +1644,9 @@ export function App(): React.JSX.Element {
     const defaultScenarioQuery = QUERY_PRESETS.find((query) => query.id === scenario.defaultQueryId);
 
     setActiveScenarioId(scenario.id);
-    setSchemaJsonText(serializeJson(FACADE_SCHEMA));
+    setSchemaCodeText(DEFAULT_FACADE_SCHEMA_CODE);
+    setProviderCodeText(DEFAULT_DB_PROVIDER_CODE);
+    setKvProviderCodeText(DEFAULT_KV_PROVIDER_CODE);
     setRowsJsonText(serializeJson(scenario.rows));
     setOrgId(scenario.context.orgId);
     setUserId(scenario.context.userId);
@@ -1381,6 +1658,7 @@ export function App(): React.JSX.Element {
     setSelectedDataTable(DOWNSTREAM_TABLE_NAMES[0] ?? null);
     setSelectedDataRowIndex(0);
     setPostgresWorkspaceMode("data");
+    setActiveSchemaSourceTab("schema");
     setDownstreamStructureRowsByTable(buildEditableStructureRows(DOWNSTREAM_ROWS_SCHEMA));
     setSelectedStepId(null);
   };
@@ -1391,34 +1669,75 @@ export function App(): React.JSX.Element {
     );
   };
 
+  const handleSchemaEditorChange = (value: string | undefined): void => {
+    const nextValue = value ?? "";
+    const modelPath = schemaEditorRef.current?.getModel()?.uri.toString();
+    const sourcePath = modelPath ?? schemaEditorPath;
+
+    if (sourcePath === SCHEMA_GENERATED_MODEL_PATH) {
+      return;
+    }
+
+    if (sourcePath === SCHEMA_PROVIDER_MODEL_PATH) {
+      if (nextValue !== providerCodeText) {
+        markScenarioCustom();
+        setProviderCodeText(nextValue);
+      }
+      return;
+    }
+
+    if (sourcePath === SCHEMA_KV_PROVIDER_MODEL_PATH) {
+      if (nextValue !== kvProviderCodeText) {
+        markScenarioCustom();
+        setKvProviderCodeText(nextValue);
+      }
+      return;
+    }
+
+    if (sourcePath === SCHEMA_MODEL_PATH && nextValue !== schemaCodeText) {
+      markScenarioCustom();
+      setSchemaCodeText(coerceSchemaEditorTextToCode(nextValue));
+    }
+  };
+
   useEffect(() => {
     const requestId = executionRequestIdRef.current + 1;
     executionRequestIdRef.current = requestId;
 
     setRuntimeError(null);
-    setExecutedQueries([]);
+    setExecutedOperations([]);
     setEvents([]);
-    setResultRows(null);
 
-    const compileResult = compilePlaygroundInput(schemaJsonText, rowsJsonText, sqlText);
-    if (!compileResult.ok) {
-      const issueMessage = compileResult.issues[0] ?? "Invalid SQL query.";
-      setRuntimeError(issueMessage);
-      sessionRef.current = null;
-      setPlanSteps([]);
-      setPlanScopes([]);
-      setExecutedQueries([]);
-      setSessionTick((tick) => tick + 1);
-      return;
-    }
-
-    const context: PlaygroundContext = {
-      orgId,
-      userId,
-    };
-
-    void createSession(compileResult, context)
+    void compilePlaygroundInput(schemaCodeText, rowsJsonText, sqlText, {
+      modules: schemaProgramModules,
+    })
       .then((bundle) => {
+        if (executionRequestIdRef.current !== requestId) {
+          return undefined;
+        }
+
+        if (!bundle.ok) {
+          const issueMessage = bundle.issues[0] ?? "Invalid SQL query.";
+          setRuntimeError(issueMessage);
+          sessionRef.current = null;
+          setPlanSteps([]);
+          setPlanScopes([]);
+          setExecutedOperations([]);
+          setSessionTick((tick) => tick + 1);
+          return undefined;
+        }
+
+        const context: PlaygroundContext = {
+          orgId,
+          userId,
+        };
+
+        return createSession(bundle, context);
+      })
+      .then((bundle) => {
+        if (!bundle) {
+          return;
+        }
         if (executionRequestIdRef.current !== requestId) {
           return;
         }
@@ -1438,7 +1757,7 @@ export function App(): React.JSX.Element {
 
         setEvents(snapshot.events);
         setResultRows(snapshot.result);
-        setExecutedQueries(snapshot.executedQueries);
+        setExecutedOperations(snapshot.executedOperations);
         setSessionTick((tick) => tick + 1);
       })
       .catch((error: unknown) => {
@@ -1447,13 +1766,14 @@ export function App(): React.JSX.Element {
         }
 
         setRuntimeError(error instanceof Error ? error.message : "Failed to execute query.");
-        setExecutedQueries([]);
+        setExecutedOperations([]);
       });
-  }, [orgId, rowsJsonText, schemaJsonText, sqlText, userId]);
+  }, [orgId, rowsJsonText, schemaCodeText, schemaProgramModules, sqlText, userId]);
 
   const handleMonacoMount: OnMount = (editor, monaco) => {
     monacoRef.current = monaco;
-    applyJsonSchemas();
+    configureSchemaTypescript();
+    syncSchemaSourceModels();
 
     if (!sqlProviderDisposableRef.current) {
       sqlProviderDisposableRef.current = registerSqlCompletionProvider(
@@ -1471,7 +1791,12 @@ export function App(): React.JSX.Element {
       });
     }
 
-    if (uri === SCHEMA_MODEL_PATH) {
+    if (
+      uri === SCHEMA_MODEL_PATH ||
+      uri === SCHEMA_PROVIDER_MODEL_PATH ||
+      uri === SCHEMA_KV_PROVIDER_MODEL_PATH ||
+      uri === SCHEMA_GENERATED_MODEL_PATH
+    ) {
       schemaEditorRef.current = editor;
     }
   };
@@ -1547,6 +1872,46 @@ export function App(): React.JSX.Element {
   }, [clampSchemaSplitPercent, isSchemaSplitDragging]);
 
   useEffect(() => {
+    if (!isQuerySplitDragging) {
+      return;
+    }
+
+    const onPointerMove = (event: PointerEvent): void => {
+      const workspace = queryWorkspaceRef.current;
+      if (!workspace) {
+        return;
+      }
+
+      const rect = workspace.getBoundingClientRect();
+      if (rect.height <= 0) {
+        return;
+      }
+
+      const rawPercent = ((event.clientY - rect.top) / rect.height) * 100;
+      setQuerySplitPercent(clampQuerySplitPercent(rawPercent));
+    };
+
+    const onPointerUp = (): void => {
+      setIsQuerySplitDragging(false);
+    };
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "row-resize";
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [clampQuerySplitPercent, isQuerySplitDragging]);
+
+  useEffect(() => {
     if (activeTopTab !== "sqlql_schema") {
       return;
     }
@@ -1569,7 +1934,14 @@ export function App(): React.JSX.Element {
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [activeTopTab, activeSchemaTab, activeQueryTab, isQueryEditorExpanded, schemaSplitPercent]);
+  }, [
+    activeTopTab,
+    activeSchemaTab,
+    activeQueryTab,
+    isQueryEditorExpanded,
+    querySplitPercent,
+    schemaSplitPercent,
+  ]);
 
   useEffect(() => {
     if (!isQueryEditorExpanded) {
@@ -1691,6 +2063,11 @@ export function App(): React.JSX.Element {
 
   const handleCloseStepOverlay = (): void => {
     setSelectedStepId(null);
+  };
+
+  const handleSelectDataTable = (tableName: string): void => {
+    setSelectedDataTable(tableName);
+    setOpenDataSourceSection(tableName === KV_DATA_TABLE_NAME ? "kv" : "postgres");
   };
 
   const handleSetTableRows = (tableName: string, tableRows: QueryRow[]): void => {
@@ -1831,13 +2208,19 @@ export function App(): React.JSX.Element {
     });
   };
 
+  const setSqlTextDeferred = useCallback((nextValue: string): void => {
+    startTransition(() => {
+      setSqlText(nextValue);
+    });
+  }, []);
+
   const handleSqlTextChange = (nextValue: string): void => {
     if (nextValue === sqlText) {
       return;
     }
 
     setSelectedCatalogQueryId(selectionAfterManualSqlEdit());
-    setSqlText(nextValue);
+    setSqlTextDeferred(nextValue);
   };
 
   const handleCatalogQuerySelect = (queryId: string): void => {
@@ -1856,7 +2239,7 @@ export function App(): React.JSX.Element {
     }
 
     setSelectedCatalogQueryId(queryEntry.id);
-    setSqlText(queryEntry.sql);
+    setSqlTextDeferred(queryEntry.sql);
     setIsQueryEditorExpanded(false);
   };
 
@@ -2084,28 +2467,106 @@ export function App(): React.JSX.Element {
                         className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs"
                       />
                       <ScrollArea className="mt-2 min-h-0 flex-1">
-                        <div className="space-y-1 pr-1">
-                          {filteredDownstreamTableNames.length > 0 ? (
-                            filteredDownstreamTableNames.map((tableName) => (
-                              <button
-                                type="button"
-                                key={tableName}
-                                className={cn(
-                                  "w-full rounded-md px-3 py-2 text-left text-sm",
-                                  currentDataTable === tableName
-                                    ? "bg-background text-foreground shadow"
-                                    : "hover:bg-slate-100",
-                                )}
-                                onClick={() => setSelectedDataTable(tableName)}
-                              >
-                                {tableName}
-                              </button>
-                            ))
-                          ) : (
+                        <div className="space-y-2 pr-1">
+                          {!hasAnyFilteredTables ? (
                             <div className="rounded-md border border-dashed px-3 py-2 text-xs text-slate-500">
                               No tables match the filter.
                             </div>
-                          )}
+                          ) : null}
+
+                          <Collapsible
+                            open={openDataSourceSection === "postgres"}
+                            onOpenChange={(open) => {
+                              if (!open) {
+                                return;
+                              }
+                              setOpenDataSourceSection("postgres");
+                            }}
+                            className="overflow-hidden rounded-md border bg-white"
+                          >
+                            <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
+                              <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                PostgreSQL ({filteredPostgresTableNames.length})
+                              </span>
+                              {openDataSourceSection === "postgres" ? (
+                                <ChevronDown className="h-4 w-4 text-slate-500" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-slate-500" />
+                              )}
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="border-t bg-slate-50/60 px-2 py-2">
+                              {filteredPostgresTableNames.length > 0 ? (
+                                <div className="space-y-1">
+                                  {filteredPostgresTableNames.map((tableName) => (
+                                    <button
+                                      type="button"
+                                      key={tableName}
+                                      className={cn(
+                                        "w-full rounded-md px-3 py-2 text-left text-sm",
+                                        currentDataTable === tableName
+                                          ? "bg-background text-foreground shadow"
+                                          : "hover:bg-slate-100",
+                                      )}
+                                      onClick={() => handleSelectDataTable(tableName)}
+                                    >
+                                      {tableName}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="px-2 py-1 text-xs text-slate-500">
+                                  No PostgreSQL tables match the filter.
+                                </div>
+                              )}
+                            </CollapsibleContent>
+                          </Collapsible>
+
+                          <Collapsible
+                            open={openDataSourceSection === "kv"}
+                            onOpenChange={(open) => {
+                              if (!open) {
+                                return;
+                              }
+                              setOpenDataSourceSection("kv");
+                            }}
+                            className="overflow-hidden rounded-md border bg-white"
+                          >
+                            <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
+                              <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                KV ({filteredKvTableNames.length})
+                              </span>
+                              {openDataSourceSection === "kv" ? (
+                                <ChevronDown className="h-4 w-4 text-slate-500" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-slate-500" />
+                              )}
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="border-t bg-slate-50/60 px-2 py-2">
+                              {filteredKvTableNames.length > 0 ? (
+                                <div className="space-y-1">
+                                  {filteredKvTableNames.map((tableName) => (
+                                    <button
+                                      type="button"
+                                      key={tableName}
+                                      className={cn(
+                                        "w-full rounded-md px-3 py-2 text-left text-sm",
+                                        currentDataTable === tableName
+                                          ? "bg-background text-foreground shadow"
+                                          : "hover:bg-slate-100",
+                                      )}
+                                      onClick={() => handleSelectDataTable(tableName)}
+                                    >
+                                      {tableName}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="px-2 py-1 text-xs text-slate-500">
+                                  No KV tables match the filter.
+                                </div>
+                              )}
+                            </CollapsibleContent>
+                          </Collapsible>
                         </div>
                       </ScrollArea>
                     </div>
@@ -2114,7 +2575,7 @@ export function App(): React.JSX.Element {
                       {currentDataTable && currentDataTableDefinition ? (
                         <div className="flex h-full min-h-0 flex-col">
                           <div className="min-h-0 flex-1 overflow-hidden">
-                            {postgresWorkspaceMode === "data" ? (
+                            {postgresWorkspaceMode === "data" || !selectedTableSupportsStructure ? (
                               <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_340px]">
                                 <div className="min-h-0 overflow-hidden border-r">
                                   <DataGrid
@@ -2545,6 +3006,11 @@ export function App(): React.JSX.Element {
                                       schema={downstreamStructureSchema}
                                       selectedTableName={currentDataTable}
                                       onSelectTable={(tableName) => setSelectedDataTable(tableName)}
+                                      isVisible={
+                                        activeTopTab === "postgres" &&
+                                        postgresWorkspaceMode === "structure" &&
+                                        postgresStructureTab === "diagram"
+                                      }
                                       heightClassName="h-full"
                                     />
                                   ) : (
@@ -2581,24 +3047,26 @@ export function App(): React.JSX.Element {
                             </Alert>
                           ) : null}
                           <div className="flex items-center justify-between border-t bg-slate-50 px-3 py-2">
-                            <Tabs
-                              value={postgresWorkspaceMode}
-                              onValueChange={(value) =>
-                                setPostgresWorkspaceMode(value as PostgresWorkspaceMode)
-                              }
-                            >
-                              <TabsList className="gap-1">
-                                <TabsTrigger value="data">Data</TabsTrigger>
-                                <TabsTrigger value="structure">Structure</TabsTrigger>
-                              </TabsList>
-                            </Tabs>
+                              <Tabs
+                                value={postgresWorkspaceMode}
+                                onValueChange={(value) =>
+                                  setPostgresWorkspaceMode(value as PostgresWorkspaceMode)
+                                }
+                              >
+                                <TabsList className="gap-1">
+                                  <TabsTrigger value="data">Data</TabsTrigger>
+                                  <TabsTrigger value="structure" disabled={!selectedTableSupportsStructure}>
+                                    Structure
+                                  </TabsTrigger>
+                                </TabsList>
+                              </Tabs>
                             <div className="text-xs text-slate-500">
                               {currentDataRows.length} row{currentDataRows.length === 1 ? "" : "s"}
                             </div>
                             <Button
                               type="button"
                               size="sm"
-                              disabled={postgresWorkspaceMode !== "data"}
+                              disabled={postgresWorkspaceMode !== "data" && selectedTableSupportsStructure}
                               onClick={handleAddDataRow}
                             >
                               + Add row
@@ -2623,29 +3091,40 @@ export function App(): React.JSX.Element {
                 <div className="hidden h-full min-h-0 flex-col gap-2 lg:flex">
                   <div
                     ref={schemaWorkspaceRef}
-                    className="min-h-0 flex-1 overflow-hidden rounded-md border bg-white lg:grid"
+                    className="min-h-0 flex-1 overflow-visible rounded-md border bg-white lg:grid"
                     style={{ gridTemplateColumns: schemaSplitGridTemplate }}
                   >
-                    <div className="min-h-0 overflow-hidden">
-                      <Editor
-                        path={SCHEMA_MODEL_PATH}
-                        language="json"
-                        value={schemaJsonText}
-                        onMount={handleMonacoMount}
-                        onChange={(value) => {
-                          const nextValue = value ?? "";
-                          if (nextValue !== schemaJsonText) {
-                            markScenarioCustom();
-                            setSchemaJsonText(nextValue);
+                    <div className="flex h-full min-h-0 flex-col overflow-visible">
+                      <div className="shrink-0 border-b bg-slate-50 px-2 py-1">
+                        <Tabs
+                          value={activeSchemaSourceTab}
+                          onValueChange={(value) =>
+                            setActiveSchemaSourceTab(value as SchemaSourceTab)
                           }
-                        }}
-                        options={{
-                          minimap: { enabled: false },
-                          fontSize: 13,
-                          scrollBeyondLastLine: false,
-                        }}
-                        height="100%"
-                      />
+                        >
+                          <TabsList className="gap-1">
+                            <TabsTrigger value="schema">schema.ts</TabsTrigger>
+                            <TabsTrigger value="provider">db-provider.ts</TabsTrigger>
+                            <TabsTrigger value="kv_provider">kv-provider.ts</TabsTrigger>
+                            <TabsTrigger value="generated">generated-db.ts</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-visible">
+                        <Editor
+                          path={schemaEditorPath}
+                          language="typescript"
+                          onMount={handleMonacoMount}
+                          onChange={handleSchemaEditorChange}
+                          options={{
+                            minimap: { enabled: false },
+                            fontSize: 13,
+                            scrollBeyondLastLine: false,
+                            readOnly: schemaEditorReadOnly,
+                          }}
+                          height="100%"
+                        />
+                      </div>
                     </div>
 
                     <div className="flex min-h-0 items-stretch justify-center">
@@ -2672,6 +3151,7 @@ export function App(): React.JSX.Element {
                             selectedTableName={selectedSchemaTable}
                             onSelectTable={handleSelectSchemaTable}
                             onClearSelection={() => setSelectedSchemaTable(null)}
+                            isVisible={activeTopTab === "sqlql_schema" && activeSchemaTab === "diagram"}
                             heightClassName="h-full"
                             embedded
                           />
@@ -2693,7 +3173,7 @@ export function App(): React.JSX.Element {
                         )
                       ) : (
                         <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                          Fix schema JSON to render relations.
+                          Fix schema TypeScript to render relations.
                         </div>
                       )}
                     </div>
@@ -2711,26 +3191,39 @@ export function App(): React.JSX.Element {
                 </div>
 
                 <div className="flex h-full min-h-0 flex-col gap-2 lg:hidden">
-                  <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
-                    <Editor
-                      path={SCHEMA_MODEL_PATH}
-                      language="json"
-                      value={schemaJsonText}
-                      onMount={handleMonacoMount}
-                      onChange={(value) => {
-                        const nextValue = value ?? "";
-                        if (nextValue !== schemaJsonText) {
-                          markScenarioCustom();
-                          setSchemaJsonText(nextValue);
-                        }
-                      }}
-                      options={{
-                        minimap: { enabled: false },
-                        fontSize: 13,
-                        scrollBeyondLastLine: false,
-                      }}
-                      height="100%"
-                    />
+                  <div className="min-h-0 flex-1 overflow-visible rounded-md border">
+                    <div className="flex h-full min-h-0 flex-col overflow-visible">
+                      <div className="shrink-0 border-b bg-slate-50 px-2 py-1">
+                        <Tabs
+                          value={activeSchemaSourceTab}
+                          onValueChange={(value) =>
+                            setActiveSchemaSourceTab(value as SchemaSourceTab)
+                          }
+                        >
+                          <TabsList className="gap-1">
+                            <TabsTrigger value="schema">schema.ts</TabsTrigger>
+                            <TabsTrigger value="provider">db-provider.ts</TabsTrigger>
+                            <TabsTrigger value="kv_provider">kv-provider.ts</TabsTrigger>
+                            <TabsTrigger value="generated">generated-db.ts</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-visible">
+                        <Editor
+                          path={schemaEditorPath}
+                          language="typescript"
+                          onMount={handleMonacoMount}
+                          onChange={handleSchemaEditorChange}
+                          options={{
+                            minimap: { enabled: false },
+                            fontSize: 13,
+                            scrollBeyondLastLine: false,
+                            readOnly: schemaEditorReadOnly,
+                          }}
+                          height="100%"
+                        />
+                      </div>
+                    </div>
                   </div>
                   {!schemaParse.ok ? (
                     <Alert variant="warning">
@@ -2750,6 +3243,7 @@ export function App(): React.JSX.Element {
                           selectedTableName={selectedSchemaTable}
                           onSelectTable={handleSelectSchemaTable}
                           onClearSelection={() => setSelectedSchemaTable(null)}
+                          isVisible={activeTopTab === "sqlql_schema" && activeSchemaTab === "diagram"}
                           heightClassName="h-full"
                         />
                       ) : (
@@ -2772,7 +3266,7 @@ export function App(): React.JSX.Element {
                       )
                     ) : (
                       <div className="flex h-full items-center justify-center rounded-md border border-dashed text-sm text-slate-500">
-                        Fix schema JSON to render relations.
+                        Fix schema TypeScript to render relations.
                       </div>
                     )}
                   </div>
@@ -2780,174 +3274,206 @@ export function App(): React.JSX.Element {
               </TabsContent>
 
               <TabsContent value="query" forceMount className="mt-0 h-full min-h-0">
-                <div className="flex h-full min-h-0 flex-col gap-2">
-                  <div className="min-h-0 flex-1 overflow-hidden">
-                    {activeQueryTab === "result" ? (
-                      <div className="h-full min-h-0">
-                        {runtimeError ? (
-                          <Alert variant="destructive">
-                            <AlertTitle>Query rejected</AlertTitle>
-                            <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
-                              {runtimeError}
-                            </AlertDescription>
-                          </Alert>
-                        ) : resultRows ? (
-                          renderRows(resultRows, { heightClassName: "h-full" })
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                            No results yet.
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="relative h-full min-h-0">
-                        <PlanGraph
-                          steps={planSteps}
-                          scopes={planScopes}
-                          statesById={statesById}
-                          currentStepId={currentStepId}
-                          selectedStepId={selectedStepId}
-                          isVisible={activeTopTab === "query" && activeQueryTab === "explain"}
-                          onSelectStep={handleSelectStep}
-                          onClearSelection={handleCloseStepOverlay}
-                          heightClassName="h-full"
-                        />
-                        {selectedStep ? (
-                          <div className="pointer-events-none absolute inset-y-4 right-4 z-20 w-[430px] max-w-[48%]">
-                            <div className="pointer-events-auto flex h-full flex-col rounded-xl border border-sky-200 bg-white/95 shadow-2xl backdrop-blur-sm">
-                              <div className="flex items-start justify-between gap-2 border-b p-3">
-                                <div className="min-w-0 space-y-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant="secondary" className="font-mono text-[11px]">
-                                      {selectedStep.id}
-                                    </Badge>
-                                    <Badge variant="outline">{selectedStep.kind}</Badge>
-                                    <Badge variant="outline">{selectedStep.phase}</Badge>
-                                    {selectedStep.sqlOrigin ? (
-                                      <Badge variant="outline">{selectedStep.sqlOrigin}</Badge>
-                                    ) : null}
-                                  </div>
-                                  <p className="text-sm text-slate-700">{selectedStep.summary}</p>
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 shrink-0"
-                                  onClick={handleCloseStepOverlay}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                              <div className="min-h-0 flex-1 p-3 pt-2">
-                                <ScrollArea className="h-full pr-2">
-                                  <div className="space-y-3">
-                                    <div className="rounded-md border bg-slate-50 p-3">
-                                      <p className="text-xs text-slate-500">
-                                        Depends on: {selectedStep.dependsOn.join(", ") || "none"}
-                                      </p>
+                <div className="flex h-full min-h-0 flex-col gap-0">
+                  <div
+                    ref={queryWorkspaceRef}
+                    className="grid min-h-0 flex-1 overflow-hidden rounded-md border bg-white"
+                    style={{ gridTemplateRows: querySplitGridTemplate }}
+                  >
+                    <div className="min-h-0 overflow-hidden">
+                      {activeQueryTab === "result" ? (
+                        <div className="h-full min-h-0">
+                          {runtimeError ? (
+                            <Alert variant="destructive">
+                              <AlertTitle>Query rejected</AlertTitle>
+                              <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
+                                {runtimeError}
+                              </AlertDescription>
+                            </Alert>
+                          ) : resultRows ? (
+                            renderRows(resultRows, {
+                              heightClassName: "h-full",
+                              frameClassName: "h-full rounded-none border-0 bg-transparent",
+                            })
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                              No results yet.
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="relative h-full min-h-0">
+                          <PlanGraph
+                            steps={planSteps}
+                            scopes={planScopes}
+                            statesById={statesById}
+                            currentStepId={currentStepId}
+                            selectedStepId={selectedStepId}
+                            isVisible={activeTopTab === "query" && activeQueryTab === "explain"}
+                            onSelectStep={handleSelectStep}
+                            onClearSelection={handleCloseStepOverlay}
+                            heightClassName="h-full"
+                            containerClassName="rounded-none border-0 bg-transparent"
+                          />
+                          {selectedStep ? (
+                            <div className="pointer-events-none absolute inset-y-4 right-4 z-20 w-[430px] max-w-[48%]">
+                              <div className="pointer-events-auto flex h-full flex-col rounded-xl border border-sky-200 bg-white/95 shadow-2xl backdrop-blur-sm">
+                                <div className="flex items-start justify-between gap-2 border-b p-3">
+                                  <div className="min-w-0 space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge variant="secondary" className="font-mono text-[11px]">
+                                        {selectedStep.id}
+                                      </Badge>
+                                      <Badge variant="outline">{selectedStep.kind}</Badge>
+                                      <Badge variant="outline">{selectedStep.phase}</Badge>
+                                      {selectedStep.sqlOrigin ? (
+                                        <Badge variant="outline">{selectedStep.sqlOrigin}</Badge>
+                                      ) : null}
                                     </div>
-
-                                    <StepSection title="Logical operation" defaultOpen>
-                                      <p className="text-xs text-slate-500">
-                                        The planner-level intent for this step and the columns it aims to produce.
-                                      </p>
-                                      <JsonBlock value={selectedStep.operation} />
-                                      {selectedStep.outputs && selectedStep.outputs.length > 0 ? (
-                                        <div className="text-xs text-slate-600">
-                                          Outputs: {selectedStep.outputs.join(", ")}
-                                        </div>
-                                      ) : null}
-                                    </StepSection>
-
-                                    <StepSection title="Request" defaultOpen>
-                                      <p className="text-xs text-slate-500">
-                                        The normalized input shape passed into this step at execution time.
-                                      </p>
-                                      <JsonBlock value={selectedStep.request ?? {}} />
-                                    </StepSection>
-
-                                    <StepSection title="Routing / Pushdown" defaultOpen>
-                                      <p className="text-xs text-slate-500">
-                                        How work is split between table methods and local engine processing.
-                                      </p>
-                                      <div className="text-xs text-slate-600">
-                                        Route used:{" "}
-                                        <span className="font-medium text-slate-900">
-                                          {selectedStepState?.routeUsed ?? "pending"}
-                                        </span>
-                                      </div>
-                                      <JsonBlock value={selectedStep.pushdown ?? {}} />
-                                      {selectedStepState?.notes &&
-                                      selectedStepState.notes.length > 0 ? (
-                                        <ul className="list-disc space-y-1 pl-5 text-xs text-slate-600">
-                                          {selectedStepState.notes.map((note: string) => (
-                                            <li key={note}>{note}</li>
-                                          ))}
-                                        </ul>
-                                      ) : null}
-                                    </StepSection>
-
-                                    <StepSection title="Runtime" defaultOpen>
-                                      <p className="text-xs text-slate-500">
-                                        Execution status and timing/row-count metrics for this step instance.
-                                      </p>
-                                      <div className="grid gap-1 text-xs text-slate-600">
-                                        <div>Status: {selectedStepState?.status ?? "ready"}</div>
-                                        <div>
-                                          Execution index:{" "}
-                                          {selectedStepState?.executionIndex != null
-                                            ? selectedStepState.executionIndex
-                                            : "pending"}
-                                        </div>
-                                        {selectedStepState?.durationMs != null ? (
-                                          <div>Duration: {selectedStepState.durationMs}ms</div>
-                                        ) : null}
-                                        {selectedStepState?.inputRowCount != null ? (
-                                          <div>
-                                            Input rows: {selectedStepState.inputRowCount}
-                                          </div>
-                                        ) : null}
-                                        {selectedStepState?.outputRowCount != null ? (
-                                          <div>
-                                            Output rows: {selectedStepState.outputRowCount}
-                                          </div>
-                                        ) : selectedStepState?.rowCount != null ? (
-                                          <div>Output rows: {selectedStepState.rowCount}</div>
-                                        ) : null}
-                                      </div>
-                                      {selectedStepState?.error ? (
-                                        <Alert variant="destructive">
-                                          <AlertTitle>Step error</AlertTitle>
-                                          <AlertDescription>
-                                            {selectedStepState.error}
-                                          </AlertDescription>
-                                        </Alert>
-                                      ) : null}
-                                    </StepSection>
-
-                                    {selectedStepState?.rows ? (
-                                      <StepSection title="Data preview" defaultOpen={false}>
-                                        <p className="text-xs text-slate-500">
-                                          Sample output rows emitted by this step after execution.
-                                        </p>
-                                        {renderRows(selectedStepState.rows, {
-                                          heightClassName: "h-[260px]",
-                                          expandNestedObjects: true,
-                                        })}
-                                      </StepSection>
-                                    ) : null}
+                                    <p className="text-sm text-slate-700">{selectedStep.summary}</p>
                                   </div>
-                                </ScrollArea>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0"
+                                    onClick={handleCloseStepOverlay}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                                <div className="min-h-0 flex-1 p-3 pt-2">
+                                  <ScrollArea className="h-full pr-2">
+                                    <div className="space-y-3">
+                                      <div className="rounded-md border bg-slate-50 p-3">
+                                        <p className="text-xs text-slate-500">
+                                          Depends on: {selectedStep.dependsOn.join(", ") || "none"}
+                                        </p>
+                                      </div>
+
+                                      <StepSection title="Logical operation" defaultOpen>
+                                        <p className="text-xs text-slate-500">
+                                          The planner-level intent for this step and the columns it aims to produce.
+                                        </p>
+                                        <JsonBlock value={selectedStep.operation} />
+                                        {selectedStep.outputs && selectedStep.outputs.length > 0 ? (
+                                          <div className="text-xs text-slate-600">
+                                            Outputs: {selectedStep.outputs.join(", ")}
+                                          </div>
+                                        ) : null}
+                                      </StepSection>
+
+                                      <StepSection title="Request" defaultOpen>
+                                        <p className="text-xs text-slate-500">
+                                          The normalized input shape passed into this step at execution time.
+                                        </p>
+                                        <JsonBlock value={selectedStep.request ?? {}} />
+                                      </StepSection>
+
+                                      <StepSection title="Routing / Pushdown" defaultOpen>
+                                        <p className="text-xs text-slate-500">
+                                          How work is split between table methods and local engine processing.
+                                        </p>
+                                        <div className="text-xs text-slate-600">
+                                          Route used:{" "}
+                                          <span className="font-medium text-slate-900">
+                                            {selectedStepState?.routeUsed ?? "pending"}
+                                          </span>
+                                        </div>
+                                        <JsonBlock value={selectedStep.pushdown ?? {}} />
+                                        {selectedStepState?.notes &&
+                                        selectedStepState.notes.length > 0 ? (
+                                          <ul className="list-disc space-y-1 pl-5 text-xs text-slate-600">
+                                            {selectedStepState.notes.map((note: string) => (
+                                              <li key={note}>{note}</li>
+                                            ))}
+                                          </ul>
+                                        ) : null}
+                                      </StepSection>
+
+                                      <StepSection title="Runtime" defaultOpen>
+                                        <p className="text-xs text-slate-500">
+                                          Execution status and timing/row-count metrics for this step instance.
+                                        </p>
+                                        <div className="grid gap-1 text-xs text-slate-600">
+                                          <div>Status: {selectedStepState?.status ?? "ready"}</div>
+                                          <div>
+                                            Execution index:{" "}
+                                            {selectedStepState?.executionIndex != null
+                                              ? selectedStepState.executionIndex
+                                              : "pending"}
+                                          </div>
+                                          {selectedStepState?.durationMs != null ? (
+                                            <div>Duration: {selectedStepState.durationMs}ms</div>
+                                          ) : null}
+                                          {selectedStepState?.inputRowCount != null ? (
+                                            <div>
+                                              Input rows: {selectedStepState.inputRowCount}
+                                            </div>
+                                          ) : null}
+                                          {selectedStepState?.outputRowCount != null ? (
+                                            <div>
+                                              Output rows: {selectedStepState.outputRowCount}
+                                            </div>
+                                          ) : selectedStepState?.rowCount != null ? (
+                                            <div>Output rows: {selectedStepState.rowCount}</div>
+                                          ) : null}
+                                        </div>
+                                        {selectedStepState?.error ? (
+                                          <Alert variant="destructive">
+                                            <AlertTitle>Step error</AlertTitle>
+                                            <AlertDescription>
+                                              {selectedStepState.error}
+                                            </AlertDescription>
+                                          </Alert>
+                                        ) : null}
+                                      </StepSection>
+
+                                      {selectedStepState?.rows ? (
+                                        <StepSection title="Data preview" defaultOpen={false}>
+                                          <p className="text-xs text-slate-500">
+                                            Sample output rows emitted by this step after execution.
+                                          </p>
+                                          {renderRows(selectedStepState.rows, {
+                                            heightClassName: "h-[260px]",
+                                            expandNestedObjects: true,
+                                          })}
+                                        </StepSection>
+                                      ) : null}
+                                    </div>
+                                  </ScrollArea>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
 
-                  <ExecutedQueriesPanel queries={executedQueries} onMonacoMount={handleMonacoMount} />
+                    <div className="relative min-h-0 overflow-visible">
+                      <button
+                        type="button"
+                        aria-label="Resize query panels"
+                        className="group absolute inset-x-0 top-1/2 z-10 flex h-[10px] -translate-y-1/2 cursor-row-resize items-center bg-transparent"
+                        onPointerDown={startQuerySplitDrag}
+                      >
+                        <span
+                          className={cn(
+                            "mx-auto block h-px w-full bg-slate-400 transition-colors group-hover:bg-slate-500",
+                            isQuerySplitDragging ? "bg-slate-500" : null,
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    <div className="min-h-0 overflow-hidden">
+                      <ExecutedProviderOperationsPanel
+                        operations={executedOperations}
+                        onMonacoMount={handleMonacoMount}
+                        className="rounded-none border-0 bg-transparent"
+                      />
+                    </div>
+                  </div>
                 </div>
               </TabsContent>
           </div>

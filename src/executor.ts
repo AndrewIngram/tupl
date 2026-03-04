@@ -6,6 +6,8 @@ import {
 } from "./provider";
 import type { RelJoinNode, RelNode, RelProjectNode, RelScanNode } from "./rel";
 import {
+  getNormalizedColumnSourceMap,
+  resolveNormalizedColumnSource,
   getNormalizedTableBinding,
   type NormalizedPhysicalTableBinding,
   type QueryRow,
@@ -235,7 +237,7 @@ async function maybeExecuteLookupJoin<TContext>(
 
   const leftKey = `${join.leftKey.alias}.${join.leftKey.column}`;
   const rightKey = rightBinding?.kind === "physical"
-    ? (rightBinding.columnToSource[join.rightKey.column] ?? join.rightKey.column)
+    ? resolveNormalizedColumnSource(rightBinding, join.rightKey.column)
     : join.rightKey.column;
   const dedupedKeys = [...new Set(leftRows.map((row) => row[leftKey]).filter((value) => value != null))];
 
@@ -498,7 +500,7 @@ function compileViewRelToExecutable(
     return rel;
   }
 
-  const columns = Object.entries(binding.columnToSource);
+  const columns = Object.entries(getNormalizedColumnSourceMap(binding));
   return {
     id: nextSyntheticRelId("view_project"),
     kind: "project",
@@ -615,7 +617,7 @@ function mapLogicalColumnsToSource(
   if (!binding) {
     return columns;
   }
-  return columns.map((column) => binding.columnToSource[column] ?? column);
+  return columns.map((column) => resolveNormalizedColumnSource(binding, column));
 }
 
 function mapWhereToSource(
@@ -628,7 +630,7 @@ function mapWhereToSource(
 
   return where.map((clause) => ({
     ...clause,
-    column: binding.columnToSource[clause.column] ?? clause.column,
+    column: resolveNormalizedColumnSource(binding, clause.column),
   }));
 }
 
@@ -642,7 +644,7 @@ function mapOrderToSource(
 
   return orderBy.map((term) => ({
     ...term,
-    column: binding.columnToSource[term.column] ?? term.column,
+    column: resolveNormalizedColumnSource(binding, term.column),
   }));
 }
 
@@ -658,7 +660,7 @@ function mapRowsToLogical(
   return rows.map((row) => {
     const out: QueryRow = {};
     for (const logical of selectedLogicalColumns) {
-      const source = binding.columnToSource[logical] ?? logical;
+      const source = resolveNormalizedColumnSource(binding, logical);
       out[logical] = row[source] ?? null;
     }
     return out;

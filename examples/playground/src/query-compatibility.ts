@@ -10,7 +10,7 @@ import type {
   SchemaParseResult,
 } from "./types";
 
-const INVALID_SCHEMA_REASON = "Fix schema JSON first.";
+const INVALID_SCHEMA_REASON = "Fix schema TypeScript first.";
 
 function normalizeSql(value: string): string {
   return value.trim().replace(/;+$/u, "").trim();

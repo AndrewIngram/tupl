@@ -5,6 +5,45 @@ export interface PlaygroundContext {
   userId: string;
 }
 
+export interface ExecutedSqlProviderOperation {
+  id: string;
+  timestamp: number;
+  provider: string;
+  kind: "sql_query";
+  sql: string;
+  variables: unknown[];
+}
+
+export interface ExecutedKvLookupProviderOperation {
+  id: string;
+  timestamp: number;
+  provider: string;
+  kind: "kv_lookup";
+  lookup: {
+    entity: string;
+    key?: unknown;
+    keys?: unknown[];
+    table?: string;
+    op?: string;
+  };
+  variables: unknown;
+}
+
+export type ExecutedProviderOperation =
+  | ExecutedSqlProviderOperation
+  | ExecutedKvLookupProviderOperation;
+
+/**
+ * @deprecated Use ExecutedProviderOperation.
+ */
+export interface ExecutedSqlQuery {
+  sql: string;
+  params: unknown[];
+  provider: string;
+  id: string;
+  timestamp: number;
+}
+
 export type DownstreamRows = Record<string, Array<Record<string, unknown>>>;
 
 export interface PlaygroundQueryPreset {

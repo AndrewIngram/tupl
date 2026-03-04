@@ -49,7 +49,7 @@ describe("playground/query-compatibility", () => {
 
     const map = buildQueryCompatibilityMap(invalidSchemaResult, catalog);
     expect(Object.values(map).every((entry) => entry.compatible === false)).toBe(true);
-    expect(Object.values(map).every((entry) => entry.reason === "Fix schema JSON first.")).toBe(
+    expect(Object.values(map).every((entry) => entry.reason === "Fix schema TypeScript first.")).toBe(
       true,
     );
   });

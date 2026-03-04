@@ -104,6 +104,7 @@ A practical integration pattern is:
 This is exactly how the playground demo is wired:
 
 - downstream DB: pglite + Drizzle raw tables (`orgs`, `users`, `vendors`, `products`, `orders`, `order_items`)
+- facade authoring: TypeScript schema module (`export const schema = defineSchema(...)`) in Monaco
 - facade tables: scoped lenses (`my_orders`, `my_order_items`, `vendors_for_org`, `active_products`)
 - context controls: `orgId` and `userId`
-- explain UI: shows `user SQL -> facade rel -> provider fragment` translation
+- explain UI: execution plan graph plus provider step inspection

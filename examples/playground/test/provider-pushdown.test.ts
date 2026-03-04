@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { FACADE_SCHEMA, QUERY_PRESETS, SCENARIO_PRESETS, serializeJson } from "../src/examples";
+import {
+  DEFAULT_FACADE_SCHEMA_CODE,
+  QUERY_PRESETS,
+  SCENARIO_PRESETS,
+  serializeJson,
+} from "../src/examples";
 import { compilePlaygroundInput, createSession, runSessionToCompletion } from "../src/session-runtime";
 
 describe("playground/provider-pushdown", () => {
@@ -12,9 +17,9 @@ describe("playground/provider-pushdown", () => {
 
     const pushdownPresetIds = [
       "orders_with_vendors",
-      "top_products",
       "vendor_spend",
       "status_distinct",
+      "paid_orders",
     ] as const;
 
     for (const presetId of pushdownPresetIds) {
@@ -23,8 +28,8 @@ describe("playground/provider-pushdown", () => {
         throw new Error(`Missing query preset: ${presetId}`);
       }
 
-      const compiled = compilePlaygroundInput(
-        serializeJson(FACADE_SCHEMA),
+      const compiled = await compilePlaygroundInput(
+        DEFAULT_FACADE_SCHEMA_CODE,
         serializeJson(scenario.rows),
         preset.sql,
       );
@@ -44,20 +49,21 @@ describe("playground/provider-pushdown", () => {
       });
 
       const snapshot = await runSessionToCompletion(bundle.session, []);
-      expect(snapshot.executedQueries).toHaveLength(1);
-      const sqlText = snapshot.executedQueries[0]?.sql.toLowerCase() ?? "";
-      if (presetId !== "status_distinct") {
+      expect(snapshot.executedOperations).toHaveLength(1);
+      expect(snapshot.executedOperations[0]?.kind).toBe("sql_query");
+      expect(snapshot.executedOperations[0]?.provider).toBe("dbProvider");
+      const sqlText = snapshot.executedOperations[0]?.kind === "sql_query"
+        ? snapshot.executedOperations[0].sql.toLowerCase()
+        : "";
+      if (presetId === "orders_with_vendors" || presetId === "vendor_spend") {
         expect(sqlText).toContain(" join ");
       }
-      if (presetId === "top_products" || presetId === "vendor_spend") {
+      if (presetId === "vendor_spend") {
         expect(sqlText).toContain("group by");
       }
       if (presetId === "status_distinct") {
         expect(sqlText).toContain("select distinct");
         expect(sqlText).toContain("order by");
-      }
-      if (presetId === "top_products") {
-        expect(sqlText).toContain("user_product_access");
       }
     }
   });
