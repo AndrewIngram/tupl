@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import {
   Background,
@@ -32,12 +32,13 @@ interface PlanGraphProps {
   onSelectStep(stepId: string): void;
   onClearSelection?(): void;
   heightClassName?: string;
+  containerClassName?: string;
 }
 
 type StepExecutionClass = "domain_call" | "local_over_fetched_rows" | "internal_op";
 
 function isCteScanStep(step: QueryExecutionPlanStep): boolean {
-  if (step.kind !== "scan" || step.operation.name !== "scan") {
+  if (step.kind !== "scan" || step.operation?.name !== "scan") {
     return false;
   }
 
@@ -54,6 +55,10 @@ function classifyStepExecution(
   step: QueryExecutionPlanStep,
   state: QueryStepState | null,
 ): StepExecutionClass {
+  if (step.kind.startsWith("local_")) {
+    return "internal_op";
+  }
+
   if (isCteScanStep(step)) {
     return "local_over_fetched_rows";
   }
@@ -66,11 +71,7 @@ function classifyStepExecution(
   }
 
   if (state?.routeUsed) {
-    if (
-      state.routeUsed === "scan" ||
-      state.routeUsed === "lookup" ||
-      state.routeUsed === "aggregate"
-    ) {
+    if (["scan", "lookup", "aggregate", "provider_fragment", "lookup_join"].includes(state.routeUsed)) {
       return "domain_call";
     }
     return "internal_op";
@@ -85,7 +86,13 @@ function classifyStepExecution(
     return "local_over_fetched_rows";
   }
 
-  if (step.phase === "fetch" || step.kind === "scan" || step.kind === "aggregate") {
+  if (
+    step.phase === "fetch" ||
+    step.kind === "scan" ||
+    step.kind === "aggregate" ||
+    step.kind === "remote_fragment" ||
+    step.kind === "lookup_join"
+  ) {
     return "domain_call";
   }
 
@@ -195,6 +202,7 @@ function PlanGraphCanvas({
   onSelectStep,
   onClearSelection,
   heightClassName,
+  containerClassName,
 }: PlanGraphCanvasProps): React.JSX.Element {
   const graphLayout = useMemo(() => buildPlanGraphLayout(steps), [steps]);
   const nodesInitialized = useNodesInitialized();
@@ -205,34 +213,58 @@ function PlanGraphCanvas({
   );
 
   const { fitView, setCenter } = useReactFlow();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const hasInitialFitRef = useRef(false);
+  const [isContainerReady, setIsContainerReady] = useState(false);
 
   useEffect(() => {
-    if (!isVisible || !nodesInitialized || graphModel.nodes.length === 0) {
+    hasInitialFitRef.current = false;
+  }, [graphLayout]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
       return;
     }
 
-    const frame = window.requestAnimationFrame(() => {
-      void fitView({
-        padding: 0.16,
-        duration: 260,
-        minZoom: 0.35,
-        maxZoom: 1.15,
-      });
-    });
-    const timeoutId = window.setTimeout(() => {
-      void fitView({
-        padding: 0.16,
-        duration: 0,
-        minZoom: 0.35,
-        maxZoom: 1.15,
-      });
-    }, 140);
+    const updateReady = (): void => {
+      const rect = container.getBoundingClientRect();
+      setIsContainerReady(rect.width > 0 && rect.height > 0);
+    };
+
+    updateReady();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => updateReady());
+    observer.observe(container);
 
     return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(timeoutId);
+      observer.disconnect();
     };
-  }, [fitView, graphLayout, graphModel.nodes.length, isVisible, nodesInitialized]);
+  }, []);
+
+  useEffect(() => {
+    if (
+      hasInitialFitRef.current ||
+      !isVisible ||
+      !nodesInitialized ||
+      !isContainerReady ||
+      graphModel.nodes.length === 0
+    ) {
+      return;
+    }
+
+    hasInitialFitRef.current = true;
+    void fitView({
+      padding: 0.16,
+      duration: 0,
+      minZoom: 0.35,
+      maxZoom: 1.15,
+    });
+  }, [fitView, graphModel.nodes.length, isContainerReady, isVisible, nodesInitialized]);
 
   useEffect(() => {
     if (!isVisible || !selectedStepId) {
@@ -248,7 +280,7 @@ function PlanGraphCanvas({
     const height = focusedNode.measured?.height ?? 170;
 
     void setCenter(focusedNode.position.x + width / 2, focusedNode.position.y + height / 2, {
-      duration: 240,
+      duration: 0,
       zoom: 0.9,
     });
   }, [graphModel.nodes, isVisible, selectedStepId, setCenter]);
@@ -259,9 +291,11 @@ function PlanGraphCanvas({
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         "relative overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50",
         heightClassName ?? "h-[420px]",
+        containerClassName,
       )}
     >
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex gap-3 rounded-md border bg-white/90 px-3 py-1 text-[11px] text-slate-600 shadow-sm">

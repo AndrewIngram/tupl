@@ -1,42 +1,109 @@
 import { describe, expect, it } from "vitest";
 
-import { EXAMPLE_PACKS, serializeJson } from "../src/examples";
 import {
-  PLAYGROUND_SCHEMA_JSON_SCHEMA,
+  DB_PROVIDER_MODULE_ID,
+  DEFAULT_DB_PROVIDER_CODE,
+  DEFAULT_FACADE_SCHEMA_CODE,
+  DEFAULT_GENERATED_DB_FILE_CODE,
+  DEFAULT_KV_PROVIDER_CODE,
+  FACADE_SCHEMA,
+  GENERATED_DB_MODULE_ID,
+  KV_PROVIDER_MODULE_ID,
+  SCENARIO_PRESETS,
+  serializeJson,
+} from "../src/examples";
+import {
   buildRowsJsonSchema,
   buildTableRowsJsonSchema,
-  parseRowsText,
-  parseSchemaText,
+  coerceSchemaEditorTextToCode,
+  legacySchemaJsonToCode,
+  parseDownstreamRowsText,
+  parseFacadeSchemaCode,
+  parseFacadeSchemaText,
 } from "../src/validation";
 
 describe("playground/validation", () => {
-  it("parses schema JSON from an example pack", () => {
-    const schemaResult = parseSchemaText(serializeJson(EXAMPLE_PACKS[0]?.schema));
+  it("parses facade schema TypeScript module", async () => {
+    const schemaResult = await parseFacadeSchemaCode(DEFAULT_FACADE_SCHEMA_CODE, {
+      modules: {
+        [DB_PROVIDER_MODULE_ID]: DEFAULT_DB_PROVIDER_CODE,
+        [GENERATED_DB_MODULE_ID]: DEFAULT_GENERATED_DB_FILE_CODE,
+        [KV_PROVIDER_MODULE_ID]: DEFAULT_KV_PROVIDER_CODE,
+      },
+    });
 
     expect(schemaResult.ok).toBe(true);
     expect(schemaResult.issues).toEqual([]);
   });
 
-  it("rejects rows JSON with unknown columns", () => {
-    const pack = EXAMPLE_PACKS[0];
-    if (!pack) {
-      throw new Error("Expected default example pack.");
+  it("converts legacy JSON schema text to TypeScript module text", async () => {
+    const legacyJson = serializeJson(FACADE_SCHEMA);
+    const schemaCode = legacySchemaJsonToCode(legacyJson);
+    const schemaResult = await parseFacadeSchemaCode(schemaCode);
+
+    expect(schemaCode).toContain("export const schema = defineSchema(");
+    expect(schemaResult.ok).toBe(true);
+  });
+
+  it("coerces legacy JSON in schema editor path", async () => {
+    const legacyJson = serializeJson(FACADE_SCHEMA);
+    const coerced = coerceSchemaEditorTextToCode(legacyJson);
+    const schemaResult = await parseFacadeSchemaCode(coerced);
+
+    expect(coerced).toContain("export const schema = defineSchema(");
+    expect(schemaResult.ok).toBe(true);
+  });
+
+  it("rejects schema modules missing exported schema", async () => {
+    const schemaResult = await parseFacadeSchemaCode("export const notSchema = 1;");
+
+    expect(schemaResult.ok).toBe(false);
+    expect(schemaResult.issues[0]?.message).toContain("SCHEMA_EXPORT_MISSING");
+  });
+
+  it("rejects schema modules with invalid schema shape", async () => {
+    const schemaResult = await parseFacadeSchemaCode("export const schema = { nope: true };");
+
+    expect(schemaResult.ok).toBe(false);
+    expect(schemaResult.issues[0]?.message).toContain("SCHEMA_EXPORT_INVALID");
+  });
+
+  it("rejects schema modules that throw at runtime", async () => {
+    const schemaResult = await parseFacadeSchemaCode(
+      'const fail = (): never => { throw new Error("boom"); }; fail(); export const schema = {};',
+    );
+
+    expect(schemaResult.ok).toBe(false);
+    expect(schemaResult.issues[0]?.message).toContain("SCHEMA_EXEC_ERROR");
+  });
+
+  it("rejects downstream rows JSON with unknown columns", () => {
+    const scenario = SCENARIO_PRESETS[0];
+    if (!scenario) {
+      throw new Error("Expected default scenario.");
     }
 
-    const schemaResult = parseSchemaText(serializeJson(pack.schema));
+    const schemaResult = parseFacadeSchemaText(serializeJson(FACADE_SCHEMA));
     if (!schemaResult.ok || !schemaResult.schema) {
       throw new Error("Expected valid schema.");
     }
 
     const invalidRowsText = serializeJson({
-      ...pack.rows,
-      customers: [
-        ...(pack.rows.customers ?? []),
-        { id: "cust_bad", full_name: "Bad", region: "us-east", extra_field: 1 },
+      ...scenario.rows,
+      users: [
+        ...(scenario.rows.users ?? []),
+        {
+          id: "u_bad",
+          org_id: "org_acme",
+          email: "bad@example.com",
+          display_name: "Bad",
+          role: "buyer",
+          extra_field: 1,
+        },
       ],
     });
 
-    const rowsResult = parseRowsText(schemaResult.schema, invalidRowsText);
+    const rowsResult = parseDownstreamRowsText(invalidRowsText);
     expect(rowsResult.ok).toBe(false);
     expect(rowsResult.issues.some((issue) => issue.message.includes("Unrecognized key"))).toBe(
       true,
@@ -44,12 +111,7 @@ describe("playground/validation", () => {
   });
 
   it("builds rows JSON schema from current schema", () => {
-    const pack = EXAMPLE_PACKS[0];
-    if (!pack) {
-      throw new Error("Expected default example pack.");
-    }
-
-    const schemaResult = parseSchemaText(serializeJson(pack.schema));
+    const schemaResult = parseFacadeSchemaText(serializeJson(FACADE_SCHEMA));
     if (!schemaResult.ok || !schemaResult.schema) {
       throw new Error("Expected valid schema.");
     }
@@ -58,20 +120,15 @@ describe("playground/validation", () => {
     expect(rowsJsonSchema).toMatchObject({
       type: "object",
       properties: expect.objectContaining({
-        customers: expect.any(Object),
+        my_orders: expect.any(Object),
       }),
     });
   });
 
   it("builds table rows JSON schema with enum metadata", () => {
-    const pack = EXAMPLE_PACKS[0];
-    if (!pack) {
-      throw new Error("Expected default example pack.");
-    }
-
-    const table = pack.schema.tables.orders;
+    const table = FACADE_SCHEMA.tables.my_orders;
     if (!table) {
-      throw new Error("Expected orders table.");
+      throw new Error("Expected my_orders table.");
     }
 
     const tableSchema = buildTableRowsJsonSchema(table);
@@ -81,49 +138,10 @@ describe("playground/validation", () => {
         type: "object",
         properties: {
           status: {
-            enum: ["pending", "paid"],
+            enum: ["pending", "paid", "shipped"],
           },
         },
       },
     });
-  });
-
-  it("schema editor JSON schema allows table constraints", () => {
-    const tables = (PLAYGROUND_SCHEMA_JSON_SCHEMA.properties as Record<string, unknown>)
-      .tables as Record<string, unknown>;
-    const tableDefinition = tables.additionalProperties as Record<string, unknown>;
-    const properties = tableDefinition.properties as Record<string, unknown>;
-    const constraints = properties.constraints as Record<string, unknown>;
-    const constraintsProperties = constraints.properties as Record<string, unknown>;
-
-    expect(constraintsProperties).toHaveProperty("primaryKey");
-    expect(constraintsProperties).toHaveProperty("unique");
-    expect(constraintsProperties).toHaveProperty("foreignKeys");
-    expect(constraintsProperties).toHaveProperty("checks");
-  });
-
-  it("schema editor JSON schema allows column-level foreignKey + enum metadata", () => {
-    const tables = (PLAYGROUND_SCHEMA_JSON_SCHEMA.properties as Record<string, unknown>)
-      .tables as Record<string, unknown>;
-    const tableDefinition = tables.additionalProperties as Record<string, unknown>;
-    const properties = tableDefinition.properties as Record<string, unknown>;
-    const columns = properties.columns as Record<string, unknown>;
-    const anyOf = (columns.additionalProperties as Record<string, unknown>).anyOf as Array<Record<
-      string,
-      unknown
-    >>;
-    const objectVariant = anyOf.find((entry) => entry.type === "object");
-    if (!objectVariant) {
-      throw new Error("Expected object-based column schema variant.");
-    }
-
-    const objectProperties = (objectVariant.properties as Record<string, unknown>) ?? {};
-    expect(objectProperties).toHaveProperty("enum");
-    expect(objectProperties).toHaveProperty("foreignKey");
-    expect(objectProperties).toHaveProperty("primaryKey");
-    expect(objectProperties).toHaveProperty("unique");
-
-    const allOf = (objectVariant.allOf as Array<Record<string, unknown>> | undefined) ?? [];
-    expect(allOf.length).toBeGreaterThan(0);
   });
 });

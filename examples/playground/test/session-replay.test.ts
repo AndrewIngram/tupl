@@ -1,62 +1,88 @@
 import { describe, expect, it } from "vitest";
 
-import { EXAMPLE_PACKS, serializeJson } from "../src/examples";
+import {
+  DEFAULT_FACADE_SCHEMA_CODE,
+  QUERY_PRESETS,
+  SCENARIO_PRESETS,
+  serializeJson,
+} from "../src/examples";
 import {
   compilePlaygroundInput,
   createSession,
   replaySession,
   runSessionToCompletion,
 } from "../src/session-runtime";
+import type { ExecutedProviderOperation } from "../src/types";
+
+function isSqlProviderOperation(
+  entry: ExecutedProviderOperation,
+): entry is Extract<ExecutedProviderOperation, { kind: "sql_query" }> {
+  return entry.kind === "sql_query";
+}
 
 describe("playground/session-replay", () => {
   it("replays to a specific step count deterministically", async () => {
-    const pack = EXAMPLE_PACKS[0];
-    const query = pack?.queries[0];
-    if (!pack || !query) {
+    const scenario = SCENARIO_PRESETS[0];
+    const query = QUERY_PRESETS[0];
+    if (!scenario || !query) {
       throw new Error("Expected example pack with at least one query.");
     }
 
-    const compiled = compilePlaygroundInput(
-      serializeJson(pack.schema),
-      serializeJson(pack.rows),
+    const compiled = await compilePlaygroundInput(
+      DEFAULT_FACADE_SCHEMA_CODE,
+      serializeJson(scenario.rows),
       query.sql,
     );
     if (!compiled.ok) {
       throw new Error(compiled.issues.join("\n"));
     }
 
-    const liveSession = createSession(compiled);
+    const liveBundle = await createSession(compiled, scenario.context);
+    const liveSession = liveBundle.session;
     const first = await liveSession.next();
     if ("done" in first) {
       throw new Error("Expected at least one step event.");
     }
 
-    const replayed = await replaySession(compiled, 1);
+    const replayed = await replaySession(compiled, 1, scenario.context);
     expect(replayed.events).toHaveLength(1);
     expect(replayed.events[0]?.id).toBe(first.id);
   });
 
   it("runToCompletion helper matches done state and returns rows", async () => {
-    const pack = EXAMPLE_PACKS[1];
-    const query = pack?.queries[1];
-    if (!pack || !query) {
+    const scenario = SCENARIO_PRESETS[1];
+    const query = QUERY_PRESETS[1];
+    if (!scenario || !query) {
       throw new Error("Expected example pack with at least one query.");
     }
 
-    const compiled = compilePlaygroundInput(
-      serializeJson(pack.schema),
-      serializeJson(pack.rows),
+    const compiled = await compilePlaygroundInput(
+      DEFAULT_FACADE_SCHEMA_CODE,
+      serializeJson(scenario.rows),
       query.sql,
     );
     if (!compiled.ok) {
       throw new Error(compiled.issues.join("\n"));
     }
 
-    const session = createSession(compiled);
-    const snapshot = await runSessionToCompletion(session, []);
+    const bundle = await createSession(compiled, scenario.context);
+    const snapshot = await runSessionToCompletion(bundle.session, []);
 
     expect(snapshot.done).toBe(true);
     expect(snapshot.result).not.toBeNull();
     expect((snapshot.result ?? []).length).toBeGreaterThan(0);
+    expect(Array.isArray(snapshot.executedOperations)).toBe(true);
+    expect(Array.isArray(snapshot.executedQueries)).toBe(true);
+    expect(snapshot.executedQueries).toEqual(
+      snapshot.executedOperations
+        .filter(isSqlProviderOperation)
+        .map((entry) => ({
+          id: entry.id,
+          timestamp: entry.timestamp,
+          provider: entry.provider,
+          sql: entry.sql,
+          params: entry.variables,
+        })),
+    );
   });
 });

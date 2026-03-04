@@ -1,18 +1,74 @@
 import type { SchemaDefinition, SqlScalarType, TableColumnDefinition } from "sqlql";
 
-export interface ExampleQuery {
+export interface PlaygroundContext {
+  orgId: string;
+  userId: string;
+}
+
+export interface ExecutedSqlProviderOperation {
+  id: string;
+  timestamp: number;
+  provider: string;
+  kind: "sql_query";
+  sql: string;
+  variables: unknown[];
+}
+
+export interface ExecutedKvLookupProviderOperation {
+  id: string;
+  timestamp: number;
+  provider: string;
+  kind: "kv_lookup";
+  lookup: {
+    entity: string;
+    key?: unknown;
+    keys?: unknown[];
+    table?: string;
+    op?: string;
+  };
+  variables: unknown;
+}
+
+export type ExecutedProviderOperation =
+  | ExecutedSqlProviderOperation
+  | ExecutedKvLookupProviderOperation;
+
+/**
+ * @deprecated Use ExecutedProviderOperation.
+ */
+export interface ExecutedSqlQuery {
+  sql: string;
+  params: unknown[];
+  provider: string;
+  id: string;
+  timestamp: number;
+}
+
+export type DownstreamRows = Record<string, Array<Record<string, unknown>>>;
+
+export interface PlaygroundQueryPreset {
+  id: string;
   label: string;
   sql: string;
+  description?: string;
+}
+
+export interface PlaygroundScenarioPreset {
+  id: string;
+  label: string;
+  description: string;
+  context: PlaygroundContext;
+  rows: DownstreamRows;
+  defaultQueryId: string;
 }
 
 export type CatalogQueryId = string;
 
 export interface CatalogQueryEntry {
   id: CatalogQueryId;
-  packId: string;
-  packLabel: string;
-  queryLabel: string;
+  label: string;
   sql: string;
+  description?: string;
 }
 
 export interface QueryCompatibility {
@@ -21,15 +77,6 @@ export interface QueryCompatibility {
 }
 
 export type QueryCompatibilityMap = Record<CatalogQueryId, QueryCompatibility>;
-
-export interface ExamplePack {
-  id: string;
-  label: string;
-  description: string;
-  schema: SchemaDefinition;
-  rows: Record<string, Array<Record<string, unknown>>>;
-  queries: ExampleQuery[];
-}
 
 export interface SchemaValidationIssue {
   path: string;

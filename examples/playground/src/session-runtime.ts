@@ -1,23 +1,64 @@
+import { and, eq, sql } from "drizzle-orm";
 import {
-  createArrayTableMethods,
+  createDrizzleProvider,
+  type DrizzleProviderTableConfig,
+} from "../../../packages/drizzle/src/index";
+import {
   createQuerySession,
   defaultSqlAstParser,
-  defineTableMethods,
+  defineProviders,
+  lowerSqlToRel,
+  planPhysicalQuery,
+  resolveSchemaLinkedEnums,
+  resolveTableColumnDefinition,
+  type PhysicalPlan,
+  type ProviderFragment,
   type QueryExecutionPlan,
   type QueryRow,
   type QuerySession,
   type QueryStepEvent,
+  type RelNode,
   type SchemaDefinition,
-  type TableMethodsMap,
 } from "sqlql";
 
-import { parseRowsText, parseSchemaText } from "./validation";
+import {
+  DOWNSTREAM_ROWS_SCHEMA,
+  orderItemsTable,
+  ordersTable,
+  productsTable,
+  userProductAccessTable,
+  vendorsTable,
+} from "./downstream-model";
+import {
+  DB_PROVIDER_MODULE_ID,
+  DEFAULT_DB_PROVIDER_CODE,
+  DEFAULT_GENERATED_DB_FILE_CODE,
+  DEFAULT_KV_PROVIDER_CODE,
+  GENERATED_DB_MODULE_ID,
+  KV_PROVIDER_MODULE_ID,
+} from "./examples";
+import {
+  createInMemoryKvProvider,
+  KV_DATA_TABLE_NAME,
+} from "./kv-provider";
+import {
+  clearExecutedProviderOperations,
+  getExecutedProviderOperations,
+  getPlaygroundPgliteRuntime,
+  recordExecutedProviderOperation,
+  reseedDownstreamDatabase,
+} from "./pglite-runtime";
+import type { DownstreamRows, ExecutedProviderOperation, ExecutedSqlQuery, PlaygroundContext } from "./types";
+import {
+  coerceSchemaEditorTextToCode,
+  parseDownstreamRowsText,
+  parseFacadeSchemaCode,
+} from "./validation";
 
 export interface PlaygroundCompileSuccess {
   ok: true;
   schema: SchemaDefinition;
-  rows: Record<string, QueryRow[]>;
-  methods: TableMethodsMap<object>;
+  downstreamRows: DownstreamRows;
   sql: string;
 }
 
@@ -28,12 +69,55 @@ export interface PlaygroundCompileFailure {
 
 export type PlaygroundCompileResult = PlaygroundCompileSuccess | PlaygroundCompileFailure;
 
+export interface PlaygroundSchemaProgramOptions {
+  modules?: Record<string, string>;
+}
+
 export interface SessionSnapshot {
   session: QuerySession;
   plan: QueryExecutionPlan;
   events: QueryStepEvent[];
   result: QueryRow[] | null;
   done: boolean;
+  executedOperations: ExecutedProviderOperation[];
+  /**
+   * @deprecated Use executedOperations.
+   */
+  executedQueries: ExecutedSqlQuery[];
+}
+
+export interface TranslationFragment {
+  stepId: string;
+  provider: string;
+  fragment: ProviderFragment;
+}
+
+export interface PlaygroundTranslation {
+  userSql: string;
+  facadeRel: RelNode;
+  physicalPlan: PhysicalPlan;
+  providerFragments: TranslationFragment[];
+}
+
+export interface PlaygroundSessionBundle {
+  session: QuerySession;
+  translation: PlaygroundTranslation;
+}
+
+interface PlaygroundOperationRecorder {
+  clear: () => void;
+  list: () => ExecutedProviderOperation[];
+  record: (operation: Parameters<typeof recordExecutedProviderOperation>[0]) => ExecutedProviderOperation;
+}
+
+const operationRecorder: PlaygroundOperationRecorder = {
+  clear: clearExecutedProviderOperations,
+  list: getExecutedProviderOperations,
+  record: recordExecutedProviderOperation,
+};
+
+export function getPlaygroundOperationRecorder(): PlaygroundOperationRecorder {
+  return operationRecorder;
 }
 
 interface SqlBindingInfo {
@@ -353,12 +437,117 @@ function validateSelectReferences(
   return null;
 }
 
-export function compilePlaygroundInput(
-  schemaText: string,
+function buildProvider(context: PlaygroundContext) {
+  const tableConfigs = {
+    my_orders: {
+      table: ordersTable,
+      scope: (ctx: PlaygroundContext) =>
+        and(eq(ordersTable.org_id, ctx.orgId), eq(ordersTable.user_id, ctx.userId)),
+    },
+    my_order_items: {
+      table: orderItemsTable,
+      scope: (ctx: PlaygroundContext) =>
+        and(eq(orderItemsTable.org_id, ctx.orgId), eq(orderItemsTable.user_id, ctx.userId)),
+    },
+    vendors_for_org: {
+      table: vendorsTable,
+      scope: (ctx: PlaygroundContext) => eq(vendorsTable.org_id, ctx.orgId),
+    },
+    active_products: {
+      table: productsTable,
+      scope: (ctx: PlaygroundContext) =>
+        and(
+          eq(productsTable.org_id, ctx.orgId),
+          eq(productsTable.active, true),
+          sql`exists (select 1 from ${userProductAccessTable} where ${userProductAccessTable.product_id} = ${productsTable.id} and ${userProductAccessTable.user_id} = ${ctx.userId})`,
+        ),
+    },
+  } satisfies Record<string, DrizzleProviderTableConfig<PlaygroundContext, string>>;
+
+  return getPlaygroundPgliteRuntime().then((runtime) =>
+    createDrizzleProvider<PlaygroundContext>({
+      name: "dbProvider",
+      db: runtime.db,
+      tables: tableConfigs,
+    }));
+}
+
+function buildKvProvider(rows: DownstreamRows) {
+  const kvRows = ((rows[KV_DATA_TABLE_NAME] ?? []) as Array<Record<string, unknown>>)
+    .flatMap((row) => {
+      const key = row.key;
+      const value = row.value;
+      if (typeof key !== "string" || key.trim().length === 0) {
+        return [];
+      }
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        return [];
+      }
+      return [{ key, value: Math.trunc(value) }];
+    });
+
+  return createInMemoryKvProvider({
+    name: "kvProvider",
+    rows: kvRows,
+    recordOperation: operationRecorder.record,
+  });
+}
+
+function resolveDownstreamEnumValues(ref: { table: string; column: string }): readonly string[] | undefined {
+  const table = DOWNSTREAM_ROWS_SCHEMA.tables[ref.table];
+  if (!table) {
+    return undefined;
+  }
+
+  if (!(ref.column in table.columns)) {
+    return undefined;
+  }
+
+  const column = resolveTableColumnDefinition(DOWNSTREAM_ROWS_SCHEMA, ref.table, ref.column);
+  return column.enum;
+}
+
+function buildTranslation(
+  userSql: string,
+  facadeRel: RelNode,
+  physicalPlan: PhysicalPlan,
+): PlaygroundTranslation {
+  const providerFragments: TranslationFragment[] = [];
+
+  for (const step of physicalPlan.steps) {
+    if (step.kind !== "remote_fragment" || !step.fragment) {
+      continue;
+    }
+    providerFragments.push({
+      stepId: step.id,
+      provider: step.provider,
+      fragment: step.fragment,
+    });
+  }
+
+  return {
+    userSql,
+    facadeRel,
+    physicalPlan,
+    providerFragments,
+  };
+}
+
+export async function compilePlaygroundInput(
+  schemaCodeText: string,
   rowsText: string,
   sqlText: string,
-): PlaygroundCompileResult {
-  const schemaResult = parseSchemaText(schemaText);
+  options: PlaygroundSchemaProgramOptions = {},
+): Promise<PlaygroundCompileResult> {
+  const schemaCode = coerceSchemaEditorTextToCode(schemaCodeText);
+  const modules = options.modules ?? {
+    [DB_PROVIDER_MODULE_ID]: DEFAULT_DB_PROVIDER_CODE,
+    [GENERATED_DB_MODULE_ID]: DEFAULT_GENERATED_DB_FILE_CODE,
+    [KV_PROVIDER_MODULE_ID]: DEFAULT_KV_PROVIDER_CODE,
+  };
+  const schemaResult = await parseFacadeSchemaCode(schemaCode, {
+    modules,
+  });
   if (!schemaResult.ok || !schemaResult.schema) {
     return {
       ok: false,
@@ -366,7 +555,21 @@ export function compilePlaygroundInput(
     };
   }
 
-  const rowsResult = parseRowsText(schemaResult.schema, rowsText);
+  let schema = schemaResult.schema;
+  try {
+    schema = resolveSchemaLinkedEnums(schema, {
+      resolveEnumValues: (ref) => resolveDownstreamEnumValues(ref),
+      onUnresolved: "throw",
+      strictUnmapped: true,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      issues: [error instanceof Error ? error.message : "Invalid enum linkage in schema."],
+    };
+  }
+
+  const rowsResult = parseDownstreamRowsText(rowsText);
   const parsedRows = rowsResult.rows;
   if (!rowsResult.ok || !parsedRows) {
     return {
@@ -401,7 +604,7 @@ export function compilePlaygroundInput(
     };
   }
 
-  const referenceIssue = validateSelectReferences(ast, schemaResult.schema, new Set<string>());
+  const referenceIssue = validateSelectReferences(ast, schema, new Set<string>());
   if (referenceIssue) {
     return {
       ok: false,
@@ -409,63 +612,91 @@ export function compilePlaygroundInput(
     };
   }
 
-  const methodEntries = Object.keys(schemaResult.schema.tables).map((tableName) => {
-    const tableRows = parsedRows[tableName] ?? [];
-    return [tableName, createArrayTableMethods(tableRows)] as const;
-  });
-
-  const methods = defineTableMethods(schemaResult.schema, Object.fromEntries(methodEntries));
-
   return {
     ok: true,
-    schema: schemaResult.schema,
-    rows: parsedRows,
-    methods,
+    schema,
+    downstreamRows: parsedRows as DownstreamRows,
     sql: normalizedSql,
   };
 }
 
-export function createSession(compiled: PlaygroundCompileSuccess): QuerySession {
-  return createQuerySession({
+export async function createSession(
+  compiled: PlaygroundCompileSuccess,
+  context: PlaygroundContext,
+): Promise<PlaygroundSessionBundle> {
+  operationRecorder.clear();
+  await reseedDownstreamDatabase(compiled.downstreamRows);
+  operationRecorder.clear();
+
+  const dbProvider = await buildProvider(context);
+  const kvProvider = buildKvProvider(compiled.downstreamRows);
+  const providers = defineProviders({
+    dbProvider,
+    kvProvider,
+  });
+
+  const lowered = lowerSqlToRel(compiled.sql, compiled.schema);
+  const physicalPlan = await planPhysicalQuery(
+    lowered.rel,
+    compiled.schema,
+    providers,
+    context,
+    compiled.sql,
+  );
+
+  const session = createQuerySession({
     schema: compiled.schema,
-    methods: compiled.methods,
-    context: {},
+    providers,
+    context,
     sql: compiled.sql,
     options: {
       maxConcurrency: 4,
       captureRows: "full",
     },
   });
+
+  return {
+    session,
+    translation: buildTranslation(compiled.sql, lowered.rel, physicalPlan),
+  };
 }
 
 export async function replaySession(
   compiled: PlaygroundCompileSuccess,
   eventCount: number,
+  context: PlaygroundContext,
 ): Promise<SessionSnapshot> {
-  const session = createSession(compiled);
+  const bundle = await createSession(compiled, context);
+  const session = bundle.session;
   const events: QueryStepEvent[] = [];
 
   while (events.length < eventCount) {
     const next = await session.next();
     if ("done" in next) {
+      const executedOperations = operationRecorder.list();
       return {
         session,
         plan: session.getPlan(),
         events,
         result: next.result,
         done: true,
+        executedOperations,
+        executedQueries: toLegacyExecutedSqlQueries(executedOperations),
       };
     }
 
     events.push(next);
   }
 
+  const executedOperations = operationRecorder.list();
   return {
     session,
     plan: session.getPlan(),
     events,
     result: null,
     done: false,
+    executedOperations,
+    executedQueries: toLegacyExecutedSqlQueries(executedOperations),
   };
 }
 
@@ -478,14 +709,29 @@ export async function runSessionToCompletion(
   while (true) {
     const next = await session.next();
     if ("done" in next) {
+      const executedOperations = operationRecorder.list();
       return {
         session,
         plan: session.getPlan(),
         events,
         result: next.result,
         done: true,
+        executedOperations,
+        executedQueries: toLegacyExecutedSqlQueries(executedOperations),
       };
     }
     events.push(next);
   }
+}
+
+function toLegacyExecutedSqlQueries(operations: ExecutedProviderOperation[]): ExecutedSqlQuery[] {
+  return operations
+    .filter((entry): entry is Extract<ExecutedProviderOperation, { kind: "sql_query" }> => entry.kind === "sql_query")
+    .map((entry) => ({
+      id: entry.id,
+      timestamp: entry.timestamp,
+      provider: entry.provider,
+      sql: entry.sql,
+      params: entry.variables,
+    }));
 }

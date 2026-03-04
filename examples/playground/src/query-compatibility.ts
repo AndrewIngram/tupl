@@ -1,8 +1,5 @@
 import {
-  createArrayTableMethods,
-  createQuerySession,
   defaultSqlAstParser,
-  defineTableMethods,
   type SchemaDefinition,
 } from "sqlql";
 
@@ -13,7 +10,7 @@ import type {
   SchemaParseResult,
 } from "./types";
 
-const INVALID_SCHEMA_REASON = "Fix schema JSON first.";
+const INVALID_SCHEMA_REASON = "Fix schema TypeScript first.";
 
 function normalizeSql(value: string): string {
   return value.trim().replace(/;+$/u, "").trim();
@@ -128,22 +125,6 @@ export function checkQueryCompatibility(
       }
     }
 
-    const methodEntries = Object.keys(schema.tables).map((tableName) => {
-      return [tableName, createArrayTableMethods([])] as const;
-    });
-    const methods = defineTableMethods(schema, Object.fromEntries(methodEntries));
-    const session = createQuerySession({
-      schema,
-      methods,
-      context: {},
-      sql: normalizedSql,
-      options: {
-        maxConcurrency: 1,
-        captureRows: "full",
-      },
-    });
-
-    session.getPlan();
     return { compatible: true };
   } catch (error) {
     return {

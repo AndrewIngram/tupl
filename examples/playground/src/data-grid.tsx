@@ -20,6 +20,9 @@ interface DataGridProps {
   rows: QueryRow[];
   onRowsChange(rows: QueryRow[]): void;
   scrollAreaClassName?: string;
+  selectedRowIndex?: number | null;
+  onSelectRow?(rowIndex: number): void;
+  editable?: boolean;
 }
 
 function cellKey(rowIndex: number, columnName: string): string {
@@ -54,6 +57,9 @@ export function DataGrid({
   rows,
   onRowsChange,
   scrollAreaClassName,
+  selectedRowIndex,
+  onSelectRow,
+  editable = true,
 }: DataGridProps): React.JSX.Element {
   const columns = useMemo(() => Object.entries(table.columns), [table.columns]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -145,21 +151,31 @@ export function DataGrid({
                   </div>
                 </TableHead>
               ))}
-              <TableHead className="w-12 text-right"> </TableHead>
+              {editable ? <TableHead className="w-12 text-right"> </TableHead> : null}
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell className="text-sm text-slate-500" colSpan={columns.length + 1}>
+                <TableCell
+                  className="text-sm text-slate-500"
+                  colSpan={columns.length + (editable ? 1 : 0)}
+                >
                   No rows.
                 </TableCell>
               </TableRow>
             ) : null}
 
             {rows.map((row, rowIndex) => (
-              <TableRow key={`row-${rowIndex}`}>
+              <TableRow
+                key={`row-${rowIndex}`}
+                className={cn(
+                  onSelectRow ? "cursor-pointer" : null,
+                  selectedRowIndex === rowIndex ? "bg-sky-50/60 hover:bg-sky-100/60" : null,
+                )}
+                onClick={() => onSelectRow?.(rowIndex)}
+              >
                 {columns.map(([columnName, columnDefinition]) => {
                   const key = cellKey(rowIndex, columnName);
                   const draftValue = drafts[key];
@@ -177,7 +193,11 @@ export function DataGrid({
 
                   return (
                     <TableCell key={columnName} className="align-top">
-                      {enumValues.length > 0 ? (
+                      {!editable ? (
+                        <div className="font-mono text-xs text-slate-700">
+                          {JSON.stringify(currentValue ?? null)}
+                        </div>
+                      ) : enumValues.length > 0 ? (
                         <select
                           className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
                           value={currentValue == null ? "__null__" : String(currentValue)}
@@ -272,17 +292,19 @@ export function DataGrid({
                     </TableCell>
                   );
                 })}
-                <TableCell className="align-top text-right">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => onRowsChange(deleteRow(rows, rowIndex))}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
+                {editable ? (
+                  <TableCell className="align-top text-right">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => onRowsChange(deleteRow(rows, rowIndex))}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                ) : null}
               </TableRow>
             ))}
           </TableBody>

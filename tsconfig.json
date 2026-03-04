@@ -14,7 +14,9 @@
     "forceConsistentCasingInFileNames": true,
     "paths": {
       "sqlql": ["src/index.ts"],
-      "@sqlql/drizzle": ["packages/drizzle/src/index.ts"]
+      "@sqlql/drizzle": ["packages/drizzle/src/index.ts"],
+      "@sqlql/objection": ["packages/objection/src/index.ts"],
+      "@sqlql/kysely": ["packages/kysely/src/index.ts"]
     }
   },
   "include": ["src", "test", "examples/**/*.ts"]

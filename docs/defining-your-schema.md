@@ -15,6 +15,7 @@ import { defineSchema } from "sqlql";
 const schema = defineSchema({
   tables: {
     orders: {
+      provider: "warehouse",
       columns: {
         id: { type: "text", nullable: false, primaryKey: true },
         customer_id: { type: "text", nullable: false },
@@ -24,6 +25,78 @@ const schema = defineSchema({
       },
     },
   },
+});
+```
+
+In object-form schemas, tables declare `provider`, which maps table access to a registered provider adapter.
+In lens DSL form (`table({ from: dataEntityHandle, ... })`), provider is inferred from the handle.
+
+## Lens DSL (provider-owned entities)
+
+For source-neutral modeling (SQL tables, Elasticsearch indices, Redis keyspaces, Mongo collections),
+you can define a logical schema as a lens over provider-owned entities:
+
+```ts
+import { createDataEntityHandle, defineSchema } from "sqlql";
+
+const ordersEntity = createDataEntityHandle({
+  entity: "orders_raw",
+  provider: "regional",
+});
+
+const schema = defineSchema(({ table }) => ({
+  tables: {
+    my_orders: table({
+      from: ordersEntity,
+      columns: {
+        id: { source: "id", type: "text", nullable: false },
+        total_cents: { source: "total_cents", type: "integer", nullable: false },
+      },
+    }),
+  },
+}));
+```
+
+This keeps SQL-facing names relational while allowing provider-facing entities to map to non-relational sources.
+
+Typed references are also supported when defining synthetic views:
+
+```ts
+const schema = defineSchema(({ table, view, rel, col, expr }) => {
+  const myOrders = table({
+    from: ordersEntity,
+    columns: {
+      id: col("id"),
+      vendorId: col("vendor_id"),
+    },
+  });
+
+  const vendors = table({
+    from: vendorsEntity,
+    columns: {
+      id: col("id"),
+      name: col("name"),
+    },
+  });
+
+  return {
+    tables: {
+      myOrders,
+      vendors,
+      orderVendors: view({
+        rel: () =>
+          rel.join({
+            left: rel.scan(myOrders),
+            right: rel.scan(vendors),
+            on: expr.eq(col(myOrders, "vendorId"), col(vendors, "id")),
+          }),
+        columns: {
+          orderId: col("myOrders.id"),
+          vendorName: col("vendors.name"),
+        },
+      }),
+    },
+  };
 });
 ```
 
@@ -76,6 +149,48 @@ Effects:
 - DDL includes a generated `CHECK (... IN (...))`
 - optional runtime constraint validation can report returned-row enum violations
 
+Linked enums are also supported when a facade/view column maps to an upstream enum domain:
+
+```ts
+status: {
+  source: col(myOrdersEntity, "status"),
+  type: "text",
+  nullable: false,
+  enumFrom: col(myOrdersEntity, "status"),
+}
+```
+
+Mapped enums let facade values differ from upstream values:
+
+```ts
+status: {
+  source: col(myOrdersEntity, "status"),
+  type: "text",
+  nullable: false,
+  enumFrom: col(myOrdersEntity, "status"),
+  enum: ["open", "closed"] as const,
+  enumMap: {
+    pending: "open",
+    paid: "closed",
+    shipped: "closed",
+  },
+}
+```
+
+By default, linked enum resolution is strict: unmapped upstream values are rejected.
+
+## Physical metadata
+
+Logical scalar types remain `text|integer|boolean|timestamp`, and you can attach physical hints:
+
+```ts
+total_cents: {
+  type: "integer",
+  physicalType: "numeric(12,0)",
+  physicalDialect: "postgres",
+}
+```
+
 ## Field-level constraints
 
 Single-column keys are best declared on fields:
@@ -119,9 +234,9 @@ const schema = defineSchema({
 });
 ```
 
-## Query policy (table-level)
+## Query policy metadata (optional)
 
-Non-column governance lives under `table.query`:
+`table.query` is still accepted as schema metadata and appears in generated DDL comments:
 
 ```ts
 orders: {
@@ -143,7 +258,7 @@ orders: {
 }
 ```
 
-Global defaults can be set at `schema.defaults.query` and overridden per table.
+In v1, execution safety limits should be enforced through `queryGuardrails` on `query(...)`. Treat `table.query` as metadata unless your provider layer explicitly consumes it.
 
 ## Generating DDL
 

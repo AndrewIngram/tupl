@@ -1,0 +1,232 @@
+declare module "sqlql" {
+  export type SqlScalarType = "text" | "integer" | "boolean" | "timestamp";
+
+  export interface ColumnDefinition {
+    type: SqlScalarType;
+    nullable?: boolean;
+    filterable?: boolean;
+    sortable?: boolean;
+    primaryKey?: boolean;
+    unique?: boolean;
+    enum?: readonly string[];
+    enumFrom?: string | SchemaColRefToken;
+    enumMap?: Record<string, string>;
+    physicalType?: string;
+    physicalDialect?: "postgres" | "sqlite";
+    foreignKey?: ColumnForeignKeyReference;
+    description?: string;
+  }
+
+  export type TableColumnDefinition = SqlScalarType | ColumnDefinition;
+
+  export interface TableDefinition {
+    provider?: string;
+    columns: Record<string, TableColumnDefinition>;
+  }
+
+  export interface SchemaDefinition {
+    defaults?: {
+      query?: {
+        maxRows?: number | null;
+      };
+    };
+    tables: Record<string, TableDefinition>;
+  }
+
+  export interface DataEntityHandle<TColumns extends string = string> {
+    kind: "data_entity";
+    entity: string;
+    provider: string;
+    readonly __columns__?: TColumns;
+  }
+
+  export interface SchemaDslTableToken<TColumns extends string = string> {
+    kind: "dsl_table_token";
+    readonly __id: symbol;
+    readonly __brand?: TColumns;
+  }
+
+  export interface SchemaColRefToken {
+    kind: "dsl_col_ref";
+    ref?: string;
+    column?: string;
+  }
+
+  export interface SchemaColumnLensDefinition {
+    source: string | SchemaColRefToken;
+    type?: SqlScalarType;
+    nullable?: boolean;
+    filterable?: boolean;
+    sortable?: boolean;
+    primaryKey?: boolean;
+    unique?: boolean;
+    enum?: readonly string[];
+    enumFrom?: string | SchemaColRefToken;
+    enumMap?: Record<string, string>;
+    physicalType?: string;
+    physicalDialect?: "postgres" | "sqlite";
+    foreignKey?: ColumnForeignKeyReference;
+    description?: string;
+  }
+
+  export interface ColumnForeignKeyReference {
+    table: string;
+    column: string;
+    name?: string;
+    onDelete?: "NO ACTION" | "RESTRICT" | "CASCADE" | "SET NULL" | "SET DEFAULT";
+    onUpdate?: "NO ACTION" | "RESTRICT" | "CASCADE" | "SET NULL" | "SET DEFAULT";
+  }
+
+  export interface SchemaViewEqExpr {
+    kind: "eq";
+    left: SchemaColRefToken;
+    right: SchemaColRefToken;
+  }
+
+  export interface SchemaViewAggregateMetric {
+    kind: "metric";
+    fn: "sum" | "count";
+    column?: SchemaColRefToken;
+  }
+
+  export type SchemaViewRelNodeInput = unknown;
+
+  export interface SchemaDslHelpers<TContext> {
+    table: <TColumns extends string>(input: {
+      from: DataEntityHandle;
+      columns: Record<TColumns, TableColumnDefinition | SchemaColumnLensDefinition | SchemaColRefToken>;
+    }) => {
+      kind: "dsl_table";
+      tableToken: SchemaDslTableToken<TColumns>;
+    };
+    view: (input: {
+      rel: (context: TContext) => SchemaViewRelNodeInput;
+      columns: Record<string, SchemaColumnLensDefinition | SchemaColRefToken>;
+    }) => unknown;
+    col: {
+      (ref: string): SchemaColRefToken;
+      <TColumns extends string, TColumn extends TColumns>(
+        entity: DataEntityHandle<TColumns>,
+        column: TColumn,
+      ): SchemaColRefToken;
+      <TColumns extends string, TColumn extends TColumns>(
+        table: SchemaDslTableToken<TColumns> | { tableToken: SchemaDslTableToken<TColumns> },
+        column: TColumn,
+      ): SchemaColRefToken;
+    };
+    expr: {
+      eq: (left: SchemaColRefToken, right: SchemaColRefToken) => SchemaViewEqExpr;
+    };
+    agg: {
+      sum: (column: SchemaColRefToken) => SchemaViewAggregateMetric;
+      count: () => SchemaViewAggregateMetric;
+    };
+    rel: {
+      scan: (table: string | SchemaDslTableToken<string> | { tableToken: SchemaDslTableToken<string> }) => {
+        kind: "scan";
+        table: string | SchemaDslTableToken<string>;
+      };
+      join: (input: {
+        left: SchemaViewRelNodeInput;
+        right: SchemaViewRelNodeInput;
+        on: SchemaViewEqExpr;
+        type?: "inner" | "left" | "right" | "full";
+      }) => SchemaViewRelNodeInput;
+      aggregate: (input: {
+        from: SchemaViewRelNodeInput;
+        groupBy: SchemaColRefToken[];
+        measures: Record<string, SchemaViewAggregateMetric>;
+      }) => SchemaViewRelNodeInput;
+    };
+  }
+
+  export function createDataEntityHandle<TColumns extends string = string>(input: {
+    entity: string;
+    provider: string;
+  }): DataEntityHandle<TColumns>;
+
+  export function defineSchema<TContext>(
+    schemaBuilder: (helpers: SchemaDslHelpers<TContext>) => {
+      defaults?: {
+        query?: {
+          maxRows?: number | null;
+        };
+      };
+      tables: Record<string, unknown>;
+    },
+  ): SchemaDefinition;
+  export function defineSchema<TSchema extends SchemaDefinition>(schema: TSchema): TSchema;
+}
+
+declare module "@sqlql/drizzle" {
+  export interface DrizzleQueryExecutor {
+    select: (...args: unknown[]) => unknown;
+  }
+
+  export interface DrizzleProviderTableConfig<TContext = unknown> {
+    table: object;
+    columns?: Record<string, unknown>;
+    scope?: (context: TContext) => unknown;
+  }
+
+  export function createDrizzleProvider<TContext, TTables extends Record<string, DrizzleProviderTableConfig<TContext>>>(
+    options: {
+      name?: string;
+      db: DrizzleQueryExecutor;
+      tables: TTables;
+    },
+  ): {
+    tables: { [K in keyof TTables]: import("sqlql").DataEntityHandle<string> };
+    entities: { [K in keyof TTables]: import("sqlql").DataEntityHandle<string> };
+  };
+}
+
+declare module "./generated-db" {
+  export class PGlite {}
+  export const tables: Record<string, object>;
+  export const db: {
+    select: (...args: unknown[]) => unknown;
+  };
+}
+
+declare module "./db-provider" {
+  export const dbProvider: {
+    tables: Record<string, unknown>;
+    entities: Record<string, unknown>;
+  };
+}
+
+declare module "./kv-provider" {
+  export const kvProvider: {
+    tables: Record<string, unknown>;
+    entities: Record<string, unknown>;
+  };
+}
+
+declare module "@electric-sql/pglite" {
+  export class PGlite {}
+}
+
+declare module "https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js" {
+  export class PGlite {}
+}
+
+declare module "drizzle-orm/pglite" {
+  export function drizzle(input: { client: unknown }): {
+    select: (...args: unknown[]) => unknown;
+  };
+}
+
+declare module "drizzle-orm/pg-core" {
+  interface ColumnBuilder {
+    primaryKey(): ColumnBuilder;
+    notNull(): ColumnBuilder;
+    references(ref: () => unknown): ColumnBuilder;
+  }
+
+  export function pgTable(name: string, columns: Record<string, unknown>): object;
+  export function text(name: string): ColumnBuilder;
+  export function integer(name: string): ColumnBuilder;
+  export function boolean(name: string): ColumnBuilder;
+  export function timestamp(name: string, options?: { mode?: string }): ColumnBuilder;
+}

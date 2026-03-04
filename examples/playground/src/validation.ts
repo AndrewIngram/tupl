@@ -7,6 +7,14 @@ import {
   type TableDefinition,
 } from "sqlql";
 
+import { DOWNSTREAM_ROWS_SCHEMA } from "./downstream-model";
+import { KV_DATA_TABLE_DEFINITION, KV_DATA_TABLE_NAME } from "./kv-provider";
+import {
+  evaluateSchemaCodeInProcess,
+  type SchemaCodeEvaluationOptions,
+  type SchemaCodeEvaluationIssue,
+  type SchemaCodeEvaluationResult,
+} from "./schema-code-runtime";
 import {
   isColumnNullable,
   readColumnType,
@@ -16,6 +24,7 @@ import {
 } from "./types";
 
 const sqlScalarTypeSchema = z.enum(["text", "integer", "boolean", "timestamp"]);
+const physicalDialectSchema = z.enum(["postgres", "sqlite"]);
 
 const queryRejectSchema = z
   .object({
@@ -33,6 +42,13 @@ const queryFallbackSchema = z
     limitOffset: z.enum(["allow_local", "require_pushdown"]).optional(),
   })
   .strict();
+
+const DOWNSTREAM_INPUT_ROWS_SCHEMA: SchemaDefinition = defineSchema({
+  tables: {
+    ...DOWNSTREAM_ROWS_SCHEMA.tables,
+    [KV_DATA_TABLE_NAME]: KV_DATA_TABLE_DEFINITION,
+  },
+});
 
 const queryDefaultsSchema = z
   .object({
@@ -109,6 +125,10 @@ const columnObjectDefinitionSchema = z
     primaryKey: z.boolean().optional(),
     unique: z.boolean().optional(),
     enum: z.array(z.string()).min(1).optional(),
+    enumFrom: z.string().min(1).optional(),
+    enumMap: z.record(z.string().min(1), z.string().min(1)).optional(),
+    physicalType: z.string().min(1).optional(),
+    physicalDialect: physicalDialectSchema.optional(),
     foreignKey: columnForeignKeySchema.optional(),
     description: z.string().optional(),
   })
@@ -121,12 +141,20 @@ const columnObjectDefinitionSchema = z
         message: "A column cannot be both primaryKey and unique.",
       });
     }
+    if (value.enumMap && !value.enumFrom) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["enumMap"],
+        message: "enumMap requires enumFrom.",
+      });
+    }
   });
 
 const columnDefinitionSchema = z.union([sqlScalarTypeSchema, columnObjectDefinitionSchema]);
 
 const tableSchema = z
   .object({
+    provider: z.string().min(1),
     columns: z.record(z.string().min(1), columnDefinitionSchema),
     query: queryDefaultsSchema.optional(),
     constraints: z
@@ -175,7 +203,134 @@ function zodIssues(error: z.ZodError): SchemaValidationIssue[] {
   }));
 }
 
-export function parseSchemaText(value: string): SchemaParseResult {
+const SCHEMA_CODE_TIMEOUT_MS = 2000;
+
+function canUseWorkerSandbox(): boolean {
+  return typeof Worker !== "undefined";
+}
+
+function issuePathFromCodeIssue(issue: SchemaCodeEvaluationIssue): string {
+  if (typeof issue.line === "number" && typeof issue.column === "number") {
+    return `schema.ts:${issue.line}:${issue.column}`;
+  }
+  return "schema.ts";
+}
+
+function schemaParseFailureFromEvaluation(result: Extract<SchemaCodeEvaluationResult, { ok: false }>): SchemaParseResult {
+  return {
+    ok: false,
+    issues: [
+      {
+        path: issuePathFromCodeIssue(result.issue),
+        message: `[${result.issue.code}] ${result.issue.message}`,
+      },
+    ],
+  };
+}
+
+function schemaParseFromEvaluation(result: SchemaCodeEvaluationResult): SchemaParseResult {
+  if (!result.ok) {
+    return schemaParseFailureFromEvaluation(result);
+  }
+
+  return {
+    ok: true,
+    schema: result.schema,
+    issues: [],
+  };
+}
+
+async function parseSchemaCodeWithWorker(
+  code: string,
+  options: SchemaCodeEvaluationOptions,
+): Promise<SchemaParseResult> {
+  const worker = new Worker(new URL("./schema-sandbox.worker.ts", import.meta.url), {
+    type: "module",
+  });
+
+  try {
+    const response = await new Promise<SchemaCodeEvaluationResult>((resolve, reject) => {
+      const timeout = globalThis.setTimeout(() => {
+        reject(new Error("SCHEMA_TIMEOUT"));
+      }, SCHEMA_CODE_TIMEOUT_MS);
+
+      worker.onmessage = (event: MessageEvent<SchemaCodeEvaluationResult>) => {
+        globalThis.clearTimeout(timeout);
+        resolve(event.data);
+      };
+
+      worker.onerror = (event) => {
+        globalThis.clearTimeout(timeout);
+        reject(event.error ?? new Error(event.message));
+      };
+
+      worker.postMessage({
+        code,
+        ...(options.modules ? { modules: options.modules } : {}),
+      });
+    });
+
+    return schemaParseFromEvaluation(response);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Schema evaluation timed out.";
+    if (message === "SCHEMA_TIMEOUT") {
+      return {
+        ok: false,
+        issues: [
+          {
+            path: "schema.ts",
+            message: "[SCHEMA_TIMEOUT] Schema evaluation timed out.",
+          },
+        ],
+      };
+    }
+    return {
+      ok: false,
+      issues: [
+        {
+          path: "schema.ts",
+          message: `[SCHEMA_EXEC_ERROR] ${message}`,
+        },
+      ],
+    };
+  } finally {
+    worker.terminate();
+  }
+}
+
+export async function parseFacadeSchemaCode(
+  value: string,
+  options: SchemaCodeEvaluationOptions = {},
+): Promise<SchemaParseResult> {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: "schema.ts",
+          message: "[SCHEMA_EXPORT_MISSING] Schema module cannot be empty.",
+        },
+      ],
+    };
+  }
+
+  if (canUseWorkerSandbox()) {
+    const workerResult = await parseSchemaCodeWithWorker(value, options);
+    if (!workerResult.ok) {
+      return workerResult;
+    }
+
+    // Worker responses are structured-cloned and lose non-serializable schema
+    // metadata (for example, normalized view bindings). Re-evaluate locally so
+    // execution uses the canonical schema instance.
+    return schemaParseFromEvaluation(evaluateSchemaCodeInProcess(value, options));
+  }
+
+  return schemaParseFromEvaluation(evaluateSchemaCodeInProcess(value, options));
+}
+
+export function parseFacadeSchemaText(value: string): SchemaParseResult {
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(value);
@@ -217,6 +372,32 @@ export function parseSchemaText(value: string): SchemaParseResult {
       ],
     };
   }
+}
+
+export const parseSchemaText = parseFacadeSchemaText;
+
+export function legacySchemaJsonToCode(value: string): string {
+  const parsed = parseFacadeSchemaText(value);
+  if (!parsed.ok || !parsed.schema) {
+    return value;
+  }
+
+  return [
+    'import { defineSchema } from "sqlql";',
+    "",
+    "export const schema = defineSchema(",
+    `${JSON.stringify(parsed.schema, null, 2)}`,
+    ");",
+    "",
+  ].join("\n");
+}
+
+export function coerceSchemaEditorTextToCode(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("{")) {
+    return legacySchemaJsonToCode(value);
+  }
+  return value;
 }
 
 function validatorForColumn(column: TableColumnDefinition): z.ZodType<unknown> {
@@ -294,6 +475,10 @@ export function parseRowsText(schema: SchemaDefinition, value: string): RowsPars
     rows: normalizedRows,
     issues: [],
   };
+}
+
+export function parseDownstreamRowsText(value: string): RowsParseResult {
+  return parseRowsText(DOWNSTREAM_INPUT_ROWS_SCHEMA, value);
 }
 
 function toJsonSchemaType(column: TableColumnDefinition): Record<string, unknown> {
@@ -430,8 +615,9 @@ export const PLAYGROUND_SCHEMA_JSON_SCHEMA: Record<string, unknown> = {
       additionalProperties: {
         type: "object",
         additionalProperties: false,
-        required: ["columns"],
+        required: ["provider", "columns"],
         properties: {
+          provider: { type: "string" },
           columns: {
             type: "object",
             additionalProperties: {
@@ -458,6 +644,16 @@ export const PLAYGROUND_SCHEMA_JSON_SCHEMA: Record<string, unknown> = {
                       type: "array",
                       minItems: 1,
                       items: { type: "string" },
+                    },
+                    enumFrom: { type: "string" },
+                    enumMap: {
+                      type: "object",
+                      additionalProperties: { type: "string" },
+                    },
+                    physicalType: { type: "string" },
+                    physicalDialect: {
+                      type: "string",
+                      enum: ["postgres", "sqlite"],
                     },
                     foreignKey: {
                       type: "object",
