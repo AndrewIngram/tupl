@@ -25,12 +25,12 @@ Current examples of intentionally unsupported syntax:
 - subqueries in `FROM`
 - named `WINDOW` clauses/references
 - explicit window frame clauses
-- navigation window functions (`LEAD`, `LAG`, etc.)
+- some advanced value/navigation window functions (for example `FIRST_VALUE`, `LAST_VALUE`, `NTH_VALUE`)
 
-## 2) AST remains compatibility-oriented for executor/planner integration
+## 2) AST remains planner/executor-oriented
 
-The internal parser emits AST nodes shaped to match `query.ts` expectations (for example,
-function-style `NOT`/`EXISTS` nodes and specific window node structures).
+The internal parser emits AST nodes shaped to match the v1 planner/executor pipeline
+(for example, function-style `NOT`/`EXISTS` nodes and specific window node structures).
 
 Impact:
 
