@@ -1,3 +1,6 @@
+import { Result } from "better-result";
+
+import { SqlqlProviderBindingError, type SqlqlResult } from "./errors";
 import {
   getNormalizedTableBinding,
 } from "./schema";
@@ -627,19 +630,49 @@ export function validateProviderBindings<TContext>(
   schema: SchemaDefinition,
   providers: ProvidersMap<TContext>,
 ): void {
+  const result = validateProviderBindingsResult(schema, providers);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+}
+
+export function validateProviderBindingsResult<TContext>(
+  schema: SchemaDefinition,
+  providers: ProvidersMap<TContext>,
+): SqlqlResult<void> {
   for (const tableName of Object.keys(schema.tables)) {
     const normalized = getNormalizedTableBinding(schema, tableName);
     if (normalized?.kind === "view") {
       continue;
     }
 
-    const providerName = normalized?.kind === "physical"
-      ? normalized.provider ?? resolveTableProvider(schema, tableName)
-      : resolveTableProvider(schema, tableName);
+    const providerNameResult = Result.try({
+      try: () =>
+        normalized?.kind === "physical"
+          ? normalized.provider ?? resolveTableProvider(schema, tableName)
+          : resolveTableProvider(schema, tableName),
+      catch: (error) =>
+        new SqlqlProviderBindingError({
+          table: tableName,
+          message: error instanceof Error ? error.message : String(error),
+          cause: error,
+        }),
+    });
+    if (Result.isError(providerNameResult)) {
+      return providerNameResult;
+    }
+
+    const providerName = providerNameResult.value;
     if (!providers[providerName]) {
-      throw new Error(
-        `Table ${tableName} is bound to provider ${providerName}, but no such provider is registered.`,
+      return Result.err(
+        new SqlqlProviderBindingError({
+          table: tableName,
+          provider: providerName,
+          message: `Table ${tableName} is bound to provider ${providerName}, but no such provider is registered.`,
+        }),
       );
     }
   }
+
+  return Result.ok(undefined);
 }

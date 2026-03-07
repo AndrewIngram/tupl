@@ -1,4 +1,6 @@
-import { defaultSqlAstParser } from "./parser";
+import { Result } from "better-result";
+
+import { SqlqlPlanningError, type SqlqlResult } from "./errors";
 import type {
   FromEntryAst,
   OrderByTermAst,
@@ -7,6 +9,7 @@ import type {
   WindowClauseEntryAst,
   WindowSpecificationAst,
 } from "./sqlite-parser/ast";
+import { parseSqliteSelectAstResult } from "./sqlite-parser/parser";
 import type { PhysicalPlan, PhysicalStep } from "./physical";
 import {
   collectRelTables,
@@ -140,9 +143,37 @@ function nextRelId(prefix: string): string {
   return `${prefix}_${relIdCounter}`;
 }
 
-export function lowerSqlToRel(sql: string, schema: SchemaDefinition): RelLoweringResult {
-  const ast = defaultSqlAstParser.astify(sql) as SelectAst;
+function toSqlqlPlanningError(error: unknown, operation: string): SqlqlPlanningError {
+  if (SqlqlPlanningError.is(error)) {
+    return error;
+  }
 
+  return new SqlqlPlanningError({
+    operation,
+    message: error instanceof Error ? error.message : String(error),
+    cause: error,
+  });
+}
+
+export function lowerSqlToRel(sql: string, schema: SchemaDefinition): RelLoweringResult {
+  const result = lowerSqlToRelResult(sql, schema);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+  return result.value;
+}
+
+export function lowerSqlToRelResult(sql: string, schema: SchemaDefinition): SqlqlResult<RelLoweringResult> {
+  return Result.gen(function* () {
+    const ast = yield* parseSqliteSelectAstResult(sql);
+    return Result.try({
+      try: () => lowerSqlAstToRel(ast, sql, schema),
+      catch: (error) => toSqlqlPlanningError(error, "lower SQL to relational plan"),
+    });
+  });
+}
+
+function lowerSqlAstToRel(ast: SelectAst, sql: string, schema: SchemaDefinition): RelLoweringResult {
   const structured = tryLowerStructuredSelect(ast, schema, new Set<string>());
   if (structured) {
     validateRelAgainstSchema(structured, schema);
@@ -166,7 +197,22 @@ export function expandRelViews<TContext>(
   schema: SchemaDefinition,
   context?: TContext,
 ): RelNode {
-  return expandRelViewsInternal(rel, schema, context).node;
+  const result = expandRelViewsResult(rel, schema, context);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+  return result.value;
+}
+
+export function expandRelViewsResult<TContext>(
+  rel: RelNode,
+  schema: SchemaDefinition,
+  context?: TContext,
+): SqlqlResult<RelNode> {
+  return Result.try({
+    try: () => expandRelViewsInternal(rel, schema, context).node,
+    catch: (error) => toSqlqlPlanningError(error, "expand relational views"),
+  });
 }
 
 export async function planPhysicalQuery<TContext>(
@@ -176,160 +222,182 @@ export async function planPhysicalQuery<TContext>(
   context: TContext,
   _sql: string,
 ): Promise<PhysicalPlan> {
-  const expandedRel = expandRelViews(rel, schema, context);
-  const plannedRel = assignConventions(expandedRel, schema);
-  const state: { steps: PhysicalStep[] } = { steps: [] };
-
-  const rootStepId = await planPhysicalNode(
-    plannedRel,
-    schema,
-    providers,
-    context,
-    state,
-  );
-
-  return {
-    rel: plannedRel,
-    rootStepId,
-    steps: state.steps,
-  };
+  const result = await planPhysicalQueryResult(rel, schema, providers, context, _sql);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+  return result.value;
 }
 
-async function planPhysicalNode<TContext>(
+export async function planPhysicalQueryResult<TContext>(
+  rel: RelNode,
+  schema: SchemaDefinition,
+  providers: ProvidersMap<TContext>,
+  context: TContext,
+  _sql: string,
+): Promise<SqlqlResult<PhysicalPlan>> {
+  return Result.gen(async function* () {
+    const expandedRel = yield* expandRelViewsResult(rel, schema, context);
+    const plannedRel = assignConventions(expandedRel, schema);
+    const state: { steps: PhysicalStep[] } = { steps: [] };
+
+    const rootStepId = yield* Result.await(
+      planPhysicalNodeResult(
+        plannedRel,
+        schema,
+        providers,
+        context,
+        state,
+      ),
+    );
+
+    return Result.ok({
+      rel: plannedRel,
+      rootStepId,
+      steps: state.steps,
+    });
+  });
+}
+
+async function planPhysicalNodeResult<TContext>(
   node: RelNode,
   schema: SchemaDefinition,
   providers: ProvidersMap<TContext>,
   context: TContext,
   state: { steps: PhysicalStep[] },
-): Promise<string> {
-  const remoteStepId = await tryPlanRemoteFragment(node, schema, providers, context, state);
-  if (remoteStepId) {
-    return remoteStepId;
-  }
-
-  switch (node.kind) {
-    case "scan": {
-      const step: PhysicalStep = {
-        id: nextPhysicalStepId("local_project"),
-        kind: "local_project",
-        dependsOn: [],
-        summary: `Local fallback scan for ${node.table}`,
-      };
-      state.steps.push(step);
-      return step.id;
+): Promise<SqlqlResult<string>> {
+  return Result.gen(async function* () {
+    const remoteStepId = yield* Result.await(
+      tryPlanRemoteFragmentResult(node, schema, providers, context, state),
+    );
+    if (remoteStepId) {
+      return Result.ok(remoteStepId);
     }
-    case "filter":
-    case "project":
-    case "aggregate":
-    case "sort":
-    case "limit_offset": {
-      const input = await planPhysicalNode(node.input, schema, providers, context, state);
-      const kind =
-        node.kind === "filter"
-          ? "local_filter"
-          : node.kind === "project"
-            ? "local_project"
-            : node.kind === "aggregate"
-              ? "local_aggregate"
-              : node.kind === "sort"
-                ? "local_sort"
-                : "local_limit_offset";
 
-      const step: PhysicalStep = {
-        id: nextPhysicalStepId(kind),
-        kind,
-        dependsOn: [input],
-        summary: `Local ${node.kind} execution`,
-      };
-      state.steps.push(step);
-      return step.id;
-    }
-    case "join": {
-      const lookup = resolveLookupJoinCandidate(node, schema, providers);
-      if (lookup) {
-        const left = await planPhysicalNode(node.left, schema, providers, context, state);
+    switch (node.kind) {
+      case "scan": {
         const step: PhysicalStep = {
-          id: nextPhysicalStepId("lookup_join"),
-          kind: "lookup_join",
-          dependsOn: [left],
-          summary: `Lookup join ${lookup.leftScan.table}.${lookup.leftKey} -> ${lookup.rightScan.table}.${lookup.rightKey}`,
-          leftProvider: lookup.leftProvider,
-          rightProvider: lookup.rightProvider,
-          leftTable: lookup.leftScan.table,
-          rightTable: lookup.rightScan.table,
-          leftKey: lookup.leftKey,
-          rightKey: lookup.rightKey,
-          joinType: lookup.joinType,
+          id: nextPhysicalStepId("local_project"),
+          kind: "local_project",
+          dependsOn: [],
+          summary: `Local fallback scan for ${node.table}`,
         };
         state.steps.push(step);
-        return step.id;
+        return Result.ok(step.id);
       }
+      case "filter":
+      case "project":
+      case "aggregate":
+      case "sort":
+      case "limit_offset": {
+        const input = yield* Result.await(planPhysicalNodeResult(node.input, schema, providers, context, state));
+        const kind =
+          node.kind === "filter"
+            ? "local_filter"
+            : node.kind === "project"
+              ? "local_project"
+              : node.kind === "aggregate"
+                ? "local_aggregate"
+                : node.kind === "sort"
+                  ? "local_sort"
+                  : "local_limit_offset";
 
-      const left = await planPhysicalNode(node.left, schema, providers, context, state);
-      const right = await planPhysicalNode(node.right, schema, providers, context, state);
-      const step: PhysicalStep = {
-        id: nextPhysicalStepId("local_hash_join"),
-        kind: "local_hash_join",
-        dependsOn: [left, right],
-        summary: `Local ${node.joinType} join execution`,
-      };
-      state.steps.push(step);
-      return step.id;
-    }
-    case "window": {
-      const input = await planPhysicalNode(node.input, schema, providers, context, state);
-      const step: PhysicalStep = {
-        id: nextPhysicalStepId("local_window"),
-        kind: "local_window",
-        dependsOn: [input],
-        summary: "Local window execution",
-      };
-      state.steps.push(step);
-      return step.id;
-    }
-    case "set_op": {
-      const left = await planPhysicalNode(node.left, schema, providers, context, state);
-      const right = await planPhysicalNode(node.right, schema, providers, context, state);
-      const step: PhysicalStep = {
-        id: nextPhysicalStepId("local_set_op"),
-        kind: "local_set_op",
-        dependsOn: [left, right],
-        summary: `Local ${node.op} execution`,
-      };
-      state.steps.push(step);
-      return step.id;
-    }
-    case "with": {
-      const dependencies: string[] = [];
-      for (const cte of node.ctes) {
+        const step: PhysicalStep = {
+          id: nextPhysicalStepId(kind),
+          kind,
+          dependsOn: [input],
+          summary: `Local ${node.kind} execution`,
+        };
+        state.steps.push(step);
+        return Result.ok(step.id);
+      }
+      case "join": {
+        const lookup = resolveLookupJoinCandidate(node, schema, providers);
+        if (lookup) {
+          const left = yield* Result.await(planPhysicalNodeResult(node.left, schema, providers, context, state));
+          const step: PhysicalStep = {
+            id: nextPhysicalStepId("lookup_join"),
+            kind: "lookup_join",
+            dependsOn: [left],
+            summary: `Lookup join ${lookup.leftScan.table}.${lookup.leftKey} -> ${lookup.rightScan.table}.${lookup.rightKey}`,
+            leftProvider: lookup.leftProvider,
+            rightProvider: lookup.rightProvider,
+            leftTable: lookup.leftScan.table,
+            rightTable: lookup.rightScan.table,
+            leftKey: lookup.leftKey,
+            rightKey: lookup.rightKey,
+            joinType: lookup.joinType,
+          };
+          state.steps.push(step);
+          return Result.ok(step.id);
+        }
+
+        const left = yield* Result.await(planPhysicalNodeResult(node.left, schema, providers, context, state));
+        const right = yield* Result.await(planPhysicalNodeResult(node.right, schema, providers, context, state));
+        const step: PhysicalStep = {
+          id: nextPhysicalStepId("local_hash_join"),
+          kind: "local_hash_join",
+          dependsOn: [left, right],
+          summary: `Local ${node.joinType} join execution`,
+        };
+        state.steps.push(step);
+        return Result.ok(step.id);
+      }
+      case "window": {
+        const input = yield* Result.await(planPhysicalNodeResult(node.input, schema, providers, context, state));
+        const step: PhysicalStep = {
+          id: nextPhysicalStepId("local_window"),
+          kind: "local_window",
+          dependsOn: [input],
+          summary: "Local window execution",
+        };
+        state.steps.push(step);
+        return Result.ok(step.id);
+      }
+      case "set_op": {
+        const left = yield* Result.await(planPhysicalNodeResult(node.left, schema, providers, context, state));
+        const right = yield* Result.await(planPhysicalNodeResult(node.right, schema, providers, context, state));
+        const step: PhysicalStep = {
+          id: nextPhysicalStepId("local_set_op"),
+          kind: "local_set_op",
+          dependsOn: [left, right],
+          summary: `Local ${node.op} execution`,
+        };
+        state.steps.push(step);
+        return Result.ok(step.id);
+      }
+      case "with": {
+        const dependencies: string[] = [];
+        for (const cte of node.ctes) {
+          dependencies.push(
+            yield* Result.await(planPhysicalNodeResult(cte.query, schema, providers, context, state)),
+          );
+        }
         dependencies.push(
-          await planPhysicalNode(cte.query, schema, providers, context, state),
+          yield* Result.await(planPhysicalNodeResult(node.body, schema, providers, context, state)),
         );
-      }
-      dependencies.push(
-        await planPhysicalNode(node.body, schema, providers, context, state),
-      );
 
-      const step: PhysicalStep = {
-        id: nextPhysicalStepId("local_with"),
-        kind: "local_with",
-        dependsOn: dependencies,
-        summary: "Local WITH materialization",
-      };
-      state.steps.push(step);
-      return step.id;
+        const step: PhysicalStep = {
+          id: nextPhysicalStepId("local_with"),
+          kind: "local_with",
+          dependsOn: dependencies,
+          summary: "Local WITH materialization",
+        };
+        state.steps.push(step);
+        return Result.ok(step.id);
+      }
+      case "sql": {
+        const step: PhysicalStep = {
+          id: nextPhysicalStepId("local_project"),
+          kind: "local_project",
+          dependsOn: [],
+          summary: "Local SQL fallback execution",
+        };
+        state.steps.push(step);
+        return Result.ok(step.id);
+      }
     }
-    case "sql": {
-      const step: PhysicalStep = {
-        id: nextPhysicalStepId("local_project"),
-        kind: "local_project",
-        dependsOn: [],
-        summary: "Local SQL fallback execution",
-      };
-      state.steps.push(step);
-      return step.id;
-    }
-  }
+  });
 }
 
 function expandRelViewsInternal<TContext>(
@@ -1008,27 +1076,47 @@ function resolveViewRelRef(ref: { ref?: string }): string {
   return ref.ref;
 }
 
-async function tryPlanRemoteFragment<TContext>(
+async function tryPlanRemoteFragmentResult<TContext>(
   node: RelNode,
   schema: SchemaDefinition,
   providers: ProvidersMap<TContext>,
   context: TContext,
   state: { steps: PhysicalStep[] },
-): Promise<string | null> {
+): Promise<SqlqlResult<string | null>> {
   const provider = resolveSingleProvider(node, schema);
   if (!provider) {
-    return null;
+    return Result.ok(null);
   }
 
   const adapter = providers[provider];
   if (!adapter) {
-    throw new Error(`Missing provider adapter: ${provider}`);
+    return Result.err(
+      new SqlqlPlanningError({
+        operation: "plan remote fragment",
+        message: `Missing provider adapter: ${provider}`,
+      }),
+    );
   }
 
-  const fragment = buildProviderFragmentForNode(node, schema, provider);
-  const capability = normalizeCapability(await adapter.canExecute(fragment, context));
+  const fragmentResult = Result.try({
+    try: () => buildProviderFragmentForNode(node, schema, provider),
+    catch: (error) => toSqlqlPlanningError(error, "build provider fragment"),
+  });
+  if (Result.isError(fragmentResult)) {
+    return fragmentResult;
+  }
+
+  const capabilityResult = await Result.tryPromise({
+    try: () => Promise.resolve(adapter.canExecute(fragmentResult.value, context)),
+    catch: (error) => toSqlqlPlanningError(error, "plan remote fragment"),
+  });
+  if (Result.isError(capabilityResult)) {
+    return capabilityResult;
+  }
+
+  const capability = normalizeCapability(capabilityResult.value);
   if (!capability.supported) {
-    return null;
+    return Result.ok(null);
   }
 
   const step: PhysicalStep = {
@@ -1037,11 +1125,11 @@ async function tryPlanRemoteFragment<TContext>(
     dependsOn: [],
     summary: `Execute provider fragment (${provider})`,
     provider,
-    fragment,
+    fragment: fragmentResult.value,
   };
 
   state.steps.push(step);
-  return step.id;
+  return Result.ok(step.id);
 }
 
 export function buildProviderFragmentForRel<TContext = unknown>(
@@ -1049,13 +1137,30 @@ export function buildProviderFragmentForRel<TContext = unknown>(
   schema: SchemaDefinition,
   context?: TContext,
 ): ProviderFragment | null {
-  const expanded = expandRelViews(node, schema, context);
-  const provider = resolveSingleProvider(expanded, schema);
-  if (!provider) {
-    return null;
+  const result = buildProviderFragmentForRelResult(node, schema, context);
+  if (Result.isError(result)) {
+    throw result.error;
   }
+  return result.value;
+}
 
-  return buildProviderFragmentForNode(expanded, schema, provider);
+export function buildProviderFragmentForRelResult<TContext = unknown>(
+  node: RelNode,
+  schema: SchemaDefinition,
+  context?: TContext,
+): SqlqlResult<ProviderFragment | null> {
+  return Result.gen(function* () {
+    const expanded = yield* expandRelViewsResult(node, schema, context);
+    const provider = resolveSingleProvider(expanded, schema);
+    if (!provider) {
+      return Result.ok(null);
+    }
+
+    return Result.try({
+      try: () => buildProviderFragmentForNode(expanded, schema, provider),
+      catch: (error) => toSqlqlPlanningError(error, "build provider fragment"),
+    });
+  });
 }
 
 function buildProviderFragmentForNode(

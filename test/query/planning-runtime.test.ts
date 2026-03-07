@@ -1,8 +1,16 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import { defineSchema } from "../../src";
 import { finalizeProviders } from "../support/executable-schema";
-import { lowerSqlToRel, planPhysicalQuery } from "../../src/planning";
+import {
+  buildProviderFragmentForRelResult,
+  expandRelViewsResult,
+  lowerSqlToRel,
+  lowerSqlToRelResult,
+  planPhysicalQuery,
+  planPhysicalQueryResult,
+} from "../../src/planning";
 
 describe("query/planning", () => {
   it("lowers simple select/join into relational operators", () => {
@@ -66,6 +74,116 @@ describe("query/planning", () => {
 
     expect(limitNode.limit).toBe(5);
     expect(project.convention).toBe("local");
+  });
+
+  it("returns tagged planning errors from the result API", () => {
+    const schema = defineSchema({
+      tables: {
+        users: {
+          provider: "warehouse",
+          columns: {
+            id: "text",
+          },
+        },
+      },
+    });
+
+    const result = lowerSqlToRelResult("SELECT id FROM missing_table", schema);
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected lowering result to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlPlanningError",
+      name: "SqlqlPlanningError",
+      message: "Unknown table: missing_table",
+    });
+  });
+
+  it("returns tagged planning errors when expanding invalid view rels", () => {
+    const schema = defineSchema(({ view, rel, col }) => ({
+      tables: {
+        broken_view: view({
+          rel: () => rel.scan("missing_table"),
+          columns: {
+            id: col("missing_table.id"),
+          },
+        }),
+      },
+    }));
+
+    const lowered = lowerSqlToRel("SELECT id FROM broken_view", schema);
+    const result = expandRelViewsResult(lowered.rel, schema, {});
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected view expansion to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlPlanningError",
+      name: "SqlqlPlanningError",
+      message: "Unknown table in view rel scan: missing_table",
+    });
+  });
+
+  it("returns tagged planning errors when building provider fragments for invalid expanded rels", () => {
+    const schema = defineSchema(({ view, rel, col }) => ({
+      tables: {
+        broken_view: view({
+          rel: () => rel.scan("missing_table"),
+          columns: {
+            id: col("missing_table.id"),
+          },
+        }),
+      },
+    }));
+
+    const lowered = lowerSqlToRel("SELECT id FROM broken_view", schema);
+    const result = buildProviderFragmentForRelResult(lowered.rel, schema, {});
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected provider fragment build to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlPlanningError",
+      name: "SqlqlPlanningError",
+      message: "Unknown table in view rel scan: missing_table",
+    });
+  });
+
+  it("returns tagged planning errors from physical planning when a provider adapter is missing", async () => {
+    const schema = defineSchema({
+      tables: {
+        users: {
+          provider: "warehouse",
+          columns: {
+            id: "text",
+          },
+        },
+      },
+    });
+
+    const lowered = lowerSqlToRel("SELECT id FROM users", schema);
+    const result = await planPhysicalQueryResult(
+      lowered.rel,
+      schema,
+      {},
+      {},
+      "SELECT id FROM users",
+    );
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected physical planning to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlPlanningError",
+      name: "SqlqlPlanningError",
+      message: "Missing provider adapter: warehouse",
+    });
   });
 
   it("plans lookup_join for cross-provider joins with lookupMany", async () => {
