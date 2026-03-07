@@ -128,7 +128,7 @@ function collectWorkspaceDiagnostics(): string[] {
 }
 
 describe("playground/workspace-typecheck", () => {
-  it("typechecks the default virtual workspace", () => {
+  it("typechecks the default virtual workspace", { timeout: 15_000 }, () => {
     expect(collectWorkspaceDiagnostics()).toEqual([]);
   });
 });

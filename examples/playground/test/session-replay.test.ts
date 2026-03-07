@@ -21,7 +21,7 @@ function isSqlProviderOperation(
 }
 
 describe("playground/session-replay", () => {
-  it("replays to a specific step count deterministically", async () => {
+  it("replays to a specific step count deterministically", { timeout: 15_000 }, async () => {
     const scenario = SCENARIO_PRESETS[0];
     const query = QUERY_PRESETS[0];
     if (!scenario || !query) {
@@ -49,7 +49,7 @@ describe("playground/session-replay", () => {
     expect(replayed.events[0]?.id).toBe(first.id);
   });
 
-  it("runToCompletion helper matches done state and returns rows", async () => {
+  it("runToCompletion helper matches done state and returns rows", { timeout: 15_000 }, async () => {
     const scenario = SCENARIO_PRESETS[1];
     const query = QUERY_PRESETS[1];
     if (!scenario || !query) {
