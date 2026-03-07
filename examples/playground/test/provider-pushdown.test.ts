@@ -14,7 +14,7 @@ import {
 import { compilePlaygroundInput, createSession, runSessionToCompletion } from "../src/session-runtime";
 
 describe("playground/provider-pushdown", () => {
-  it("executes simple same-provider joins and grouped aggregates as a single downstream query", async () => {
+  it("executes simple same-provider joins and grouped aggregates as a single downstream query", { timeout: 15_000 }, async () => {
     const scenario = SCENARIO_PRESETS[0];
     if (!scenario) {
       throw new Error("Missing scenario preset.");

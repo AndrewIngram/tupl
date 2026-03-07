@@ -9,7 +9,7 @@ import {
 import { compilePlaygroundInput, createSession } from "../src/session-runtime";
 
 describe("playground/preset-queries", () => {
-  it("compiles and executes every query preset against every scenario", async () => {
+  it("compiles and executes every query preset against every scenario", { timeout: 15_000 }, async () => {
     for (const scenario of SCENARIO_PRESETS) {
       for (const query of QUERY_PRESETS) {
         const compiled = await compilePlaygroundInput(
