@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "tsdown src/index.ts --tsconfig tsconfig.build.json --format esm,cjs --sourcemap --clean --dts --unbundle",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "drizzle-orm": "latest",

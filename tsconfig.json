@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
     "target": "ES2022",
     "lib": ["ES2022"],
     "module": "ESNext",
@@ -13,11 +12,11 @@
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "sqlql": ["src/index.ts"],
-      "@sqlql/drizzle": ["packages/drizzle/src/index.ts"],
-      "@sqlql/objection": ["packages/objection/src/index.ts"],
-      "@sqlql/kysely": ["packages/kysely/src/index.ts"],
-      "@sqlql/example-shared": ["examples/_shared/src/index.ts"]
+      "sqlql": ["./src/index.ts"],
+      "@sqlql/drizzle": ["./packages/drizzle/src/index.ts"],
+      "@sqlql/objection": ["./packages/objection/src/index.ts"],
+      "@sqlql/kysely": ["./packages/kysely/src/index.ts"],
+      "@sqlql/example-shared": ["./examples/_shared/src/index.ts"]
     }
   },
   "include": ["src", "test", "examples/**/*.ts"]
