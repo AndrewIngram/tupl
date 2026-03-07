@@ -11,14 +11,13 @@ import {
   type SandboxRpcResponseMap,
 } from "./playground-sandbox";
 
-type SandboxRpcRequest =
-  {
-    [K in keyof SandboxRpcRequestMap]: {
-      id: number;
-      kind: K;
-      payload: SandboxRpcRequestMap[K];
-    };
-  }[keyof SandboxRpcRequestMap];
+type SandboxRpcRequest = {
+  [K in keyof SandboxRpcRequestMap]: {
+    id: number;
+    kind: K;
+    payload: SandboxRpcRequestMap[K];
+  };
+}[keyof SandboxRpcRequestMap];
 
 type SandboxRpcPayload = SandboxRpcResponseMap[keyof SandboxRpcResponseMap];
 
@@ -41,7 +40,11 @@ async function dispatch(request: SandboxRpcRequest): Promise<SandboxRpcPayload> 
     case "validate_schema":
       return validateSchemaInSandbox(request.payload.schemaCode, request.payload.options);
     case "create_session":
-      return createSandboxSession(request.payload.compiled, request.payload.context, request.payload.options);
+      return createSandboxSession(
+        request.payload.compiled,
+        request.payload.context,
+        request.payload.options,
+      );
     case "session_next":
       return nextSandboxSessionEvent(request.payload.sessionId);
     case "session_run_to_completion":

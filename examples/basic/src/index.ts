@@ -2,8 +2,8 @@ import { Result } from "better-result";
 import {
   bindAdapterEntities,
   createDataEntityHandle,
+  createSchemaBuilder,
   createExecutableSchema,
-  defineSchema,
   toSqlDDL,
   type ProviderAdapter,
   type QueryRow,
@@ -173,29 +173,29 @@ function projectRow(row: QueryRow, select: string[]): QueryRow {
 }
 
 async function main(): Promise<void> {
-  const rawSchema = defineSchema({
-    tables: {
-      orders_raw: {
-        provider: "memory",
-        columns: {
-          id: "text",
-          org_id: "text",
-          user_id: "text",
-          vendor_id: "text",
-          total_cents: "integer",
-          created_at: "timestamp",
-        },
-      },
-      vendors_raw: {
-        provider: "memory",
-        columns: {
-          id: "text",
-          name: "text",
-          org_id: "text",
-        },
-      },
+  const rawSchemaBuilder = createSchemaBuilder<Record<string, never>>();
+  rawSchemaBuilder.table({
+    name: "orders_raw",
+    provider: "memory",
+    columns: {
+      id: "text",
+      org_id: "text",
+      user_id: "text",
+      vendor_id: "text",
+      total_cents: "integer",
+      created_at: "timestamp",
     },
   });
+  rawSchemaBuilder.table({
+    name: "vendors_raw",
+    provider: "memory",
+    columns: {
+      id: "text",
+      name: "text",
+      org_id: "text",
+    },
+  });
+  const rawSchema = rawSchemaBuilder.build();
 
   const tableData = {
     orders_raw: [
@@ -240,8 +240,9 @@ async function main(): Promise<void> {
   };
 
   const memoryProvider = createMemoryProvider(rawSchema, tableData);
-  const executableSchema = createExecutableSchema<Record<string, never>>(({ table, view }) => {
-    const myOrders = table(memoryProvider.entities!.orders_raw!, {
+  const schemaBuilder = createSchemaBuilder<Record<string, never>>();
+  const myOrders = schemaBuilder.table(memoryProvider.entities!.orders_raw!, {
+    name: "myOrders",
       columns: ({ col, expr }) => ({
         id: col.id("id"),
         vendorId: col.string("vendor_id"),
@@ -256,9 +257,9 @@ async function main(): Promise<void> {
           { nullable: false },
         ),
       }),
-    });
+  });
 
-    const myOrderFacts = view(
+  const myOrderFacts = schemaBuilder.view(
       ({ scan, join, col, expr }) =>
         join({
           left: scan(myOrders),
@@ -267,6 +268,7 @@ async function main(): Promise<void> {
           type: "inner",
         }),
       {
+        name: "myOrderFacts",
         columns: ({ col }) => ({
           orderId: col.id(myOrders, "id"),
           vendorId: col.string(myOrders, "vendorId", { nullable: false }),
@@ -276,39 +278,33 @@ async function main(): Promise<void> {
           isLargeOrder: col.boolean(myOrders, "isLargeOrder", { nullable: false }),
         }),
       },
-    );
+  );
 
-    const myVendorSpend = view(
-      ({ scan, aggregate, col, agg }) =>
-        aggregate({
-          from: scan(myOrderFacts),
-          groupBy: {
-            vendorId: col(myOrderFacts, "vendorId"),
-            vendorName: col(myOrderFacts, "vendorName"),
-          },
-          measures: {
-            totalSpendCents: agg.sum(col(myOrderFacts, "totalCents")),
-            orderCount: agg.count(),
-          },
-        }),
-      {
-        columns: ({ col }) => ({
-          vendorId: col.id("vendorId"),
-          vendorName: col.string("vendorName"),
-          totalSpendCents: col.integer("totalSpendCents"),
-          orderCount: col.integer("orderCount"),
-        }),
-      },
-    );
+  schemaBuilder.view(
+    ({ scan, aggregate, col, agg }) =>
+      aggregate({
+        from: scan(myOrderFacts),
+        groupBy: {
+          vendorId: col(myOrderFacts, "vendorId"),
+          vendorName: col(myOrderFacts, "vendorName"),
+        },
+        measures: {
+          totalSpendCents: agg.sum(col(myOrderFacts, "totalCents")),
+          orderCount: agg.count(),
+        },
+      }),
+    {
+      name: "myVendorSpend",
+      columns: ({ col }) => ({
+        vendorId: col.id("vendorId"),
+        vendorName: col.string("vendorName"),
+        totalSpendCents: col.integer("totalSpendCents"),
+        orderCount: col.integer("orderCount"),
+      }),
+    },
+  );
 
-    return {
-      tables: {
-        myOrders,
-        myOrderFacts,
-        myVendorSpend,
-      },
-    };
-  });
+  const executableSchema = createExecutableSchema<Record<string, never>>(schemaBuilder);
 
   const ddl = toSqlDDL(rawSchema, { ifNotExists: true });
 

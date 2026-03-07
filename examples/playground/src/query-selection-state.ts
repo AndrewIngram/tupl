@@ -28,4 +28,3 @@ export function canSelectCatalogQuery(
 ): boolean {
   return compatibilityById[queryId]?.compatible === true;
 }
-

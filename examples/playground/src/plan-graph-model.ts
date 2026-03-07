@@ -373,12 +373,8 @@ export function buildPlanGraphModel(
     let guard = 0;
     while (guard < 120) {
       const scopeBlocker = topLevelScopeRects.find((blocked) =>
-        rectOverlapsWithClearance(
-          rect,
-          blocked,
-          ROOT_STEP_CLEARANCE_X,
-          ROOT_STEP_CLEARANCE_Y,
-        ));
+        rectOverlapsWithClearance(rect, blocked, ROOT_STEP_CLEARANCE_X, ROOT_STEP_CLEARANCE_Y),
+      );
       if (scopeBlocker) {
         rect.y = scopeBlocker.y + scopeBlocker.height + ROOT_STEP_CLEARANCE_Y;
         guard += 1;
@@ -386,12 +382,8 @@ export function buildPlanGraphModel(
       }
 
       const siblingBlocker = blockedRects.find((blocked) =>
-        rectOverlapsWithClearance(
-          rect,
-          blocked,
-          ROOT_STEP_CLEARANCE_X,
-          ROOT_STEP_CLEARANCE_Y,
-        ));
+        rectOverlapsWithClearance(rect, blocked, ROOT_STEP_CLEARANCE_X, ROOT_STEP_CLEARANCE_Y),
+      );
       if (!siblingBlocker) {
         break;
       }

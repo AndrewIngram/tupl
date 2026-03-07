@@ -1,29 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { queryWithMethods } from "../support/methods-provider";
 
-import { defineSchema, defineTableMethods,  type ConstraintViolation } from "../../src";
+import { defineTableMethods,  type ConstraintViolation } from "../../src";
+import { buildStaticSchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
 describe("query/constraints", () => {
   it("does not validate constraints when mode=off", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: false },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: false },
+        },
+        constraints: {
+          primaryKey: {
+            columns: ["id"],
           },
-          constraints: {
-            primaryKey: {
-              columns: ["id"],
+          unique: [
+            {
+              columns: ["email"],
             },
-            unique: [
-              {
-                columns: ["email"],
-              },
-            ],
-          },
+          ],
         },
       },
     });
@@ -56,17 +55,15 @@ describe("query/constraints", () => {
   });
 
   it("reports violations in warn mode", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: false },
-          },
-          constraints: {
-            primaryKey: {
-              columns: ["id"],
-            },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: false },
+        },
+        constraints: {
+          primaryKey: {
+            columns: ["id"],
           },
         },
       },
@@ -104,13 +101,11 @@ describe("query/constraints", () => {
   });
 
   it("throws in error mode for not-null violations", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: false },
         },
       },
     });
@@ -137,17 +132,15 @@ describe("query/constraints", () => {
   });
 
   it("throws in error mode for primary key duplicates", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: false },
-          },
-          constraints: {
-            primaryKey: {
-              columns: ["id"],
-            },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: false },
+        },
+        constraints: {
+          primaryKey: {
+            columns: ["id"],
           },
         },
       },
@@ -178,20 +171,18 @@ describe("query/constraints", () => {
   });
 
   it("throws in error mode for unique duplicates", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: false },
-          },
-          constraints: {
-            unique: [
-              {
-                columns: ["email"],
-              },
-            ],
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: false },
+        },
+        constraints: {
+          unique: [
+            {
+              columns: ["email"],
+            },
+          ],
         },
       },
     });
@@ -221,13 +212,11 @@ describe("query/constraints", () => {
   });
 
   it("validates field-level primaryKey/unique constraints at runtime", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false, primaryKey: true },
-            email: { type: "text", nullable: false, unique: true },
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false, primaryKey: true },
+          email: { type: "text", nullable: false, unique: true },
         },
       },
     });
@@ -257,37 +246,35 @@ describe("query/constraints", () => {
   });
 
   it("does not perform foreign-key runtime validation", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-          },
-          constraints: {
-            primaryKey: {
-              columns: ["id"],
-            },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+        },
+        constraints: {
+          primaryKey: {
+            columns: ["id"],
           },
         },
-        orders: {
-          columns: {
-            id: { type: "text", nullable: false },
-            user_id: { type: "text", nullable: false },
+      },
+      orders: {
+        columns: {
+          id: { type: "text", nullable: false },
+          user_id: { type: "text", nullable: false },
+        },
+        constraints: {
+          primaryKey: {
+            columns: ["id"],
           },
-          constraints: {
-            primaryKey: {
-              columns: ["id"],
-            },
-            foreignKeys: [
-              {
-                columns: ["user_id"],
-                references: {
-                  table: "users",
-                  columns: ["id"],
-                },
+          foreignKeys: [
+            {
+              columns: ["user_id"],
+              references: {
+                table: "users",
+                columns: ["id"],
               },
-            ],
-          },
+            },
+          ],
         },
       },
     });

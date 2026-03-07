@@ -1,10 +1,6 @@
 import type { PgliteDatabase } from "drizzle-orm/pglite";
 
-import type {
-  SchemaDefinition,
-  SqlScalarType,
-  TableColumnDefinition,
-} from "../../../src/index";
+import type { SchemaDefinition, SqlScalarType, TableColumnDefinition } from "../../../src/index";
 
 export interface PlaygroundContext {
   orgId: string;

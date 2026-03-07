@@ -1,7 +1,7 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import { defineSchema } from "../../src";
+import { buildSchema, buildStaticSchema } from "../support/schema-builder";
 import { finalizeProviders } from "../support/executable-schema";
 import {
   buildProviderFragmentForRelResult,
@@ -14,22 +14,20 @@ import {
 
 describe("query/planning", () => {
   it("lowers simple select/join into relational operators", () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "orders",
-          columns: {
-            id: "text",
-            user_id: "text",
-            total_cents: "integer",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "orders",
+        columns: {
+          id: "text",
+          user_id: "text",
+          total_cents: "integer",
         },
-        users: {
-          provider: "users",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "users",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -77,13 +75,11 @@ describe("query/planning", () => {
   });
 
   it("returns tagged planning errors from the result API", () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
         },
       },
     });
@@ -102,16 +98,15 @@ describe("query/planning", () => {
   });
 
   it("returns tagged planning errors when expanding invalid view rels", () => {
-    const schema = defineSchema(({ view }) => ({
-      tables: {
-        broken_view: view({
-          rel: ({ scan }) => scan("missing_table"),
-          columns: {
-            id: { source: "missing_table.id" },
-          },
-        }),
-      },
-    }));
+    const schema = buildSchema((builder) => {
+      builder.view({
+        name: "broken_view",
+        rel: ({ scan }) => scan("missing_table"),
+        columns: {
+          id: { source: "missing_table.id" },
+        },
+      });
+    });
 
     const lowered = lowerSqlToRel("SELECT id FROM broken_view", schema);
     const result = expandRelViewsResult(lowered.rel, schema, {});
@@ -128,16 +123,15 @@ describe("query/planning", () => {
   });
 
   it("returns tagged planning errors when building provider fragments for invalid expanded rels", () => {
-    const schema = defineSchema(({ view }) => ({
-      tables: {
-        broken_view: view({
-          rel: ({ scan }) => scan("missing_table"),
-          columns: {
-            id: { source: "missing_table.id" },
-          },
-        }),
-      },
-    }));
+    const schema = buildSchema((builder) => {
+      builder.view({
+        name: "broken_view",
+        rel: ({ scan }) => scan("missing_table"),
+        columns: {
+          id: { source: "missing_table.id" },
+        },
+      });
+    });
 
     const lowered = lowerSqlToRel("SELECT id FROM broken_view", schema);
     const result = buildProviderFragmentForRelResult(lowered.rel, schema, {});
@@ -154,13 +148,11 @@ describe("query/planning", () => {
   });
 
   it("returns tagged planning errors from physical planning when a provider adapter is missing", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
         },
       },
     });
@@ -187,21 +179,19 @@ describe("query/planning", () => {
   });
 
   it("plans lookup_join for cross-provider joins with lookupMany", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "orders",
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "orders",
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          provider: "users",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "users",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -267,22 +257,20 @@ describe("query/planning", () => {
   });
 
   it("plans same-provider subtree as a remote rel fragment when supported", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            user_id: "text",
-            total_cents: "integer",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          user_id: "text",
+          total_cents: "integer",
         },
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -335,21 +323,19 @@ describe("query/planning", () => {
   });
 
   it("splits deterministically to remote scans + local join when rel pushdown is rejected", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -398,21 +384,19 @@ describe("query/planning", () => {
   });
 
   it("does not plan lookup_join for RIGHT joins", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "orders",
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "orders",
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          provider: "users",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "users",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -478,20 +462,18 @@ describe("query/planning", () => {
   });
 
   it("lowers non-correlated IN (SELECT ...) to a semi join (not sql rel fallback)", () => {
-    const schema = defineSchema({
-      tables: {
-        my_orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            vendor_id: "text",
-          },
+    const schema = buildStaticSchema({
+      my_orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          vendor_id: "text",
         },
-        preferred_vendors: {
-          provider: "warehouse",
-          columns: {
-            vendor_id: "text",
-          },
+      },
+      preferred_vendors: {
+        provider: "warehouse",
+        columns: {
+          vendor_id: "text",
         },
       },
     });
@@ -520,16 +502,14 @@ describe("query/planning", () => {
   });
 
   it("lowers UNION ALL to structured set_op rel", () => {
-    const schema = defineSchema({
-      tables: {
-        a: {
-          provider: "warehouse",
-          columns: { id: "text" },
-        },
-        b: {
-          provider: "warehouse",
-          columns: { id: "text" },
-        },
+    const schema = buildStaticSchema({
+      a: {
+        provider: "warehouse",
+        columns: { id: "text" },
+      },
+      b: {
+        provider: "warehouse",
+        columns: { id: "text" },
       },
     });
 
@@ -550,14 +530,12 @@ describe("query/planning", () => {
   });
 
   it("lowers WITH queries to structured with rel", () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            org_id: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          org_id: "text",
         },
       },
     });
@@ -585,14 +563,12 @@ describe("query/planning", () => {
   });
 
   it("lowers DENSE_RANK window projections to a window rel node", () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            total_cents: "integer",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          total_cents: "integer",
         },
       },
     });

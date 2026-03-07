@@ -10,7 +10,11 @@ interface SqlPreviewLineProps {
   onActivate: () => void;
 }
 
-export function SqlPreviewLine({ monaco, sql, onActivate }: SqlPreviewLineProps): React.JSX.Element {
+export function SqlPreviewLine({
+  monaco,
+  sql,
+  onActivate,
+}: SqlPreviewLineProps): React.JSX.Element {
   const normalized = useMemo(() => normalizeSqlPreview(sql), [sql]);
   const [colorizedHtml, setColorizedHtml] = useState<string>("");
 

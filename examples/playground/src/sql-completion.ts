@@ -94,9 +94,8 @@ function resolveColumnReference(
   }
 
   const aliasTableNames = unique([...aliases.values()]);
-  const candidateTableNames = aliasTableNames.length > 0
-    ? aliasTableNames
-    : Object.keys(schema.tables);
+  const candidateTableNames =
+    aliasTableNames.length > 0 ? aliasTableNames : Object.keys(schema.tables);
   const matches = candidateTableNames.filter((tableName) => {
     const table = schema.tables[tableName];
     return Boolean(table && columnName in table.columns);
@@ -116,9 +115,8 @@ function resolveEnumSuggestions(
   aliases: Map<string, string>,
   schema: SchemaDefinition,
 ): string[] {
-  const comparisonMatch = /([a-z_][\w]*(?:\.[a-z_][\w]*)?)\s*(?:=|!=|<>|<=|>=|<|>)\s*(?:'[^']*)?$/iu.exec(
-    before,
-  );
+  const comparisonMatch =
+    /([a-z_][\w]*(?:\.[a-z_][\w]*)?)\s*(?:=|!=|<>|<=|>=|<|>)\s*(?:'[^']*)?$/iu.exec(before);
   if (comparisonMatch?.[1]) {
     const resolved = resolveColumnReference(comparisonMatch[1], aliases, schema);
     if (resolved) {
@@ -213,7 +211,7 @@ function tableColumnNamesForClause(
   }
 
   return Object.keys(table.columns).filter((columnName) =>
-    isColumnAllowedInClause(schema, tableName, columnName, clauseContext)
+    isColumnAllowedInClause(schema, tableName, columnName, clauseContext),
   );
 }
 
@@ -283,14 +281,14 @@ export function getSqlSuggestionLabels(
   }
 
   const tableColumns = Object.keys(schema.tables).flatMap((tableName) =>
-    tableColumnNamesForClause(schema, tableName, clauseContext).map((columnName) =>
-      `${tableName}.${columnName}`
+    tableColumnNamesForClause(schema, tableName, clauseContext).map(
+      (columnName) => `${tableName}.${columnName}`,
     ),
   );
 
   const aliasColumns = [...aliases.entries()].flatMap(([alias, tableName]) => {
-    return tableColumnNamesForClause(schema, tableName, clauseContext).map((columnName) =>
-      `${alias}.${columnName}`
+    return tableColumnNamesForClause(schema, tableName, clauseContext).map(
+      (columnName) => `${alias}.${columnName}`,
     );
   });
 
@@ -350,7 +348,8 @@ export function registerSqlCompletionProvider(
       const sqlText = model.getValue();
       const { context, labels } = getSqlSuggestionLabels(sqlText, offset, schema);
       const word = model.getWordUntilPosition(position);
-      const insideString = context === "enum_value" && isInsideSingleQuotedString(beforeText(sqlText, offset));
+      const insideString =
+        context === "enum_value" && isInsideSingleQuotedString(beforeText(sqlText, offset));
 
       return {
         suggestions: labels.map((label) => ({

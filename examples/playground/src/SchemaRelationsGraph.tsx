@@ -140,7 +140,13 @@ function SchemaRelationsGraphCanvas({
   }, []);
 
   useEffect(() => {
-    if (!isVisible || hasInitialFitRef.current || !nodesInitialized || !isContainerReady || model.nodes.length === 0) {
+    if (
+      !isVisible ||
+      hasInitialFitRef.current ||
+      !nodesInitialized ||
+      !isContainerReady ||
+      model.nodes.length === 0
+    ) {
       return;
     }
 

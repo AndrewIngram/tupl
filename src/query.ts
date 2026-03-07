@@ -29,13 +29,14 @@ import {
   lowerSqlToRelResult,
 } from "./planning";
 import {
-  defineSchema,
+  finalizeSchemaDefinition,
   getNormalizedTableBinding,
+  isSchemaBuilder,
   mapProviderRowsToLogical,
   mapProviderRowsToRelOutput,
   resolveSchemaLinkedEnums,
 } from "./schema";
-import type { QueryRow, SchemaDefinition, SchemaDslDefinition, SchemaDslHelpers } from "./schema";
+import type { QueryRow, SchemaBuilder, SchemaDefinition } from "./schema";
 
 export type { QueryFallbackPolicy, SqlqlDiagnostic } from "./provider";
 export { SqlqlDiagnosticError } from "./errors";
@@ -1856,15 +1857,17 @@ function collectExecutableProviders<TContext>(schema: SchemaDefinition): Provide
 }
 
 export function createExecutableSchema<TContext>(
-  schemaBuilder: (helpers: SchemaDslHelpers<TContext>) => SchemaDslDefinition<TContext>,
+  builder: SchemaBuilder<TContext>,
 ): ExecutableSchema<TContext, SchemaDefinition>;
 export function createExecutableSchema<TContext, TSchema extends SchemaDefinition>(
   schema: TSchema,
 ): ExecutableSchema<TContext, TSchema>;
 export function createExecutableSchema<TContext, TSchema extends SchemaDefinition>(
-  input: TSchema | ((helpers: SchemaDslHelpers<TContext>) => SchemaDslDefinition<TContext>),
+  input: TSchema | SchemaBuilder<TContext>,
 ): ExecutableSchema<TContext, TSchema | SchemaDefinition> {
-  const schema = defineSchema(input as never) as TSchema | SchemaDefinition;
+  const schema = isSchemaBuilder<TContext>(input)
+    ? input.build()
+    : finalizeSchemaDefinition(input as TSchema);
   const providers = collectExecutableProviders<TContext>(schema);
   const runtime: ExecutableSchemaRuntime<TContext> = {
     schema,

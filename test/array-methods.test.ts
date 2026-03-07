@@ -8,10 +8,10 @@ import {
 } from "../src/array-methods";
 
 import {
-  defineSchema,
   defineTableMethods,
   type QueryRow,
 } from "../src";
+import { buildStaticSchema } from "./support/schema-builder";
 
 describe("array methods", () => {
   const orders: QueryRow[] = [
@@ -75,22 +75,20 @@ describe("array methods", () => {
       { id: "usr_3", email: "c@example.com" },
     ];
 
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            org_id: "text",
-            user_id: "text",
-            total_cents: "integer",
-            created_at: "timestamp",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          org_id: "text",
+          user_id: "text",
+          total_cents: "integer",
+          created_at: "timestamp",
         },
-        users: {
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });

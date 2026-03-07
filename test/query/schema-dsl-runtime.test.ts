@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createSchemaBuilder,
   createDataEntityHandle,
-  defineSchema,
   resolveTableColumnDefinition,
   toSqlDDL,
 } from "../../src";
@@ -18,29 +18,29 @@ describe("query/schema dsl", () => {
       provider: "warehouse",
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        my_vendors: table(vendorsEntity, {
-          columns: () => ({
-            id: { source: "id", type: "text", nullable: false, primaryKey: true },
-          }),
-        }),
-        my_orders: table(ordersEntity, {
-          columns: () => ({
-            id: { source: "id", type: "text", nullable: false, primaryKey: true },
-            vendor_id: {
-              source: "vendor_id",
-              type: "text",
-              nullable: false,
-              foreignKey: {
-                table: "my_vendors",
-                column: "id",
-              },
-            },
-          }),
-        }),
-      },
-    }));
+    const builder = createSchemaBuilder<Record<string, never>>();
+    builder.table(vendorsEntity, {
+      name: "my_vendors",
+      columns: () => ({
+        id: { source: "id", type: "text", nullable: false, primaryKey: true },
+      }),
+    });
+    builder.table(ordersEntity, {
+      name: "my_orders",
+      columns: () => ({
+        id: { source: "id", type: "text", nullable: false, primaryKey: true },
+        vendor_id: {
+          source: "vendor_id",
+          type: "text",
+          nullable: false,
+          foreignKey: {
+            table: "my_vendors",
+            column: "id",
+          },
+        },
+      }),
+    });
+    const schema = builder.build();
 
     const resolved = resolveTableColumnDefinition(schema, "my_orders", "vendor_id");
     expect(resolved.foreignKey).toEqual({

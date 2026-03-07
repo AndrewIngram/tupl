@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { defineSchema } from "../../src";
 import { commerceRows, commerceSchema } from "../support/commerce-fixture";
 import { withQueryHarness } from "../support/query-harness";
+import { buildStaticSchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -33,14 +33,12 @@ describe("query/basic", () => {
   });
 
   it("handles null filters and null ordering like sqlite", async () => {
-    const schema = defineSchema({
-      tables: {
-        items: {
-          columns: {
-            id: { type: "text", nullable: false },
-            category: { type: "text", nullable: true },
-            score: { type: "integer", nullable: true },
-          },
+    const schema = buildStaticSchema({
+      items: {
+        columns: {
+          id: { type: "text", nullable: false },
+          category: { type: "text", nullable: true },
+          score: { type: "integer", nullable: true },
         },
       },
     });
@@ -102,13 +100,11 @@ describe("query/basic", () => {
   });
 
   it("returns empty result sets for empty tables", async () => {
-    const schema = defineSchema({
-      tables: {
-        events: {
-          columns: {
-            id: { type: "text", nullable: false },
-            kind: { type: "text", nullable: true },
-          },
+    const schema = buildStaticSchema({
+      events: {
+        columns: {
+          id: { type: "text", nullable: false },
+          kind: { type: "text", nullable: true },
         },
       },
     });

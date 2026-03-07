@@ -95,9 +95,17 @@ function matchesClause(row: QueryRow, clause: ScanFilterClause): boolean {
     case "not_in":
       return !clause.values.includes(value);
     case "like":
-      return typeof value === "string" && typeof clause.value === "string" && matchesLike(value, clause.value);
+      return (
+        typeof value === "string" &&
+        typeof clause.value === "string" &&
+        matchesLike(value, clause.value)
+      );
     case "not_like":
-      return typeof value === "string" && typeof clause.value === "string" && !matchesLike(value, clause.value);
+      return (
+        typeof value === "string" &&
+        typeof clause.value === "string" &&
+        !matchesLike(value, clause.value)
+      );
     case "is_distinct_from":
       return value !== clause.value;
     case "is_not_distinct_from":
@@ -229,7 +237,9 @@ export function createKvProvider<
   entities: { [K in keyof TEntities]: DataEntityHandle<TEntities[K]["columns"][number]> };
 } {
   const providerName = options.name ?? KV_PROVIDER_NAME;
-  const handles = {} as { [K in keyof TEntities]: DataEntityHandle<TEntities[K]["columns"][number]> };
+  const handles = {} as {
+    [K in keyof TEntities]: DataEntityHandle<TEntities[K]["columns"][number]>;
+  };
   const adapter = {
     name: providerName,
     entities: handles,
@@ -255,7 +265,9 @@ export function createKvProvider<
       const allowedColumns = new Set(mapping.columns);
       for (const column of fragment.request.select) {
         if (!allowedColumns.has(column)) {
-          return Result.err(new Error(`Unsupported KV column in select for ${fragment.table}: ${column}`));
+          return Result.err(
+            new Error(`Unsupported KV column in select for ${fragment.table}: ${column}`),
+          );
         }
       }
 
@@ -296,11 +308,15 @@ export function createKvProvider<
       const allowedColumns = new Set(mapping.columns);
 
       if (!allowedColumns.has(request.key)) {
-        return Result.err(new Error(`Unsupported KV lookup key column for ${request.table}: ${request.key}`));
+        return Result.err(
+          new Error(`Unsupported KV lookup key column for ${request.table}: ${request.key}`),
+        );
       }
       for (const column of request.select) {
         if (!allowedColumns.has(column)) {
-          return Result.err(new Error(`Unsupported KV lookup select column for ${request.table}: ${column}`));
+          return Result.err(
+            new Error(`Unsupported KV lookup select column for ${request.table}: ${column}`),
+          );
         }
       }
 

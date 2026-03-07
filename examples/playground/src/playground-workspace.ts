@@ -93,11 +93,14 @@ const DRIZZLE_DECLARATION_IMPORTS = import.meta.glob("../node_modules/drizzle-or
   query: "?raw",
 }) as Record<string, string>;
 
-const PGLITE_DECLARATION_IMPORTS = import.meta.glob("../node_modules/@electric-sql/pglite/**/*.d.ts", {
-  eager: true,
-  import: "default",
-  query: "?raw",
-}) as Record<string, string>;
+const PGLITE_DECLARATION_IMPORTS = import.meta.glob(
+  "../node_modules/@electric-sql/pglite/**/*.d.ts",
+  {
+    eager: true,
+    import: "default",
+    query: "?raw",
+  },
+) as Record<string, string>;
 
 const BETTER_RESULT_DECLARATION_IMPORTS = {
   ...import.meta.glob("../node_modules/better-result/dist/index.d.mts", {
@@ -192,8 +195,7 @@ export const playgroundKvRuntime: KvProviderFactoryRuntime = getPlaygroundKvRunt
 };
 
 const PGLITE_ROOT_DECLARATION_FILES: Record<string, string> = {
-  [`${NODE_MODULES_ROOT_PATH}/@electric-sql/pglite/index.d.ts`]:
-    'export * from "./dist/index";',
+  [`${NODE_MODULES_ROOT_PATH}/@electric-sql/pglite/index.d.ts`]: 'export * from "./dist/index";',
 };
 
 const STATIC_SOURCE_FILES = {
@@ -242,9 +244,7 @@ export function buildPlaygroundWorkspaceSnapshot(
   };
 }
 
-export function readPlaygroundWorkspaceUris(
-  workspace: PlaygroundWorkspaceSnapshot,
-): {
+export function readPlaygroundWorkspaceUris(workspace: PlaygroundWorkspaceSnapshot): {
   userUris: Record<string, string>;
   readonlyUris: string[];
   sourceUris: string[];

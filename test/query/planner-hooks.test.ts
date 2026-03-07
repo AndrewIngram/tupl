@@ -7,26 +7,24 @@ import {
 } from "../../src/array-methods";
 
 import {
-  defineSchema,
   defineTableMethods,
   type TableAggregateRequest,
   type TableLookupRequest,
   type TableScanRequest,
 } from "../../src";
+import { buildStaticSchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
 describe("query/planner-hooks", () => {
   it("applies ID-based planScan pushdown with local residual execution", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            status: "text",
-            total_cents: "integer",
-            created_at: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          status: "text",
+          total_cents: "integer",
+          created_at: "text",
         },
       },
     });
@@ -79,13 +77,11 @@ describe("query/planner-hooks", () => {
   });
 
   it("allows planScan residuals by default", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            status: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          status: "text",
         },
       },
     });
@@ -112,14 +108,12 @@ describe("query/planner-hooks", () => {
   });
 
   it("supports explicit remote/residual planScan mode", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            status: "text",
-            total_cents: "integer",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          status: "text",
+          total_cents: "integer",
         },
       },
     });
@@ -160,19 +154,17 @@ describe("query/planner-hooks", () => {
   });
 
   it("applies planLookup and local residual filters", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -220,14 +212,12 @@ describe("query/planner-hooks", () => {
   });
 
   it("falls back from aggregate handler when planAggregate leaves residual and policy allows it", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            status: "text",
-            total_cents: "integer",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          status: "text",
+          total_cents: "integer",
         },
       },
     });

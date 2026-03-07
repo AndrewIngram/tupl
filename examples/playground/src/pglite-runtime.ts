@@ -50,17 +50,18 @@ export function recordExecutedProviderOperation(
 ): ExecutedProviderOperation {
   const id = makeOperationId();
   const timestamp = Date.now();
-  const entry = operation.kind === "sql_query"
-    ? {
-        ...operation,
-        id,
-        timestamp,
-      } satisfies ExecutedSqlProviderOperation
-    : {
-        ...operation,
-        id,
-        timestamp,
-      } satisfies ExecutedKvLookupProviderOperation;
+  const entry =
+    operation.kind === "sql_query"
+      ? ({
+          ...operation,
+          id,
+          timestamp,
+        } satisfies ExecutedSqlProviderOperation)
+      : ({
+          ...operation,
+          id,
+          timestamp,
+        } satisfies ExecutedKvLookupProviderOperation);
   executedProviderOperations.push(entry);
   return entry;
 }
@@ -158,7 +159,10 @@ async function insertRowsSerial(
   rows: QueryRow[],
 ): Promise<void> {
   for (const row of rows) {
-    await db.insert(table as never).values(row as never).execute();
+    await db
+      .insert(table as never)
+      .values(row as never)
+      .execute();
   }
 }
 

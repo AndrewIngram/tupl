@@ -1,20 +1,17 @@
 import { z } from "zod";
 import {
-  defineSchema,
+  createSchemaBuilder,
   type QueryRow,
   type SchemaDefinition,
   type TableColumnDefinition,
   type TableDefinition,
 } from "../../../src/index";
+import { finalizeSchemaDefinition } from "../../../src/schema";
 
 import { DOWNSTREAM_ROWS_SCHEMA } from "./downstream-model";
 import { KV_INPUT_TABLE_DEFINITION, KV_INPUT_TABLE_NAME } from "./kv-provider";
-import {
-  requestSandboxWorker,
-} from "./playground-sandbox-client";
-import {
-  validateSchemaInSandbox,
-} from "./playground-sandbox";
+import { requestSandboxWorker } from "./playground-sandbox-client";
+import { validateSchemaInSandbox } from "./playground-sandbox";
 import type { PlaygroundSchemaProgramOptions } from "./playground-program-files";
 import {
   isColumnNullable,
@@ -38,12 +35,27 @@ const sqlScalarTypeSchema = z.enum([
 const sqlScalarTypeValues = sqlScalarTypeSchema.options;
 const physicalDialectSchema = z.enum(["postgres", "sqlite"]);
 
-const DOWNSTREAM_INPUT_ROWS_SCHEMA: SchemaDefinition = defineSchema({
-  tables: {
-    ...DOWNSTREAM_ROWS_SCHEMA.tables,
-    [KV_INPUT_TABLE_NAME]: KV_INPUT_TABLE_DEFINITION,
-  },
+const downstreamInputRowsBuilder = createSchemaBuilder<Record<string, never>>();
+
+for (const [tableName, tableDefinition] of Object.entries(DOWNSTREAM_ROWS_SCHEMA.tables)) {
+  downstreamInputRowsBuilder.table({
+    name: tableName,
+    ...(tableDefinition.provider ? { provider: tableDefinition.provider } : {}),
+    columns: tableDefinition.columns,
+    ...(tableDefinition.constraints ? { constraints: tableDefinition.constraints } : {}),
+  });
+}
+
+downstreamInputRowsBuilder.table({
+  name: KV_INPUT_TABLE_NAME,
+  ...(KV_INPUT_TABLE_DEFINITION.provider ? { provider: KV_INPUT_TABLE_DEFINITION.provider } : {}),
+  columns: KV_INPUT_TABLE_DEFINITION.columns,
+  ...(KV_INPUT_TABLE_DEFINITION.constraints
+    ? { constraints: KV_INPUT_TABLE_DEFINITION.constraints }
+    : {}),
 });
+
+const DOWNSTREAM_INPUT_ROWS_SCHEMA: SchemaDefinition = downstreamInputRowsBuilder.build();
 
 const primaryKeySchema = z
   .object({
@@ -210,7 +222,7 @@ export async function parseFacadeSchemaCode(
     }
     return {
       ok: true,
-      schema: defineSchema(workerResult.schema),
+      schema: finalizeSchemaDefinition(workerResult.schema),
       issues: [],
     };
   }
@@ -243,7 +255,7 @@ export function parseFacadeSchemaText(value: string): SchemaParseResult {
   }
 
   try {
-    const schema = defineSchema(parsedSchema.data as SchemaDefinition);
+    const schema = finalizeSchemaDefinition(parsedSchema.data as SchemaDefinition);
     return {
       ok: true,
       schema,
@@ -267,7 +279,7 @@ export const parseSchemaText = parseFacadeSchemaText;
 function validatorForColumn(column: TableColumnDefinition): z.ZodType<unknown> {
   const type = readColumnType(column);
   const enumValues =
-    typeof column === "string" ? undefined : (column.type === "text" ? column.enum : undefined);
+    typeof column === "string" ? undefined : column.type === "text" ? column.enum : undefined;
   let validator: z.ZodType<unknown>;
 
   switch (type) {
@@ -360,7 +372,7 @@ function toJsonSchemaType(column: TableColumnDefinition): Record<string, unknown
   const type = readColumnType(column);
   const baseType = type === "integer" ? "number" : type === "boolean" ? "boolean" : "string";
   const enumValues =
-    typeof column === "string" ? undefined : (column.type === "text" ? column.enum : undefined);
+    typeof column === "string" ? undefined : column.type === "text" ? column.enum : undefined;
 
   if (isColumnNullable(column)) {
     return {

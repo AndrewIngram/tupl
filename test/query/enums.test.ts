@@ -2,19 +2,18 @@ import { describe, expect, it } from "vitest";
 import { queryWithMethods } from "../support/methods-provider";
 import { createArrayTableMethods } from "../../src/array-methods";
 
-import { defineSchema, defineTableMethods } from "../../src";
+import { defineTableMethods } from "../../src";
+import { buildStaticSchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
 describe("query/enums", () => {
   it("rejects invalid enum literal for = predicates", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            status: { type: "text", enum: ["draft", "paid", "void"] as const },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          status: { type: "text", enum: ["draft", "paid", "void"] as const },
         },
       },
     });
@@ -34,13 +33,11 @@ describe("query/enums", () => {
   });
 
   it("rejects invalid enum literal for IN predicates", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            status: { type: "text", enum: ["draft", "paid", "void"] as const },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          status: { type: "text", enum: ["draft", "paid", "void"] as const },
         },
       },
     });
@@ -60,13 +57,11 @@ describe("query/enums", () => {
   });
 
   it("surfaces runtime enum/check violations in constraint validation mode", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: { type: "text", nullable: false },
-            status: { type: "text", nullable: false, enum: ["draft", "paid"] as const },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: { type: "text", nullable: false },
+          status: { type: "text", nullable: false, enum: ["draft", "paid"] as const },
         },
       },
     });
@@ -96,23 +91,21 @@ describe("query/enums", () => {
   });
 
   it("supports explicit CHECK IN constraints", async () => {
-    const schema = defineSchema({
-      tables: {
-        invoices: {
-          columns: {
-            id: { type: "text", nullable: false },
-            amount_due: { type: "integer", nullable: false },
-          },
-          constraints: {
-            checks: [
-              {
-                kind: "in",
-                column: "amount_due",
-                values: [100, 200, 300],
-                name: "amount_due_allowed",
-              },
-            ],
-          },
+    const schema = buildStaticSchema({
+      invoices: {
+        columns: {
+          id: { type: "text", nullable: false },
+          amount_due: { type: "integer", nullable: false },
+        },
+        constraints: {
+          checks: [
+            {
+              kind: "in",
+              column: "amount_due",
+              values: [100, 200, 300],
+              name: "amount_due_allowed",
+            },
+          ],
         },
       },
     });

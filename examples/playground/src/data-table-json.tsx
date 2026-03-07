@@ -7,6 +7,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { serializeJson } from "@/examples";
 import { cn } from "@/lib/utils";
 
+const MONACO_INDENT_OPTIONS = {
+  detectIndentation: false,
+  insertSpaces: true,
+  tabSize: 2,
+} as const;
+
 interface DataTableJsonEditorProps {
   tableName: string;
   rows: QueryRow[];
@@ -68,7 +74,12 @@ export function DataTableJsonEditor({
           language="json"
           value={text}
           onChange={(value) => handleChange(value ?? "")}
-          options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
+          options={{
+            minimap: { enabled: false },
+            fontSize: 13,
+            scrollBeyondLastLine: false,
+            ...MONACO_INDENT_OPTIONS,
+          }}
           height={editorHeight}
         />
       </div>

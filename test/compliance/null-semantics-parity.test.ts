@@ -1,16 +1,14 @@
-import { defineSchema } from "../../src";
+import { buildStaticSchema } from "../support/schema-builder";
 import type { RowsByTable } from "../support/query-harness";
 import { registerParityCases, type ComplianceCase } from "./support/case-runner";
 
-const schema = defineSchema({
-  tables: {
-    items: {
-      columns: {
-        id: { type: "text", nullable: false },
-        group_key: { type: "text", nullable: true },
-        amount: { type: "integer", nullable: true },
-        active: { type: "boolean", nullable: true },
-      },
+const schema = buildStaticSchema({
+  items: {
+    columns: {
+      id: { type: "text", nullable: false },
+      group_key: { type: "text", nullable: true },
+      amount: { type: "integer", nullable: true },
+      active: { type: "boolean", nullable: true },
     },
   },
 });
