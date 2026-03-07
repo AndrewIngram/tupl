@@ -61,8 +61,8 @@ export interface PlaygroundCompileSuccess {
   schema: SchemaDefinition;
   schemaCode: string;
   downstreamRows: DownstreamRows;
-  sql: string;
   modules: Record<string, string>;
+  sql: string;
 }
 
 export interface PlaygroundCompileFailure {
@@ -74,6 +74,16 @@ export type PlaygroundCompileResult = PlaygroundCompileSuccess | PlaygroundCompi
 
 export interface PlaygroundSchemaProgramOptions {
   modules?: Record<string, string>;
+}
+
+export type PlaygroundPreparedInputSuccess = Omit<PlaygroundCompileSuccess, "sql">;
+
+export type PlaygroundPreparedInputResult =
+  | PlaygroundPreparedInputSuccess
+  | PlaygroundCompileFailure;
+
+export interface PlaygroundSessionOptions {
+  reseed?: boolean;
 }
 
 export interface SessionSnapshot {
@@ -115,8 +125,70 @@ const operationRecorder: PlaygroundOperationRecorder = {
   record: recordExecutedProviderOperation,
 };
 
+interface PlaygroundPreparedInputCacheEntry extends PlaygroundPreparedInputSuccess {
+  cacheKey: string;
+}
+
+const preparedInputCache = new Map<string, Promise<PlaygroundPreparedInputResult>>();
+const executableSchemaCache = new Map<
+  string,
+  Promise<{
+    executableSchema: ExecutableSchema<PlaygroundContext, SchemaDefinition>;
+    dbProvider: ProviderAdapter<PlaygroundContext>;
+    kvProvider: ProviderAdapter<PlaygroundContext>;
+  }>
+>();
+const MAX_PREPARED_INPUT_CACHE_ENTRIES = 16;
+const MAX_EXECUTABLE_SCHEMA_CACHE_ENTRIES = 16;
+
 export function getPlaygroundOperationRecorder(): PlaygroundOperationRecorder {
   return operationRecorder;
+}
+
+function buildPlaygroundModules(
+  options: PlaygroundSchemaProgramOptions = {},
+): Record<string, string> {
+  return {
+    [DB_PROVIDER_MODULE_ID]: DEFAULT_DB_PROVIDER_CODE,
+    [GENERATED_DB_MODULE_ID]: DEFAULT_GENERATED_DB_FILE_CODE,
+    [KV_PROVIDER_MODULE_ID]: DEFAULT_KV_PROVIDER_CODE,
+    ...options.modules,
+  };
+}
+
+function serializeStringRecord(record: Record<string, string>): string {
+  return JSON.stringify(
+    Object.entries(record).sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function createPreparedInputCacheKey(
+  schemaCodeText: string,
+  rowsText: string,
+  modules: Record<string, string>,
+): string {
+  return `${schemaCodeText}\u0000${rowsText}\u0000${serializeStringRecord(modules)}`;
+}
+
+function createExecutableSchemaCacheKey(
+  compiled: PlaygroundPreparedInputSuccess,
+): string {
+  return `${compiled.schemaCode}\u0000${JSON.stringify(compiled.downstreamRows)}\u0000${serializeStringRecord(compiled.modules)}`;
+}
+
+function setBoundedCacheEntry<T>(
+  cache: Map<string, T>,
+  key: string,
+  value: T,
+  maxEntries: number,
+): void {
+  if (!cache.has(key) && cache.size >= maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (typeof oldestKey === "string") {
+      cache.delete(oldestKey);
+    }
+  }
+  cache.set(key, value);
 }
 
 interface SqlBindingInfo {
@@ -604,79 +676,89 @@ function readKvInputRows(rows: DownstreamRows): KvInputRow[] {
 }
 
 async function buildExecutableSchemaFromModules(
-  compiled: PlaygroundCompileSuccess,
+  compiled: PlaygroundPreparedInputSuccess,
 ): Promise<{
   executableSchema: ExecutableSchema<PlaygroundContext, SchemaDefinition>;
   dbProvider: ProviderAdapter<PlaygroundContext>;
   kvProvider: ProviderAdapter<PlaygroundContext>;
 }> {
-  const runtime = await getPlaygroundPgliteRuntime();
-  const runtimeDbTables: DbProviderRuntimeInput["tables"] = {
-    orgs: orgsTable,
-    users: usersTable,
-    vendors: vendorsTable,
-    products: productsTable,
-    orders: ordersTable,
-    order_items: orderItemsTable,
-    user_product_access: userProductAccessTable,
-  };
-  const staticModules: Record<string, unknown> = {
-    sqlql: sqlqlModule,
-    "@sqlql/drizzle": drizzleAdapterModule,
-    "drizzle-orm": drizzleOrmModule,
-    "@playground/kv-provider-core": {
-      createKvProvider,
-      playgroundKvRuntime: {
-        rows: readKvInputRows(compiled.downstreamRows),
-        recordOperation: operationRecorder.record,
-      },
-    },
-    [GENERATED_DB_MODULE_ID]: {
-      db: runtime.db,
-      tables: runtimeDbTables,
-    } satisfies DbProviderRuntimeInput,
-  };
+  const cacheKey = createExecutableSchemaCacheKey(compiled);
+  let cached = executableSchemaCache.get(cacheKey);
+  if (!cached) {
+    cached = (async () => {
+      const runtime = await getPlaygroundPgliteRuntime();
+      const runtimeDbTables: DbProviderRuntimeInput["tables"] = {
+        orgs: orgsTable,
+        users: usersTable,
+        vendors: vendorsTable,
+        products: productsTable,
+        orders: ordersTable,
+        order_items: orderItemsTable,
+        user_product_access: userProductAccessTable,
+      };
+      const staticModules: Record<string, unknown> = {
+        sqlql: sqlqlModule,
+        "@sqlql/drizzle": drizzleAdapterModule,
+        "drizzle-orm": drizzleOrmModule,
+        "@playground/kv-provider-core": {
+          createKvProvider,
+          playgroundKvRuntime: {
+            rows: readKvInputRows(compiled.downstreamRows),
+            recordOperation: operationRecorder.record,
+          },
+        },
+        [GENERATED_DB_MODULE_ID]: {
+          db: runtime.db,
+          tables: runtimeDbTables,
+        } satisfies DbProviderRuntimeInput,
+      };
 
-  const cache = new Map<string, Record<string, unknown>>();
-  const schemaModuleExports = executePlaygroundModule(
-    "__entry__",
-    {
-      __entry__: compiled.schemaCode,
-      ...compiled.modules,
-    },
-    staticModules,
-    cache,
-  );
-  const dbProviderExports = executePlaygroundModule(
-    DB_PROVIDER_MODULE_ID,
-    compiled.modules,
-    staticModules,
-    cache,
-  );
-  const kvProviderExports = executePlaygroundModule(
-    KV_PROVIDER_MODULE_ID,
-    compiled.modules,
-    staticModules,
-    cache,
-  );
+      const cache = new Map<string, Record<string, unknown>>();
+      const schemaModuleExports = executePlaygroundModule(
+        "__entry__",
+        {
+          __entry__: compiled.schemaCode,
+          ...compiled.modules,
+        },
+        staticModules,
+        cache,
+      );
+      const dbProviderExports = executePlaygroundModule(
+        DB_PROVIDER_MODULE_ID,
+        compiled.modules,
+        staticModules,
+        cache,
+      );
+      const kvProviderExports = executePlaygroundModule(
+        KV_PROVIDER_MODULE_ID,
+        compiled.modules,
+        staticModules,
+        cache,
+      );
 
-  const executableSchema = readExecutableSchemaOrThrow<PlaygroundContext>("schema.ts", schemaModuleExports);
-  const dbProvider = readProviderExportOrThrow<PlaygroundContext>(
-    DB_PROVIDER_MODULE_ID,
-    dbProviderExports,
-    "dbProvider",
-  );
-  const kvProvider = readProviderExportOrThrow<PlaygroundContext>(
-    KV_PROVIDER_MODULE_ID,
-    kvProviderExports,
-    "kvProvider",
-  );
+      return {
+        executableSchema: readExecutableSchemaOrThrow<PlaygroundContext>("schema.ts", schemaModuleExports),
+        dbProvider: readProviderExportOrThrow<PlaygroundContext>(
+          DB_PROVIDER_MODULE_ID,
+          dbProviderExports,
+          "dbProvider",
+        ),
+        kvProvider: readProviderExportOrThrow<PlaygroundContext>(
+          KV_PROVIDER_MODULE_ID,
+          kvProviderExports,
+          "kvProvider",
+        ),
+      };
+    })();
+    setBoundedCacheEntry(
+      executableSchemaCache,
+      cacheKey,
+      cached,
+      MAX_EXECUTABLE_SCHEMA_CACHE_ENTRIES,
+    );
+  }
 
-  return {
-    executableSchema,
-    dbProvider,
-    kvProvider,
-  };
+  return cached;
 }
 
 function resolveDownstreamEnumValues(ref: { table: string; column: string }): readonly string[] | undefined {
@@ -719,50 +801,76 @@ function buildTranslation(
   };
 }
 
-export async function compilePlaygroundInput(
+export async function preparePlaygroundInput(
   schemaCodeText: string,
   rowsText: string,
-  sqlText: string,
   options: PlaygroundSchemaProgramOptions = {},
-): Promise<PlaygroundCompileResult> {
-  const modules = {
-    [DB_PROVIDER_MODULE_ID]: DEFAULT_DB_PROVIDER_CODE,
-    [GENERATED_DB_MODULE_ID]: DEFAULT_GENERATED_DB_FILE_CODE,
-    [KV_PROVIDER_MODULE_ID]: DEFAULT_KV_PROVIDER_CODE,
-    ...options.modules,
-  };
-  const schemaResult = await parseFacadeSchemaCode(schemaCodeText, {
-    modules,
-  });
-  if (!schemaResult.ok || !schemaResult.schema) {
-    return {
-      ok: false,
-      issues: schemaResult.issues.map((issue) => `${issue.path}: ${issue.message}`),
-    };
+): Promise<PlaygroundPreparedInputResult> {
+  const modules = buildPlaygroundModules(options);
+  const cacheKey = createPreparedInputCacheKey(schemaCodeText, rowsText, modules);
+
+  let cached = preparedInputCache.get(cacheKey);
+  if (!cached) {
+    cached = (async () => {
+      const schemaResult = await parseFacadeSchemaCode(schemaCodeText, {
+        modules,
+      });
+      if (!schemaResult.ok || !schemaResult.schema) {
+        return {
+          ok: false,
+          issues: schemaResult.issues.map((issue) => `${issue.path}: ${issue.message}`),
+        };
+      }
+
+      let schema = schemaResult.schema;
+      try {
+        schema = resolveSchemaLinkedEnums(schema, {
+          resolveEnumValues: (ref) => resolveDownstreamEnumValues(ref),
+          onUnresolved: "throw",
+          strictUnmapped: true,
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          issues: [error instanceof Error ? error.message : "Invalid enum linkage in schema."],
+        };
+      }
+
+      const rowsResult = parseDownstreamRowsText(rowsText);
+      const parsedRows = rowsResult.rows;
+      if (!rowsResult.ok || !parsedRows) {
+        return {
+          ok: false,
+          issues: rowsResult.issues.map((issue) => `${issue.path}: ${issue.message}`),
+        };
+      }
+
+      const prepared: PlaygroundPreparedInputCacheEntry = {
+        ok: true,
+        schema,
+        schemaCode: schemaCodeText,
+        downstreamRows: parsedRows as DownstreamRows,
+        modules,
+        cacheKey,
+      };
+      return prepared;
+    })();
+    setBoundedCacheEntry(
+      preparedInputCache,
+      cacheKey,
+      cached,
+      MAX_PREPARED_INPUT_CACHE_ENTRIES,
+    );
   }
 
-  let schema = schemaResult.schema;
-  try {
-    schema = resolveSchemaLinkedEnums(schema, {
-      resolveEnumValues: (ref) => resolveDownstreamEnumValues(ref),
-      onUnresolved: "throw",
-      strictUnmapped: true,
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      issues: [error instanceof Error ? error.message : "Invalid enum linkage in schema."],
-    };
-  }
+  return cached;
+}
 
-  const rowsResult = parseDownstreamRowsText(rowsText);
-  const parsedRows = rowsResult.rows;
-  if (!rowsResult.ok || !parsedRows) {
-    return {
-      ok: false,
-      issues: rowsResult.issues.map((issue) => `${issue.path}: ${issue.message}`),
-    };
-  }
+export function compilePreparedPlaygroundQuery(
+  prepared: PlaygroundPreparedInputSuccess,
+  sqlText: string,
+): PlaygroundCompileResult {
+  const schema = prepared.schema;
 
   const normalizedSql = sqlText.trim().replace(/;+$/u, "").trim();
   if (normalizedSql.length === 0) {
@@ -811,19 +919,35 @@ export async function compilePlaygroundInput(
   return {
     ok: true,
     schema,
-    schemaCode: schemaCodeText,
-    downstreamRows: parsedRows as DownstreamRows,
+    schemaCode: prepared.schemaCode,
+    downstreamRows: prepared.downstreamRows,
     sql: normalizedSql,
-    modules: { ...modules },
+    modules: { ...prepared.modules },
   };
+}
+
+export async function compilePlaygroundInput(
+  schemaCodeText: string,
+  rowsText: string,
+  sqlText: string,
+  options: PlaygroundSchemaProgramOptions = {},
+): Promise<PlaygroundCompileResult> {
+  const prepared = await preparePlaygroundInput(schemaCodeText, rowsText, options);
+  if (!prepared.ok) {
+    return prepared;
+  }
+  return compilePreparedPlaygroundQuery(prepared, sqlText);
 }
 
 export async function createSession(
   compiled: PlaygroundCompileSuccess,
   context: PlaygroundContext,
+  options: PlaygroundSessionOptions = {},
 ): Promise<PlaygroundSessionBundle> {
   operationRecorder.clear();
-  await reseedDownstreamDatabase(compiled.downstreamRows);
+  if (options.reseed ?? true) {
+    await reseedDownstreamDatabase(compiled.downstreamRows);
+  }
   operationRecorder.clear();
 
   const { executableSchema, dbProvider, kvProvider } = await buildExecutableSchemaFromModules(compiled);

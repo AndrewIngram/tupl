@@ -11,7 +11,13 @@ import {
   KV_PROVIDER_MODULE_ID,
   serializeJson,
 } from "../src/examples";
-import { compilePlaygroundInput, createSession, runSessionToCompletion } from "../src/session-runtime";
+import {
+  compilePlaygroundInput,
+  compilePreparedPlaygroundQuery,
+  createSession,
+  preparePlaygroundInput,
+  runSessionToCompletion,
+} from "../src/session-runtime";
 
 describe("playground/provider-pushdown", () => {
   it("executes simple same-provider joins and grouped aggregates as a single downstream query", { timeout: 15_000 }, async () => {
@@ -32,24 +38,31 @@ describe("playground/provider-pushdown", () => {
       "vendor_rank",
     ] as const;
 
+    const prepared = await preparePlaygroundInput(
+      DEFAULT_FACADE_SCHEMA_CODE,
+      serializeJson(scenario.rows),
+    );
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+
+    let reseed = true;
     for (const presetId of pushdownPresetIds) {
       const preset = QUERY_PRESETS.find((query) => query.id === presetId);
       if (!preset) {
         throw new Error(`Missing query preset: ${presetId}`);
       }
 
-      const compiled = await compilePlaygroundInput(
-        DEFAULT_FACADE_SCHEMA_CODE,
-        serializeJson(scenario.rows),
-        preset.sql,
-      );
+      const compiled = compilePreparedPlaygroundQuery(prepared, preset.sql);
 
       expect(compiled.ok).toBe(true);
       if (!compiled.ok) {
         continue;
       }
 
-      const bundle = await createSession(compiled, scenario.context);
+      const bundle = await createSession(compiled, scenario.context, { reseed });
+      reseed = false;
       const plan = bundle.session.getPlan();
 
       expect(plan.steps).toHaveLength(1);
