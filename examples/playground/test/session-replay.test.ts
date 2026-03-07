@@ -44,7 +44,7 @@ describe("playground/session-replay", () => {
       throw new Error("Expected at least one step event.");
     }
 
-    const replayed = await replaySession(compiled, 1, scenario.context);
+    const replayed = await replaySession(compiled, 1, scenario.context, { reseed: false });
     expect(replayed.events).toHaveLength(1);
     expect(replayed.events[0]?.id).toBe(first.id);
   });

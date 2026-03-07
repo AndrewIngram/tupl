@@ -99,7 +99,7 @@ async function requestSandboxInProcess<K extends keyof SandboxRpcRequestMap>(
     }
     case "replay_session": {
       const input = payload as SandboxRpcRequestMap["replay_session"];
-      return replaySandboxSession(input.compiled, input.context, input.eventCount) as Promise<
+      return replaySandboxSession(input.compiled, input.context, input.eventCount, input.options) as Promise<
         SandboxRpcResponseMap[K]
       >;
     }

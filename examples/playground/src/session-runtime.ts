@@ -753,11 +753,13 @@ export async function replaySession(
   compiled: PlaygroundCompileSuccess,
   eventCount: number,
   context: PlaygroundContext,
+  options: PlaygroundSessionOptions = {},
 ): Promise<SessionSnapshot> {
   const snapshot = await requestSandboxWorker("replay_session", {
     compiled,
     context,
     eventCount,
+    options,
   });
   const session = createSandboxQuerySession(
     snapshot.sessionId,

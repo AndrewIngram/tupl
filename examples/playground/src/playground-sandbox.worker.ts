@@ -51,6 +51,7 @@ async function dispatch(request: SandboxRpcRequest): Promise<SandboxRpcPayload> 
         request.payload.compiled,
         request.payload.context,
         request.payload.eventCount,
+        request.payload.options,
       );
     case "dispose_session":
       disposeSandboxSession(request.payload.sessionId);

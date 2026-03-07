@@ -20,6 +20,7 @@ import {
 import { createVirtualModuleRuntime } from "./playground-module-runtime";
 import {
   buildPlaygroundWorkspaceFiles,
+  serializeStringRecord,
   type PlaygroundSchemaProgramOptions,
 } from "./playground-program-files";
 import {
@@ -99,8 +100,17 @@ interface SqlqlRuntimeModule {
   planPhysicalQuery: typeof import("../../../src/index").planPhysicalQuery;
 }
 
+interface SandboxProviderRuntime<TContext> {
+  sqlqlModule: SqlqlRuntimeModule;
+  executableSchema: ExecutableSchema<TContext, SchemaDefinition>;
+  dbProvider: ProviderAdapter<TContext>;
+  kvProvider: ProviderAdapter<TContext>;
+}
+
 const sessionStore = new Map<string, SessionRecord>();
+const providerRuntimeCache = new Map<string, Promise<SandboxProviderRuntime<PlaygroundContext>>>();
 let nextSessionId = 1;
+const MAX_PROVIDER_RUNTIME_CACHE_ENTRIES = 8;
 
 function makeSessionId(): string {
   const sessionId = `sandbox_session_${nextSessionId}`;
@@ -203,15 +213,33 @@ function buildWorkspace(
   return buildPlaygroundWorkspaceSnapshot(buildPlaygroundWorkspaceFiles(schemaCode, options));
 }
 
+function setBoundedProviderRuntimeCacheEntry(
+  key: string,
+  value: Promise<SandboxProviderRuntime<PlaygroundContext>>,
+): void {
+  if (!providerRuntimeCache.has(key) && providerRuntimeCache.size >= MAX_PROVIDER_RUNTIME_CACHE_ENTRIES) {
+    const oldestKey = providerRuntimeCache.keys().next().value;
+    if (typeof oldestKey === "string") {
+      providerRuntimeCache.delete(oldestKey);
+    }
+  }
+  providerRuntimeCache.set(key, value);
+}
+
+function createProviderRuntimeCacheKey(
+  schemaCode: string,
+  downstreamRows: DownstreamRows,
+  options: PlaygroundSchemaProgramOptions = {},
+): string {
+  return `${schemaCode}\u0000${JSON.stringify(downstreamRows)}\u0000${serializeStringRecord(
+    options.modules ?? {},
+  )}`;
+}
+
 function createProviderRuntime<TContext>(
   workspace: PlaygroundWorkspaceSnapshot,
   externalModules: Record<string, unknown>,
-): {
-  sqlqlModule: SqlqlRuntimeModule;
-  executableSchema: ExecutableSchema<TContext, SchemaDefinition>;
-  dbProvider: ProviderAdapter<TContext>;
-  kvProvider: ProviderAdapter<TContext>;
-} {
+): SandboxProviderRuntime<TContext> {
   const runtime = createVirtualModuleRuntime({
     workspace,
     externalModules,
@@ -238,6 +266,29 @@ function createProviderRuntime<TContext>(
       "kvProvider",
     ),
   };
+}
+
+async function getOrCreateProviderRuntime(
+  compiled: SandboxCompiledInput,
+): Promise<SandboxProviderRuntime<PlaygroundContext>> {
+  const options = compiled.modules ? { modules: compiled.modules } : undefined;
+  const cacheKey = createProviderRuntimeCacheKey(
+    compiled.schemaCode,
+    compiled.downstreamRows,
+    options,
+  );
+
+  let cached = providerRuntimeCache.get(cacheKey);
+  if (!cached) {
+    cached = (async () => {
+      const workspace = buildWorkspace(compiled.schemaCode, options);
+      const externalModules = await buildExternalRuntimeModules(compiled.downstreamRows);
+      return createProviderRuntime<PlaygroundContext>(workspace, externalModules);
+    })();
+    setBoundedProviderRuntimeCacheEntry(cacheKey, cached);
+  }
+
+  return cached;
 }
 
 function normalizeSchemaError(message: string): SchemaParseResult {
@@ -339,14 +390,8 @@ export async function createSandboxSession(
   }
   clearExecutedProviderOperations();
 
-  const workspace = buildWorkspace(
-    compiled.schemaCode,
-    compiled.modules ? { modules: compiled.modules } : undefined,
-  );
-  const externalModules = await buildExternalRuntimeModules(compiled.downstreamRows);
-  const { sqlqlModule, executableSchema, dbProvider, kvProvider } = createProviderRuntime<PlaygroundContext>(
-    workspace,
-    externalModules,
+  const { sqlqlModule, executableSchema, dbProvider, kvProvider } = await getOrCreateProviderRuntime(
+    compiled,
   );
 
   const providers = {
@@ -428,8 +473,9 @@ export async function replaySandboxSession(
   compiled: SandboxCompiledInput,
   context: PlaygroundContext,
   eventCount: number,
+  options: { reseed?: boolean } = {},
 ): Promise<SandboxSessionSnapshot> {
-  const bundle = await createSandboxSession(compiled, context);
+  const bundle = await createSandboxSession(compiled, context, options);
   const record = readSessionRecord(bundle.sessionId);
   const events: QueryStepEvent[] = [];
 
@@ -482,6 +528,7 @@ export interface SandboxRpcRequestMap {
     compiled: SandboxCompiledInput;
     context: PlaygroundContext;
     eventCount: number;
+    options?: { reseed?: boolean };
   };
   dispose_session: {
     sessionId: string;
