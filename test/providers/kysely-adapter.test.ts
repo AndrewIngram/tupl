@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { ProviderFragment, QueryRow, RelNode, TableScanRequest } from "../../src";
+import {
+  unwrapProviderOperationResult,
+  type ProviderFragment,
+  type QueryRow,
+  type RelNode,
+  type TableScanRequest,
+} from "../../src";
 import { createKyselyProvider, type KyselyDatabaseLike } from "../../packages/kysely/src";
 
 interface KyselyCalls {
@@ -322,8 +328,8 @@ describe("kysely adapter", () => {
       table: "orders",
       request: scanRequest,
     };
-    const scanPlan = await provider.compile(scanFragment, { orgId: "org_1" });
-    const scanRows = await provider.execute(scanPlan, { orgId: "org_1" });
+    const scanPlan = unwrapProviderOperationResult(await provider.compile(scanFragment, { orgId: "org_1" }));
+    const scanRows = unwrapProviderOperationResult(await provider.execute(scanPlan, { orgId: "org_1" }));
     expect(scanRows).toEqual([{ id: "o1", user_id: "u1" }]);
 
     if (!provider.lookupMany) {
@@ -396,8 +402,8 @@ describe("kysely adapter", () => {
     };
 
     expect(provider.canExecute(relFragment, {})).toBe(true);
-    const plan = await provider.compile(relFragment, {});
-    const rows = await provider.execute(plan, {});
+    const plan = unwrapProviderOperationResult(await provider.compile(relFragment, {}));
+    const rows = unwrapProviderOperationResult(await provider.execute(plan, {}));
 
     expect(rows).toEqual([
       { id: "o2", email: "ada@example.com", total_cents: 3000 },

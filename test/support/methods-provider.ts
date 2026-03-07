@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import {
   bindAdapterEntities,
   type ConstraintValidationOptions,
@@ -61,11 +62,11 @@ export function createMethodsProvider<TContext>(
       }
     },
     async compile(fragment) {
-      return {
+      return Result.ok({
         provider: providerName,
         kind: fragment.kind,
         payload: fragment,
-      };
+      });
     },
     async execute(plan, context) {
       const fragment = plan.payload as ProviderFragment;
@@ -73,36 +74,38 @@ export function createMethodsProvider<TContext>(
         case "scan": {
           const method = methods[fragment.table];
           if (!method?.scan) {
-            throw new Error(`No table methods registered for table: ${fragment.table}`);
+            return Result.err(new Error(`No table methods registered for table: ${fragment.table}`));
           }
-          return method.scan(fragment.request, context);
+          return Result.ok(await method.scan(fragment.request, context));
         }
         case "aggregate": {
           const method = methods[fragment.table];
           if (!method?.aggregate) {
-            throw new Error(`No aggregate method registered for table: ${fragment.table}`);
+            return Result.err(new Error(`No aggregate method registered for table: ${fragment.table}`));
           }
-          return method.aggregate(fragment.request, context);
+          return Result.ok(await method.aggregate(fragment.request, context));
         }
         case "rel":
-          throw new Error("Methods-based provider does not support rel fragments.");
+          return Result.err(new Error("Methods-based provider does not support rel fragments."));
       }
     },
-    async lookupMany(request, context): Promise<QueryRow[]> {
+    async lookupMany(request, context) {
       const method = methods[request.table];
       if (!method?.lookup) {
-        return [];
+        return Result.ok([]);
       }
 
-      return method.lookup(
-        {
-          table: request.table,
-          key: request.key,
-          values: request.keys,
-          select: request.select,
-          ...(request.where ? { where: request.where } : {}),
-        },
-        context,
+      return Result.ok(
+        await method.lookup(
+          {
+            table: request.table,
+            key: request.key,
+            values: request.keys,
+            select: request.select,
+            ...(request.where ? { where: request.where } : {}),
+          },
+          context,
+        ),
       );
     },
   };

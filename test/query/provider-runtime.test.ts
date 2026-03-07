@@ -180,15 +180,15 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
           executeCalls += 1;
-          return [{ id: "o2" }];
+          return Result.ok([{ id: "o2" }]);
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -233,14 +233,14 @@ describe("query/provider runtime", () => {
           if (fragment.kind === "rel") {
             sawRelCompile = true;
           }
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
-          return [{ id: "o1" }];
+          return Result.ok([{ id: "o1" }]);
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -305,14 +305,14 @@ describe("query/provider runtime", () => {
             capturedRel = fragment.rel;
           }
 
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
-          return [{ id: "o1" }];
+          return Result.ok([{ id: "o1" }]);
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -379,20 +379,20 @@ describe("query/provider runtime", () => {
         },
         async compile(fragment: ProviderFragment) {
           capturedScan = fragment.kind === "scan" ? fragment : null;
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
-          return [
+          return Result.ok([
             {
               id: "o1",
               total_cents: 1500,
               created_at: new Date("2026-02-03T10:00:00.000Z"),
             },
-          ];
+          ]);
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -455,18 +455,18 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "orders_provider",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(ordersRows, fragment.request);
+          return Result.ok(scanRows(ordersRows, fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
       users_provider: {
@@ -474,31 +474,31 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "users_provider",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(usersRows, fragment.request);
+          return Result.ok(scanRows(usersRows, fragment.request));
         },
         async lookupMany(request) {
           lookupCalls += 1;
           const keys = new Set(request.keys);
-          return usersRows
-            .filter((row) => keys.has(row[request.key]))
-            .map((row) => {
+          return Result.ok(
+            usersRows.filter((row) => keys.has(row[request.key])).map((row) => {
               const out: QueryRow = {};
               for (const column of request.select) {
                 out[column] = row[column] ?? null;
               }
               return out;
-            });
+            }),
+          );
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -558,18 +558,18 @@ describe("query/provider runtime", () => {
           return true;
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "orders_provider",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(ordersRows, fragment.request);
+          return Result.ok(scanRows(ordersRows, fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
       users_provider: {
@@ -577,22 +577,22 @@ describe("query/provider runtime", () => {
           return true;
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "users_provider",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(usersRows, fragment.request);
+          return Result.ok(scanRows(usersRows, fragment.request));
         },
         async lookupMany(request) {
           const keys = new Set(request.keys);
-          return usersRows.filter((row) => keys.has(row.id));
+          return Result.ok(usersRows.filter((row) => keys.has(row.id)));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -646,18 +646,18 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "orders_provider",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(ordersRows, fragment.request);
+          return Result.ok(scanRows(ordersRows, fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
       users_provider: {
@@ -665,30 +665,30 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "users_provider",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(usersRows, fragment.request);
+          return Result.ok(scanRows(usersRows, fragment.request));
         },
         async lookupMany(request) {
           const keys = new Set(request.keys);
-          return usersRows
-            .filter((row) => keys.has(row[request.key]))
-            .map((row) => {
+          return Result.ok(
+            usersRows.filter((row) => keys.has(row[request.key])).map((row) => {
               const out: QueryRow = {};
               for (const column of request.select) {
                 out[column] = row[column] ?? null;
               }
               return out;
-            });
+            }),
+          );
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -749,25 +749,27 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
 
-          return scanRows(
-            [
-              { id: "o1", total_cents: 1500 },
-              { id: "o1", total_cents: 500 },
-              { id: "o2", total_cents: 700 },
-            ],
-            fragment.request,
+          return Result.ok(
+            scanRows(
+              [
+                { id: "o1", total_cents: 1500 },
+                { id: "o1", total_cents: 500 },
+                { id: "o2", total_cents: 700 },
+              ],
+              fragment.request,
+            ),
           );
         },
       } satisfies Omit<ProviderAdapter, "name">,
@@ -806,18 +808,18 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows([{ id: "o1" }], fragment.request);
+          return Result.ok(scanRows([{ id: "o1" }], fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -858,22 +860,24 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(
-            fragment.table === "orders"
-              ? [{ id: "o1", user_id: "u1" }]
-              : [{ id: "u1", email: "a@example.com" }],
-            fragment.request,
+          return Result.ok(
+            scanRows(
+              fragment.table === "orders"
+                ? [{ id: "o1", user_id: "u1" }]
+                : [{ id: "u1", email: "a@example.com" }],
+              fragment.request,
+            ),
           );
         },
       } satisfies Omit<ProviderAdapter, "name">,
@@ -922,18 +926,18 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows([], fragment.request);
+          return Result.ok(scanRows([], fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -973,19 +977,19 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
           await sleep(25);
-          return scanRows([{ id: "u1" }], fragment.request);
+          return Result.ok(scanRows([{ id: "u1" }], fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -1050,22 +1054,27 @@ describe("query/provider runtime", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows([
-            { id: "u1", email: "Alpha@Example.com", score: 10 },
-            { id: "u2", email: "beta@sample.com", score: 7 },
-            { id: "u3", email: "Gamma@Example.com", score: 4 },
-          ], fragment.request);
+          return Result.ok(
+            scanRows(
+              [
+                { id: "u1", email: "Alpha@Example.com", score: 10 },
+                { id: "u2", email: "beta@sample.com", score: 7 },
+                { id: "u3", email: "Gamma@Example.com", score: 4 },
+              ],
+              fragment.request,
+            ),
+          );
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });

@@ -96,14 +96,18 @@ const PGLITE_DECLARATION_IMPORTS = import.meta.glob("../node_modules/@electric-s
   query: "?raw",
 }) as Record<string, string>;
 
-const BETTER_RESULT_DECLARATION_IMPORTS = import.meta.glob(
-  "../node_modules/better-result/dist/index.d.mts",
-  {
+const BETTER_RESULT_DECLARATION_IMPORTS = {
+  ...import.meta.glob("../node_modules/better-result/dist/index.d.mts", {
     eager: true,
     import: "default",
     query: "?raw",
-  },
-) as Record<string, string>;
+  }),
+  ...import.meta.glob("../../../node_modules/better-result/dist/index.d.mts", {
+    eager: true,
+    import: "default",
+    query: "?raw",
+  }),
+} as Record<string, string>;
 
 const MIRRORED_KV_PROVIDER_CORE_SOURCE = kvProviderCoreSourceText.replace(
   /from "\.\.\/\.\.\/\.\.\/src\/index"/gu,

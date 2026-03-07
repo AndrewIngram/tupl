@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ProviderFragment, QueryRow, RelNode } from "../../src";
+import { unwrapProviderOperationResult, type ProviderFragment, type QueryRow, type RelNode } from "../../src";
 import {
   createDrizzleProvider,
   impossibleCondition,
@@ -259,7 +259,7 @@ describe("drizzle adapter", () => {
       routeFamily: "rel-core",
       reason: "rel fragment must not contain sql nodes.",
     }));
-    await expect(provider.compile(relFragment, {})).rejects.toThrow(
+    await expect(Promise.resolve(provider.compile(relFragment, {})).then(unwrapProviderOperationResult)).rejects.toThrow(
       "Unsupported relational fragment for drizzle provider.",
     );
 
@@ -295,19 +295,21 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = await provider.compile(
-      {
-        kind: "scan",
-        provider: "drizzle",
-        table: "users",
-        request: {
+    const plan = unwrapProviderOperationResult(
+      await provider.compile(
+        {
+          kind: "scan",
+          provider: "drizzle",
           table: "users",
-          select: ["user_id", "email"],
+          request: {
+            table: "users",
+            select: ["user_id", "email"],
+          },
         },
-      },
-      {},
+        {},
+      ),
     );
-    const rows = await provider.execute(plan, {});
+    const rows = unwrapProviderOperationResult(await provider.execute(plan, {}));
 
     expect(rows).toEqual([
       {
@@ -329,20 +331,22 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = await provider.compile(
-      {
-        kind: "scan",
-        provider: "drizzle",
-        table: "users",
-        request: {
+    const plan = unwrapProviderOperationResult(
+      await provider.compile(
+        {
+          kind: "scan",
+          provider: "drizzle",
           table: "users",
-          select: ["id"],
+          request: {
+            table: "users",
+            select: ["id"],
+          },
         },
-      },
-      {},
+        {},
+      ),
     );
 
-    await expect(provider.execute(plan, {})).rejects.toThrow(
+    await expect(Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult)).rejects.toThrow(
       'Unable to derive columns for table "users". Provide an explicit columns map.',
     );
   });
@@ -505,15 +509,17 @@ describe("drizzle adapter", () => {
     expect(tokens).toContain("u3");
 
     await expect(
-      lookupMany(
-        {
-          table: "missing",
-          key: "id",
-          keys: ["u1"],
-          select: ["id"],
-        },
-        {},
-      ),
+      Promise.resolve(
+        lookupMany(
+          {
+            table: "missing",
+            key: "id",
+            keys: ["u1"],
+            select: ["id"],
+          },
+          {},
+        ),
+      ).then(unwrapProviderOperationResult),
     ).rejects.toThrow("Unknown drizzle table config: missing");
   });
 
@@ -620,15 +626,17 @@ describe("drizzle adapter", () => {
       output: [],
     };
 
-    const plan = await provider.compile(
-      {
-        kind: "rel",
-        provider: "drizzle",
-        rel,
-      },
-      {},
+    const plan = unwrapProviderOperationResult(
+      await provider.compile(
+        {
+          kind: "rel",
+          provider: "drizzle",
+          rel,
+        },
+        {},
+      ),
     );
-    const rows = await provider.execute(plan, {});
+    const rows = unwrapProviderOperationResult(await provider.execute(plan, {}));
 
     expect(rows).toEqual([
       { id: "o2", email: "ada@example.com", total_cents: 3000 },

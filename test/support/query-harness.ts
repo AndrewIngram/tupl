@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 
+import { Result } from "better-result";
 import {
   toSqlDDL,
   type ProviderAdapter,
@@ -164,21 +165,21 @@ function createMemoryProvider<TContext>(
     },
     async compile(fragment) {
       if (fragment.kind !== "scan") {
-        throw new Error(`Unsupported memory provider fragment: ${fragment.kind}`);
+        return Result.err(new Error(`Unsupported memory provider fragment: ${fragment.kind}`));
       }
-      return {
+      return Result.ok({
         provider: "memory",
         kind: "scan",
         payload: fragment,
-      };
+      });
     },
     async execute(plan) {
       if (plan.kind !== "scan") {
-        throw new Error(`Unsupported memory provider compiled plan: ${plan.kind}`);
+        return Result.err(new Error(`Unsupported memory provider compiled plan: ${plan.kind}`));
       }
 
       const fragment = plan.payload as Extract<ProviderFragment, { kind: "scan" }>;
-      return scanRows(rowsByTable[fragment.table] ?? [], fragment.request);
+      return Result.ok(scanRows(rowsByTable[fragment.table] ?? [], fragment.request));
     },
     async lookupMany(request) {
       const scanRequest: TableScanRequest = {
@@ -194,7 +195,7 @@ function createMemoryProvider<TContext>(
         ],
       };
 
-      return scanRows(rowsByTable[request.table] ?? [], scanRequest);
+      return Result.ok(scanRows(rowsByTable[request.table] ?? [], scanRequest));
     },
   };
 }

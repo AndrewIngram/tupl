@@ -1,9 +1,10 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import {
-
   defineSchema,
   executeRelWithProviders,
+  executeRelWithProvidersResult,
   type ProviderAdapter,
   type ProviderFragment,
   type QueryRow,
@@ -150,6 +151,332 @@ function matchesLike(value: string, pattern: string): boolean {
 }
 
 describe("query/local executor", () => {
+  it("returns tagged execution errors from the result API when a provider adapter is missing", async () => {
+    const schema = defineSchema({
+      tables: {
+        orders: {
+          provider: "memory",
+          columns: {
+            id: "text",
+          },
+        },
+      },
+    });
+
+    const rel: RelNode = {
+      id: "scan_1",
+      kind: "scan",
+      convention: "local",
+      table: "orders",
+      alias: "o",
+      select: ["id"],
+      output: [{ name: "o.id" }],
+    };
+
+    const result = await executeRelWithProvidersResult(rel, schema, {}, {}, {
+      maxExecutionRows: 1000,
+      maxLookupKeysPerBatch: 1000,
+      maxLookupBatches: 10,
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected executor result to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlExecutionError",
+      name: "SqlqlExecutionError",
+      message: "Missing provider adapter: memory",
+    });
+  });
+
+  it("returns tagged guardrail errors from the result API when lookup batches are exceeded", async () => {
+    const schema = defineSchema({
+      tables: {
+        orders: {
+          provider: "orders_provider",
+          columns: {
+            id: "text",
+            user_id: "text",
+          },
+        },
+        users: {
+          provider: "users_provider",
+          columns: {
+            id: "text",
+            email: "text",
+          },
+        },
+      },
+    });
+
+    const ordersRows: QueryRow[] = [
+      { id: "o1", user_id: "u1" },
+      { id: "o2", user_id: "u2" },
+    ];
+    const usersRows: QueryRow[] = [
+      { id: "u1", email: "a@example.com" },
+      { id: "u2", email: "b@example.com" },
+    ];
+
+    const providers = finalizeProviders({
+      orders_provider: {
+        canExecute() {
+          return true;
+        },
+        async compile(fragment: ProviderFragment) {
+          return Result.ok({ provider: "orders_provider", kind: fragment.kind, payload: fragment });
+        },
+        async execute(plan) {
+          const fragment = plan.payload as ProviderFragment;
+          if (fragment.kind !== "scan") {
+            return Result.ok([]);
+          }
+          return Result.ok(scanRows(ordersRows, fragment.request));
+        },
+      } satisfies Omit<ProviderAdapter, "name">,
+      users_provider: {
+        canExecute() {
+          return true;
+        },
+        async compile(fragment: ProviderFragment) {
+          return Result.ok({ provider: "users_provider", kind: fragment.kind, payload: fragment });
+        },
+        async execute(plan) {
+          const fragment = plan.payload as ProviderFragment;
+          if (fragment.kind !== "scan") {
+            return Result.ok([]);
+          }
+          return Result.ok(scanRows(usersRows, fragment.request));
+        },
+        async lookupMany(request) {
+          const keys = new Set(request.keys);
+          return Result.ok(usersRows.filter((row) => keys.has(row.id)));
+        },
+      } satisfies Omit<ProviderAdapter, "name">,
+    });
+
+    const rel: RelNode = {
+      id: "join_1",
+      kind: "join",
+      convention: "local",
+      joinType: "inner",
+      left: {
+        id: "left_scan",
+        kind: "scan",
+        convention: "local",
+        table: "orders",
+        alias: "o",
+        select: ["id", "user_id"],
+        output: [{ name: "o.id" }, { name: "o.user_id" }],
+      },
+      right: {
+        id: "right_scan",
+        kind: "scan",
+        convention: "local",
+        table: "users",
+        alias: "u",
+        select: ["id", "email"],
+        output: [{ name: "u.id" }, { name: "u.email" }],
+      },
+      leftKey: { alias: "o", column: "user_id" },
+      rightKey: { alias: "u", column: "id" },
+      output: [{ name: "o.id" }, { name: "o.user_id" }, { name: "u.id" }, { name: "u.email" }],
+    };
+
+    const result = await executeRelWithProvidersResult(rel, schema, providers, {}, {
+      maxExecutionRows: 1000,
+      maxLookupKeysPerBatch: 1,
+      maxLookupBatches: 1,
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected lookup guardrail failure.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlGuardrailError",
+      name: "SqlqlGuardrailError",
+      guardrail: "maxLookupBatches",
+      limit: 1,
+    });
+  });
+
+  it("accepts adapter execute() methods that return Result errors", async () => {
+    const schema = defineSchema({
+      tables: {
+        orders: {
+          provider: "memory",
+          columns: {
+            id: "text",
+          },
+        },
+      },
+    });
+
+    const rel: RelNode = {
+      id: "scan_1",
+      kind: "scan",
+      convention: "local",
+      table: "orders",
+      alias: "o",
+      select: ["id"],
+      output: [{ name: "o.id" }],
+    };
+
+    const providers = finalizeProviders({
+      memory: {
+        canExecute() {
+          return true;
+        },
+        async compile(fragment: ProviderFragment) {
+          return Result.ok({ provider: "memory", kind: fragment.kind, payload: fragment });
+        },
+        async execute() {
+          return Result.err(new Error("Downstream provider failed."));
+        },
+      } satisfies Omit<ProviderAdapter, "name">,
+    });
+
+    const result = await executeRelWithProvidersResult(rel, schema, providers, {}, {
+      maxExecutionRows: 1000,
+      maxLookupKeysPerBatch: 1000,
+      maxLookupBatches: 10,
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected adapter execute result to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlExecutionError",
+      message: "Downstream provider failed.",
+      operation: "execute scan provider fragment",
+    });
+  });
+
+  it("returns tagged execution errors for invalid numeric coercions in local expressions", async () => {
+    const schema = defineSchema({
+      tables: {
+        numbers: {
+          provider: "memory",
+          columns: {
+            value: "text",
+          },
+        },
+      },
+    });
+
+    const providers = finalizeProviders({
+      memory: {
+        canExecute(fragment: ProviderFragment) {
+          return fragment.kind === "scan";
+        },
+        async compile(fragment: ProviderFragment) {
+          return Result.ok({ provider: "memory", kind: fragment.kind, payload: fragment });
+        },
+        async execute(plan) {
+          const fragment = plan.payload as ProviderFragment;
+          if (fragment.kind !== "scan") {
+            return Result.ok([]);
+          }
+          return Result.ok(scanRows([{ value: "oops" }], fragment.request));
+        },
+      } satisfies Omit<ProviderAdapter, "name">,
+    });
+
+    const rel: RelNode = {
+      id: "project_1",
+      kind: "project",
+      convention: "local",
+      input: {
+        id: "scan_1",
+        kind: "scan",
+        convention: "local",
+        table: "numbers",
+        alias: "n",
+        select: ["value"],
+        output: [{ name: "n.value" }],
+      },
+      columns: [
+        { source: { alias: "n", column: "value" }, output: "value" },
+        {
+          kind: "expr",
+          output: "bumped",
+          expr: {
+            kind: "function",
+            name: "add",
+            args: [
+              { kind: "column", ref: { alias: "n", column: "value" } },
+              { kind: "literal", value: 1 },
+            ],
+          },
+        },
+      ],
+      output: [{ name: "value" }, { name: "bumped" }],
+    };
+
+    const result = await executeRelWithProvidersResult(rel, schema, providers, {}, {
+      maxExecutionRows: 1000,
+      maxLookupKeysPerBatch: 1000,
+      maxLookupBatches: 10,
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected numeric coercion to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlExecutionError",
+      message: "ADD expects numeric values.",
+      operation: "evaluate relational expression",
+    });
+  });
+
+  it("returns tagged execution errors for invalid executable view rels", async () => {
+    const schema = defineSchema(({ view, rel, col }) => ({
+      tables: {
+        broken_view: view({
+          rel: () => rel.scan("missing_table"),
+          columns: {
+            id: col("missing_table.id"),
+          },
+        }),
+      },
+    }));
+
+    const rel: RelNode = {
+      id: "scan_1",
+      kind: "scan",
+      convention: "local",
+      table: "broken_view",
+      alias: "v",
+      select: ["id"],
+      output: [{ name: "v.id" }],
+    };
+
+    const result = await executeRelWithProvidersResult(rel, schema, {}, {}, {
+      maxExecutionRows: 1000,
+      maxLookupKeysPerBatch: 1000,
+      maxLookupBatches: 10,
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected broken view execution to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlExecutionError",
+      message: "Unknown table in view rel scan: missing_table",
+      operation: "compile executable view rel",
+    });
+  });
+
   it("executes filter + aggregate nodes locally over provider scans", async () => {
     const schema = defineSchema({
       tables: {
@@ -176,18 +503,18 @@ describe("query/local executor", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "memory",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(rows, fragment.request);
+          return Result.ok(scanRows(rows, fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -258,18 +585,18 @@ describe("query/local executor", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "memory",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(tableRows[fragment.table] ?? [], fragment.request);
+          return Result.ok(scanRows(tableRows[fragment.table] ?? [], fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -349,18 +676,18 @@ describe("query/local executor", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "memory",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(rows, fragment.request);
+          return Result.ok(scanRows(rows, fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -471,18 +798,18 @@ describe("query/local executor", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "memory",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(tableRows[fragment.table] ?? [], fragment.request);
+          return Result.ok(scanRows(tableRows[fragment.table] ?? [], fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -559,18 +886,18 @@ describe("query/local executor", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          return {
+          return Result.ok({
             provider: "memory",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
           if (fragment.kind !== "scan") {
-            return [];
+            return Result.ok([]);
           }
-          return scanRows(rows, fragment.request);
+          return Result.ok(scanRows(rows, fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });

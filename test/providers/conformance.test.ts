@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { ProviderAdapter, ProviderFragment, QueryRow, RelNode } from "../../src";
+import {
+  unwrapProviderOperationResult,
+  type ProviderAdapter,
+  type ProviderFragment,
+  type QueryRow,
+  type RelNode,
+} from "../../src";
 import { createDrizzleProvider, type DrizzleQueryExecutor } from "../../packages/drizzle/src";
 import { createKyselyProvider } from "../../packages/kysely/src";
 import { createObjectionProvider, type KnexLike, type KnexLikeQueryBuilder } from "../../packages/objection/src";
@@ -388,8 +394,8 @@ async function runRelFragment(
   const canExecute = await provider.canExecute(fragment, {});
   expect(typeof canExecute === "boolean" ? canExecute : canExecute.supported).toBe(true);
 
-  const compiled = await provider.compile(fragment, {});
-  return provider.execute(compiled, {}) as Promise<Array<Record<string, unknown>>>;
+  const compiled = unwrapProviderOperationResult(await provider.compile(fragment, {}));
+  return unwrapProviderOperationResult(await provider.execute(compiled, {}));
 }
 
 describe("provider conformance (rel fragments)", () => {

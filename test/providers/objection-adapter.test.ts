@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { ProviderFragment, QueryRow, RelNode, TableScanRequest } from "../../src";
+import {
+  unwrapProviderOperationResult,
+  type ProviderFragment,
+  type QueryRow,
+  type RelNode,
+  type TableScanRequest,
+} from "../../src";
 import { createObjectionProvider, type KnexLike, type KnexLikeQueryBuilder } from "../../packages/objection/src";
 
 interface ObjectionCalls {
@@ -313,8 +319,8 @@ describe("objection adapter", () => {
         select: ["id", "user_id"],
       } satisfies TableScanRequest,
     };
-    const scanPlan = await provider.compile(scanFragment, { orgId: "org_1" });
-    const rows = await provider.execute(scanPlan, { orgId: "org_1" });
+    const scanPlan = unwrapProviderOperationResult(await provider.compile(scanFragment, { orgId: "org_1" }));
+    const rows = unwrapProviderOperationResult(await provider.execute(scanPlan, { orgId: "org_1" }));
     expect(rows).toEqual([{ id: "o1", user_id: "u1" }]);
 
     if (!provider.lookupMany) {
@@ -387,8 +393,8 @@ describe("objection adapter", () => {
       provider: "dbProvider",
       rel: buildJoinProjectRel(),
     };
-    const plan = await provider.compile(relFragment, { orgId: "org_1" });
-    const rows = await provider.execute(plan, { orgId: "org_1" });
+    const plan = unwrapProviderOperationResult(await provider.compile(relFragment, { orgId: "org_1" }));
+    const rows = unwrapProviderOperationResult(await provider.execute(plan, { orgId: "org_1" }));
 
     expect(rows).toEqual([{ id: "o2", email: "ada@example.com", total_cents: 3000 }]);
     expect(calls.executeCount).toBe(1);
