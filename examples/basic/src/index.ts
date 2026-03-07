@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import {
   bindAdapterEntities,
   createDataEntityHandle,
@@ -24,23 +25,25 @@ function createMemoryProvider<TContext>(
       return fragment.kind === "scan";
     },
     async compile(fragment) {
-      return {
+      return Result.ok({
         provider: "memory",
         kind: fragment.kind,
         payload: fragment,
-      };
+      });
     },
     async execute(plan) {
       const fragment = plan.payload as { kind: "scan"; table: string; request: TableScanRequest };
       const rows = tables[fragment.table] ?? [];
-      return scanRows(rows, fragment.request);
+      return Result.ok(scanRows(rows, fragment.request));
     },
     async lookupMany(request) {
       const rows = tables[request.table] ?? [];
       const keys = new Set(request.keys);
-      return rows
-        .filter((row) => keys.has(row[request.key]))
-        .map((row) => projectRow(row, request.select));
+      return Result.ok(
+        rows
+          .filter((row) => keys.has(row[request.key]))
+          .map((row) => projectRow(row, request.select)),
+      );
     },
   };
 

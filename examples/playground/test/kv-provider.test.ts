@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { unwrapProviderOperationResult } from "../../../src";
 import { createKvProvider } from "../src/kv-provider";
 
 describe("playground/kv-provider", () => {
@@ -53,34 +54,38 @@ describe("playground/kv-provider", () => {
     });
 
     const context = { userId: "u1" };
-    const viewsPlan = await provider.compile(
-      {
-        kind: "scan",
-        provider: "kvProvider",
-        table: "product_view_counts",
-        request: {
+    const viewsPlan = unwrapProviderOperationResult(
+      await provider.compile(
+        {
+          kind: "scan",
+          provider: "kvProvider",
           table: "product_view_counts",
-          select: ["product_id", "view_count"],
+          request: {
+            table: "product_view_counts",
+            select: ["product_id", "view_count"],
+          },
         },
-      },
-      context,
+        context,
+      ),
     );
-    const viewsRows = await provider.execute(viewsPlan, context);
+    const viewsRows = unwrapProviderOperationResult(await provider.execute(viewsPlan, context));
 
-    const flagsPlan = await provider.compile(
-      {
-        kind: "scan",
-        provider: "kvProvider",
-        table: "product_flags",
-        request: {
+    const flagsPlan = unwrapProviderOperationResult(
+      await provider.compile(
+        {
+          kind: "scan",
+          provider: "kvProvider",
           table: "product_flags",
-          select: ["product_id", "is_hot"],
-          orderBy: [{ column: "product_id", direction: "asc" }],
+          request: {
+            table: "product_flags",
+            select: ["product_id", "is_hot"],
+            orderBy: [{ column: "product_id", direction: "asc" }],
+          },
         },
-      },
-      context,
+        context,
+      ),
     );
-    const flagsRows = await provider.execute(flagsPlan, context);
+    const flagsRows = unwrapProviderOperationResult(await provider.execute(flagsPlan, context));
 
     expect(viewsRows).toEqual([{ product_id: "p1", view_count: 7 }]);
     expect(flagsRows).toEqual([
@@ -118,15 +123,21 @@ describe("playground/kv-provider", () => {
       },
     });
 
-    const rows = await provider.lookupMany?.(
-      {
-        table: "product_view_counts",
-        key: "product_id",
-        keys: ["p1", "p2", "p4"],
-        select: ["product_id", "view_count"],
-        where: [{ op: "gt", column: "view_count", value: 5 }],
-      },
-      { userId: "u1" },
+    if (!provider.lookupMany) {
+      throw new Error("Expected lookupMany to be implemented.");
+    }
+
+    const rows = unwrapProviderOperationResult(
+      await provider.lookupMany(
+        {
+          table: "product_view_counts",
+          key: "product_id",
+          keys: ["p1", "p2", "p4"],
+          select: ["product_id", "view_count"],
+          where: [{ op: "gt", column: "view_count", value: 5 }],
+        },
+        { userId: "u1" },
+      ),
     );
 
     expect(rows).toEqual([{ product_id: "p1", view_count: 7 }]);

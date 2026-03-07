@@ -1,4 +1,4 @@
-import { Result } from "better-result";
+import { Result, type Result as BetterResult } from "better-result";
 
 import { SqlqlProviderBindingError, type SqlqlResult } from "./errors";
 import {
@@ -17,6 +17,7 @@ import type { RelNode } from "./rel";
 import type { RelExpr } from "./rel";
 
 export type MaybePromise<T> = T | Promise<T>;
+export type ProviderOperationResult<T, E = Error> = BetterResult<T, E>;
 
 export type ProviderRouteFamily = "scan" | "lookup" | "aggregate" | "rel-core" | "rel-advanced";
 
@@ -341,9 +342,18 @@ export interface ProviderAdapter<TContext = unknown> {
   capabilityAtoms?: ProviderCapabilityAtom[];
   fallbackPolicy?: QueryFallbackPolicy;
   canExecute(fragment: ProviderFragment, context: TContext): MaybePromise<boolean | ProviderCapabilityReport>;
-  compile(fragment: ProviderFragment, context: TContext): MaybePromise<ProviderCompiledPlan>;
-  execute(plan: ProviderCompiledPlan, context: TContext): Promise<QueryRow[]>;
-  lookupMany?(request: ProviderLookupManyRequest, context: TContext): Promise<QueryRow[]>;
+  compile(
+    fragment: ProviderFragment,
+    context: TContext,
+  ): MaybePromise<ProviderOperationResult<ProviderCompiledPlan>>;
+  execute(
+    plan: ProviderCompiledPlan,
+    context: TContext,
+  ): MaybePromise<ProviderOperationResult<QueryRow[]>>;
+  lookupMany?(
+    request: ProviderLookupManyRequest,
+    context: TContext,
+  ): MaybePromise<ProviderOperationResult<QueryRow[]>>;
   estimate?(fragment: ProviderFragment, context: TContext): MaybePromise<ProviderEstimate>;
   /**
    * Optional source-neutral physical entity handles owned by this adapter.
@@ -362,6 +372,14 @@ export function normalizeCapability(
   }
 
   return capability;
+}
+
+export function unwrapProviderOperationResult<T, E>(outcome: ProviderOperationResult<T, E>): T {
+  if (Result.isError(outcome)) {
+    throw outcome.error;
+  }
+
+  return outcome.value;
 }
 
 export function inferRouteFamilyForFragment(fragment: ProviderFragment): ProviderRouteFamily {

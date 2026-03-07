@@ -1,6 +1,15 @@
+import { Result, type Result as BetterResult } from "better-result";
+
+import {
+  SqlqlExecutionError,
+  SqlqlGuardrailError,
+  type SqlqlError,
+  type SqlqlResult,
+} from "./errors";
 import {
   normalizeCapability,
   resolveTableProvider,
+  unwrapProviderOperationResult,
   type ProviderFragment,
   type ProvidersMap,
 } from "./provider";
@@ -31,13 +40,6 @@ export interface RelExecutionGuardrails {
   maxLookupBatches: number;
 }
 
-export class UnsupportedRelExecutionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "UnsupportedRelExecutionError";
-  }
-}
-
 type InternalRow = Record<string, unknown>;
 
 interface RelExecutionContext<TContext> {
@@ -49,6 +51,39 @@ interface RelExecutionContext<TContext> {
   cteRows: Map<string, QueryRow[]>;
 }
 
+function toSqlqlExecutionError(error: unknown, operation: string): SqlqlError {
+  if (SqlqlExecutionError.is(error) || SqlqlGuardrailError.is(error)) {
+    return error;
+  }
+
+  return new SqlqlExecutionError({
+    operation,
+    message: error instanceof Error ? error.message : String(error),
+    cause: error,
+  });
+}
+
+function unwrapExecutionResult<T, E>(result: BetterResult<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+  return result.value;
+}
+
+function tryExecutionStep<T>(operation: string, fn: () => T): SqlqlResult<T> {
+  return Result.try({
+    try: () => fn() as Awaited<T>,
+    catch: (error) => toSqlqlExecutionError(error, operation),
+  }) as SqlqlResult<T>;
+}
+
+async function tryExecutionStepAsync<T>(operation: string, fn: () => Promise<T>): Promise<SqlqlResult<T>> {
+  return Result.tryPromise({
+    try: fn,
+    catch: (error) => toSqlqlExecutionError(error, operation),
+  });
+}
+
 export async function executeRelWithProviders<TContext>(
   rel: RelNode,
   schema: SchemaDefinition,
@@ -56,6 +91,16 @@ export async function executeRelWithProviders<TContext>(
   context: TContext,
   guardrails: RelExecutionGuardrails,
 ): Promise<QueryRow[]> {
+  return unwrapExecutionResult(await executeRelWithProvidersResult(rel, schema, providers, context, guardrails));
+}
+
+export async function executeRelWithProvidersResult<TContext>(
+  rel: RelNode,
+  schema: SchemaDefinition,
+  providers: ProvidersMap<TContext>,
+  context: TContext,
+  guardrails: RelExecutionGuardrails,
+): Promise<SqlqlResult<QueryRow[]>> {
   const executionContext: RelExecutionContext<TContext> = {
     schema,
     providers,
@@ -65,57 +110,80 @@ export async function executeRelWithProviders<TContext>(
     cteRows: new Map<string, QueryRow[]>(),
   };
 
-  const rows = await executeRelNode(rel, executionContext);
+  const rowsResult = await executeRelNodeResult(rel, executionContext);
+  if (Result.isError(rowsResult)) {
+    return rowsResult;
+  }
+
+  const rows = rowsResult.value;
   if (rows.length > guardrails.maxExecutionRows) {
-    throw new Error(
-      `Query exceeded maxExecutionRows guardrail (${guardrails.maxExecutionRows}). Received ${rows.length} rows.`,
+    return Result.err(
+      new SqlqlGuardrailError({
+        guardrail: "maxExecutionRows",
+        limit: guardrails.maxExecutionRows,
+        actual: rows.length,
+        message: `Query exceeded maxExecutionRows guardrail (${guardrails.maxExecutionRows}). Received ${rows.length} rows.`,
+      }),
     );
   }
 
-  return rows;
+  return Result.ok(rows);
 }
 
-async function executeRelNode<TContext>(
+async function executeRelNodeResult<TContext>(
   node: RelNode,
   context: RelExecutionContext<TContext>,
-): Promise<QueryRow[]> {
+): Promise<SqlqlResult<QueryRow[]>> {
   switch (node.kind) {
     case "scan":
-      return executeScan(node, context);
+      return executeScanResult(node, context);
     case "join":
-      return executeJoin(node, context);
+      return executeJoinResult(node, context);
     case "filter":
-      return executeFilter(node, context);
+      return executeFilterResult(node, context);
     case "project":
-      return executeProject(node, context);
+      return executeProjectResult(node, context);
     case "aggregate":
-      return executeAggregate(node, context);
+      return executeAggregateResult(node, context);
     case "window":
-      return executeWindow(node, context);
+      return executeWindowResult(node, context);
     case "sort":
-      return executeSort(node, context);
+      return executeSortResult(node, context);
     case "limit_offset":
-      return executeLimitOffset(node, context);
+      return executeLimitOffsetResult(node, context);
     case "set_op":
-      return executeSetOp(node, context);
+      return executeSetOpResult(node, context);
     case "with":
-      return executeWith(node, context);
+      return executeWithResult(node, context);
     case "sql":
-      throw new UnsupportedRelExecutionError(
-        "SQL-shaped rel nodes are not executable in the current provider runtime.",
+      return Result.err(
+        new SqlqlExecutionError({
+          operation: "execute relational node",
+          message: "SQL-shaped rel nodes are not executable in the current provider runtime.",
+        }),
       );
   }
 }
 
-async function executeScan<TContext>(
+async function executeScanResult<TContext>(
   scan: RelScanNode,
   context: RelExecutionContext<TContext>,
-): Promise<InternalRow[]> {
+): Promise<SqlqlResult<InternalRow[]>> {
   const normalizedBinding = getNormalizedTableBinding(context.schema, scan.table);
   if (normalizedBinding?.kind === "view") {
-    const rel = compileViewRelToExecutable(scan.table, normalizedBinding.rel(context.context), context.schema);
-    const viewRows = await executeRelNode(rel, context);
-    const scanned = scanLocalRows(viewRows, {
+    const relResult = compileViewRelToExecutableResult(
+      scan.table,
+      normalizedBinding.rel(context.context),
+      context.schema,
+    );
+    if (Result.isError(relResult)) {
+      return relResult;
+    }
+    const viewRowsResult = await executeRelNodeResult(relResult.value, context);
+    if (Result.isError(viewRowsResult)) {
+      return viewRowsResult;
+    }
+    const scannedRows = scanLocalRows(viewRowsResult.value, {
       table: scan.table,
       ...(scan.alias ? { alias: scan.alias } : {}),
       select: scan.select,
@@ -126,12 +194,12 @@ async function executeScan<TContext>(
     });
 
     const alias = scan.alias ?? scan.table;
-    return scanned.map((row) => prefixRow(row, alias));
+    return Result.ok(scannedRows.map((row) => prefixRow(row, alias)));
   }
 
   const cteRows = context.cteRows.get(scan.table);
   if (cteRows) {
-    const scanned = scanLocalRows(cteRows, {
+    const scannedRows = scanLocalRows(cteRows, {
       table: scan.table,
       ...(scan.alias ? { alias: scan.alias } : {}),
       select: scan.select,
@@ -142,17 +210,28 @@ async function executeScan<TContext>(
     });
 
     const alias = scan.alias ?? scan.table;
-    return scanned.map((row) => prefixRow(row, alias));
+    return Result.ok(scannedRows.map((row) => prefixRow(row, alias)));
   }
 
-  const providerName = resolveTableProvider(context.schema, scan.table);
+  const providerNameResult = tryExecutionStep("resolve scan provider", () =>
+    resolveTableProvider(context.schema, scan.table)
+  );
+  if (Result.isError(providerNameResult)) {
+    return providerNameResult;
+  }
+  const providerName = providerNameResult.value;
   const provider = context.providers[providerName];
   if (!provider) {
-    throw new Error(`Missing provider adapter: ${providerName}`);
+    return Result.err(
+      new SqlqlExecutionError({
+        operation: "execute scan",
+        message: `Missing provider adapter: ${providerName}`,
+      }),
+    );
   }
 
   const physicalBinding = normalizedBinding?.kind === "physical" ? normalizedBinding : null;
-  const request: TableScanRequest = {
+  const requestResult = tryExecutionStep("build provider scan request", () => ({
     table: physicalBinding?.entity ?? scan.table,
     ...(scan.alias ? { alias: scan.alias } : {}),
     select: mapLogicalColumnsToSource(scan.select, physicalBinding),
@@ -160,7 +239,11 @@ async function executeScan<TContext>(
     ...(scan.orderBy ? { orderBy: mapOrderToSource(scan.orderBy, physicalBinding) } : {}),
     ...(scan.limit != null ? { limit: scan.limit } : {}),
     ...(scan.offset != null ? { offset: scan.offset } : {}),
-  };
+  } satisfies TableScanRequest));
+  if (Result.isError(requestResult)) {
+    return requestResult;
+  }
+  const request = requestResult.value;
 
   const fragment: ProviderFragment = {
     kind: "scan",
@@ -169,92 +252,145 @@ async function executeScan<TContext>(
     request,
   };
 
-  const capability = normalizeCapability(await provider.canExecute(fragment, context.context));
+  const capabilityResult = await tryExecutionStepAsync("check scan provider capability", () =>
+    Promise.resolve(provider.canExecute(fragment, context.context))
+  );
+  if (Result.isError(capabilityResult)) {
+    return capabilityResult;
+  }
+  const capability = normalizeCapability(capabilityResult.value);
   if (!capability.supported) {
-    throw new UnsupportedRelExecutionError(
-      `Provider ${providerName} cannot execute scan for table ${scan.table}${
-        capability.reason ? `: ${capability.reason}` : ""
-      }`,
+    return Result.err(
+      new SqlqlExecutionError({
+        operation: "execute scan",
+        message: `Provider ${providerName} cannot execute scan for table ${scan.table}${
+          capability.reason ? `: ${capability.reason}` : ""
+        }`,
+      }),
     );
   }
 
-  const compiled = await provider.compile(fragment, context.context);
-  const rows = await provider.execute(compiled, context.context);
-  const projected = mapProviderRowsToLogical(
-    rows,
-    scan.select,
-    physicalBinding,
-    context.schema.tables[scan.table],
+  const compiledResult = await tryExecutionStepAsync("compile scan provider fragment", () =>
+    Promise.resolve(provider.compile(fragment, context.context)).then(unwrapProviderOperationResult)
   );
+  if (Result.isError(compiledResult)) {
+    return compiledResult;
+  }
+  const rowsResult = await tryExecutionStepAsync("execute scan provider fragment", () =>
+    Promise.resolve(provider.execute(compiledResult.value, context.context)).then(
+      unwrapProviderOperationResult,
+    )
+  );
+  if (Result.isError(rowsResult)) {
+    return rowsResult;
+  }
+  const projectedResult = tryExecutionStep("map provider rows to logical rows", () =>
+    mapProviderRowsToLogical(
+      rowsResult.value,
+      scan.select,
+      physicalBinding,
+      context.schema.tables[scan.table],
+    )
+  );
+  if (Result.isError(projectedResult)) {
+    return projectedResult;
+  }
 
   const alias = scan.alias ?? scan.table;
-  return projected.map((row) => prefixRow(row, alias));
+  return Result.ok(projectedResult.value.map((row) => prefixRow(row, alias)));
 }
 
-async function executeFilter<TContext>(
+async function executeFilterResult<TContext>(
   filter: Extract<RelNode, { kind: "filter" }>,
   context: RelExecutionContext<TContext>,
-): Promise<InternalRow[]> {
-  const rows = (await executeRelNode(filter.input, context)) as InternalRow[];
-  let out = [...rows];
+): Promise<SqlqlResult<InternalRow[]>> {
+  const rowsResult = await executeRelNodeResult(filter.input, context);
+  if (Result.isError(rowsResult)) {
+    return rowsResult;
+  }
 
+  let out = [...(rowsResult.value as InternalRow[])];
   for (const clause of filter.where ?? []) {
     out = out.filter((row) => matchesClause(row, clause));
   }
 
-  if (filter.expr) {
-    out = out.filter((row) => Boolean(evaluateRelExpr(filter.expr!, row)));
+  if (!filter.expr) {
+    return Result.ok(out);
   }
 
-  return out;
+  const filtered: InternalRow[] = [];
+  for (const row of out) {
+    const exprResult = evaluateRelExprResult(filter.expr, row);
+    if (Result.isError(exprResult)) {
+      return exprResult;
+    }
+    if (exprResult.value) {
+      filtered.push(row);
+    }
+  }
+
+  return Result.ok(filtered);
 }
 
-async function executeJoin<TContext>(
+async function executeJoinResult<TContext>(
   join: RelJoinNode,
   context: RelExecutionContext<TContext>,
-): Promise<InternalRow[]> {
-  const leftRows = (await executeRelNode(join.left, context)) as InternalRow[];
-
-  const lookupResult = await maybeExecuteLookupJoin(join, leftRows, context);
-  if (lookupResult) {
-    return lookupResult;
+): Promise<SqlqlResult<InternalRow[]>> {
+  const leftRowsResult = await executeRelNodeResult(join.left, context);
+  if (Result.isError(leftRowsResult)) {
+    return leftRowsResult;
   }
 
-  const rightRows = (await executeRelNode(join.right, context)) as InternalRow[];
-  return applyLocalHashJoin(join, leftRows, rightRows);
+  const lookupResult = await maybeExecuteLookupJoinResult(join, leftRowsResult.value as InternalRow[], context);
+  if (Result.isError(lookupResult)) {
+    return lookupResult;
+  }
+  if (lookupResult.value) {
+    return Result.ok(lookupResult.value);
+  }
+
+  const rightRowsResult = await executeRelNodeResult(join.right, context);
+  if (Result.isError(rightRowsResult)) {
+    return rightRowsResult;
+  }
+
+  return Result.ok(
+    applyLocalHashJoin(join, leftRowsResult.value as InternalRow[], rightRowsResult.value as InternalRow[]),
+  );
 }
 
-async function maybeExecuteLookupJoin<TContext>(
+async function maybeExecuteLookupJoinResult<TContext>(
   join: RelJoinNode,
   leftRows: InternalRow[],
   context: RelExecutionContext<TContext>,
-): Promise<InternalRow[] | null> {
+): Promise<SqlqlResult<InternalRow[] | null>> {
   if (join.joinType !== "inner" && join.joinType !== "left") {
-    return null;
+    return Result.ok(null);
   }
 
   const leftScan = findFirstScan(join.left);
   const rightScan = findFirstScan(join.right);
   if (!leftScan || !rightScan) {
-    return null;
+    return Result.ok(null);
   }
 
   const leftBinding = getNormalizedTableBinding(context.schema, leftScan.table);
   const rightBinding = getNormalizedTableBinding(context.schema, rightScan.table);
   if (leftBinding?.kind === "view" || rightBinding?.kind === "view") {
-    return null;
+    return Result.ok(null);
   }
 
   const leftProviderName = resolveTableProvider(context.schema, leftScan.table);
   const rightProviderName = resolveTableProvider(context.schema, rightScan.table);
   if (leftProviderName === rightProviderName) {
-    return null;
+    return Result.ok(null);
   }
 
   const rightProvider = context.providers[rightProviderName];
   if (!rightProvider?.lookupMany) {
-    return null;
+    return Result.ok(null);
   }
+  const lookupMany = rightProvider.lookupMany;
 
   const leftKey = `${join.leftKey.alias}.${join.leftKey.column}`;
   const rightKey = rightBinding?.kind === "physical"
@@ -270,8 +406,13 @@ async function maybeExecuteLookupJoin<TContext>(
   ) {
     context.lookupBatches += 1;
     if (context.lookupBatches > context.guardrails.maxLookupBatches) {
-      throw new Error(
-        `Query exceeded maxLookupBatches guardrail (${context.guardrails.maxLookupBatches}).`,
+      return Result.err(
+        new SqlqlGuardrailError({
+          guardrail: "maxLookupBatches",
+          limit: context.guardrails.maxLookupBatches,
+          actual: context.lookupBatches,
+          message: `Query exceeded maxLookupBatches guardrail (${context.guardrails.maxLookupBatches}).`,
+        }),
       );
     }
 
@@ -280,31 +421,47 @@ async function maybeExecuteLookupJoin<TContext>(
       startIndex + context.guardrails.maxLookupKeysPerBatch,
     );
 
-    const lookedUp = await rightProvider.lookupMany(
-      {
-        table: rightBinding?.kind === "physical" ? rightBinding.entity : rightScan.table,
-        key: rightKey,
-        keys: batch,
-        select: mapLogicalColumnsToSource(rightScan.select, rightBinding?.kind === "physical" ? rightBinding : null),
-        ...(rightScan.where
-          ? { where: mapWhereToSource(rightScan.where, rightBinding?.kind === "physical" ? rightBinding : null) }
-          : {}),
-      },
-      context.context,
+    const lookedUpResult = await tryExecutionStepAsync("execute lookup join batch", async () =>
+      unwrapProviderOperationResult(
+        await lookupMany(
+          {
+            table: rightBinding?.kind === "physical" ? rightBinding.entity : rightScan.table,
+            key: rightKey,
+            keys: batch,
+            select: mapLogicalColumnsToSource(
+              rightScan.select,
+              rightBinding?.kind === "physical" ? rightBinding : null,
+            ),
+            ...(rightScan.where
+              ? { where: mapWhereToSource(rightScan.where, rightBinding?.kind === "physical" ? rightBinding : null) }
+              : {}),
+          },
+          context.context,
+        ),
+      )
     );
+    if (Result.isError(lookedUpResult)) {
+      return lookedUpResult;
+    }
 
     const rightAlias = rightScan.alias ?? rightScan.table;
-    for (const row of mapProviderRowsToLogical(
-      lookedUp,
-      rightScan.select,
-      rightBinding?.kind === "physical" ? rightBinding : null,
-      context.schema.tables[rightScan.table],
-    )) {
+    const mappedRowsResult = tryExecutionStep("map lookup join rows to logical rows", () =>
+      mapProviderRowsToLogical(
+        lookedUpResult.value,
+        rightScan.select,
+        rightBinding?.kind === "physical" ? rightBinding : null,
+        context.schema.tables[rightScan.table],
+      )
+    );
+    if (Result.isError(mappedRowsResult)) {
+      return mappedRowsResult;
+    }
+    for (const row of mappedRowsResult.value) {
       rightRows.push(prefixRow(row, rightAlias));
     }
   }
 
-  return applyLocalHashJoin(join, leftRows, rightRows);
+  return Result.ok(applyLocalHashJoin(join, leftRows, rightRows));
 }
 
 function applyLocalHashJoin(
@@ -369,20 +526,25 @@ function applyLocalHashJoin(
   return joined;
 }
 
-async function executeWindow<TContext>(
+async function executeWindowResult<TContext>(
   windowNode: Extract<RelNode, { kind: "window" }>,
   context: RelExecutionContext<TContext>,
-): Promise<InternalRow[]> {
-  const rows = (await executeRelNode(windowNode.input, context)) as InternalRow[];
+): Promise<SqlqlResult<InternalRow[]>> {
+  const rowsResult = await executeRelNodeResult(windowNode.input, context);
+  if (Result.isError(rowsResult)) {
+    return rowsResult;
+  }
+
+  const rows = rowsResult.value as InternalRow[];
   if (windowNode.functions.length === 0) {
-    return rows;
+    return Result.ok(rows);
   }
 
   let current = rows.map((row) => ({ ...row }));
   for (const fn of windowNode.functions) {
     current = applyWindowFunction(current, fn);
   }
-  return current;
+  return Result.ok(current);
 }
 
 function applyWindowFunction(
@@ -459,28 +621,46 @@ function compareWindowEntries(
   return 0;
 }
 
-async function executeProject<TContext>(
+async function executeProjectResult<TContext>(
   project: RelProjectNode,
   context: RelExecutionContext<TContext>,
-): Promise<QueryRow[]> {
-  const rows = (await executeRelNode(project.input, context)) as InternalRow[];
+): Promise<SqlqlResult<QueryRow[]>> {
+  const rowsResult = await executeRelNodeResult(project.input, context);
+  if (Result.isError(rowsResult)) {
+    return rowsResult;
+  }
 
-  return rows.map((row) => {
-    const out: QueryRow = {};
+  const out: QueryRow[] = [];
+  for (const row of rowsResult.value as InternalRow[]) {
+    const projected: QueryRow = {};
     for (const mapping of project.columns) {
-      out[mapping.output] = isRelProjectColumnMapping(mapping)
-        ? (readRowValue(row, toColumnKey(mapping.source)) ?? null)
-        : evaluateRelExpr(mapping.expr, row);
+      if (isRelProjectColumnMapping(mapping)) {
+        projected[mapping.output] = readRowValue(row, toColumnKey(mapping.source)) ?? null;
+        continue;
+      }
+
+      const exprResult = evaluateRelExprResult(mapping.expr, row);
+      if (Result.isError(exprResult)) {
+        return exprResult;
+      }
+      projected[mapping.output] = exprResult.value;
     }
-    return out;
-  });
+    out.push(projected);
+  }
+
+  return Result.ok(out);
 }
 
-async function executeAggregate<TContext>(
+async function executeAggregateResult<TContext>(
   aggregate: Extract<RelNode, { kind: "aggregate" }>,
   context: RelExecutionContext<TContext>,
-): Promise<QueryRow[]> {
-  const rows = (await executeRelNode(aggregate.input, context)) as InternalRow[];
+): Promise<SqlqlResult<QueryRow[]>> {
+  const rowsResult = await executeRelNodeResult(aggregate.input, context);
+  if (Result.isError(rowsResult)) {
+    return rowsResult;
+  }
+
+  const rows = rowsResult.value as InternalRow[];
   const groups = new Map<string, InternalRow[]>();
 
   for (const row of rows) {
@@ -516,21 +696,34 @@ async function executeAggregate<TContext>(
         ? [...new Map(values.map((value) => [JSON.stringify(value), value])).values()]
         : values;
 
-      row[metric.as] = evaluateAggregateMetric(metric.fn, metricValues, bucket.length, metric.column != null);
+      const metricResult = evaluateAggregateMetricResult(
+        metric.fn,
+        metricValues,
+        bucket.length,
+        metric.column != null,
+      );
+      if (Result.isError(metricResult)) {
+        return metricResult;
+      }
+      row[metric.as] = metricResult.value;
     }
 
     out.push(row);
   }
 
-  return out;
+  return Result.ok(out);
 }
 
-async function executeSort<TContext>(
+async function executeSortResult<TContext>(
   sort: Extract<RelNode, { kind: "sort" }>,
   context: RelExecutionContext<TContext>,
-): Promise<InternalRow[]> {
-  const rows = (await executeRelNode(sort.input, context)) as InternalRow[];
-  const sorted = [...rows];
+): Promise<SqlqlResult<InternalRow[]>> {
+  const rowsResult = await executeRelNodeResult(sort.input, context);
+  if (Result.isError(rowsResult)) {
+    return rowsResult;
+  }
+
+  const sorted = [...(rowsResult.value as InternalRow[])];
 
   sorted.sort((left, right) => {
     for (const term of sort.orderBy) {
@@ -545,14 +738,19 @@ async function executeSort<TContext>(
     return 0;
   });
 
-  return sorted;
+  return Result.ok(sorted);
 }
 
-async function executeLimitOffset<TContext>(
+async function executeLimitOffsetResult<TContext>(
   limitOffset: Extract<RelNode, { kind: "limit_offset" }>,
   context: RelExecutionContext<TContext>,
-): Promise<QueryRow[]> {
-  let rows = await executeRelNode(limitOffset.input, context);
+): Promise<SqlqlResult<QueryRow[]>> {
+  const rowsResult = await executeRelNodeResult(limitOffset.input, context);
+  if (Result.isError(rowsResult)) {
+    return rowsResult;
+  }
+
+  let rows = rowsResult.value;
 
   if (limitOffset.offset != null) {
     rows = rows.slice(limitOffset.offset);
@@ -562,36 +760,45 @@ async function executeLimitOffset<TContext>(
     rows = rows.slice(0, limitOffset.limit);
   }
 
-  return rows;
+  return Result.ok(rows);
 }
 
-async function executeSetOp<TContext>(
+async function executeSetOpResult<TContext>(
   setOp: Extract<RelNode, { kind: "set_op" }>,
   context: RelExecutionContext<TContext>,
-): Promise<QueryRow[]> {
-  const leftRows = await executeRelNode(setOp.left, context);
-  const rightRows = await executeRelNode(setOp.right, context);
+): Promise<SqlqlResult<QueryRow[]>> {
+  const leftRowsResult = await executeRelNodeResult(setOp.left, context);
+  if (Result.isError(leftRowsResult)) {
+    return leftRowsResult;
+  }
+  const rightRowsResult = await executeRelNodeResult(setOp.right, context);
+  if (Result.isError(rightRowsResult)) {
+    return rightRowsResult;
+  }
+
+  const leftRows = leftRowsResult.value;
+  const rightRows = rightRowsResult.value;
 
   switch (setOp.op) {
     case "union_all":
-      return [...leftRows, ...rightRows];
+      return Result.ok([...leftRows, ...rightRows]);
     case "union":
-      return dedupeRows([...leftRows, ...rightRows]);
+      return Result.ok(dedupeRows([...leftRows, ...rightRows]));
     case "intersect": {
       const rightKeys = new Set(rightRows.map((row) => stableRowKey(row)));
-      return dedupeRows(leftRows.filter((row) => rightKeys.has(stableRowKey(row))));
+      return Result.ok(dedupeRows(leftRows.filter((row) => rightKeys.has(stableRowKey(row)))));
     }
     case "except": {
       const rightKeys = new Set(rightRows.map((row) => stableRowKey(row)));
-      return dedupeRows(leftRows.filter((row) => !rightKeys.has(stableRowKey(row))));
+      return Result.ok(dedupeRows(leftRows.filter((row) => !rightKeys.has(stableRowKey(row)))));
     }
   }
 }
 
-async function executeWith<TContext>(
+async function executeWithResult<TContext>(
   withNode: Extract<RelNode, { kind: "with" }>,
   context: RelExecutionContext<TContext>,
-): Promise<QueryRow[]> {
+): Promise<SqlqlResult<QueryRow[]>> {
   const cteRows = new Map(context.cteRows);
   const nested: RelExecutionContext<TContext> = {
     ...context,
@@ -599,34 +806,46 @@ async function executeWith<TContext>(
   };
 
   for (const cte of withNode.ctes) {
-    const rows = await executeRelNode(cte.query, nested);
-    cteRows.set(cte.name, rows);
+    const rowsResult = await executeRelNodeResult(cte.query, nested);
+    if (Result.isError(rowsResult)) {
+      return rowsResult;
+    }
+    cteRows.set(cte.name, rowsResult.value);
   }
 
-  return executeRelNode(withNode.body, nested);
+  return executeRelNodeResult(withNode.body, nested);
 }
 
-function compileViewRelToExecutable(
+function compileViewRelToExecutableResult(
   viewName: string,
   definition: SchemaViewRelNode | unknown,
   schema: SchemaDefinition,
-): RelNode {
+): SqlqlResult<RelNode> {
   if (isRelNode(definition)) {
-    return definition;
+    return Result.ok(definition);
   }
 
   if (!definition || typeof definition !== "object" || typeof (definition as { kind?: unknown }).kind !== "string") {
-    throw new Error(`View ${viewName} returned an unsupported rel definition.`);
+    return Result.err(
+      new SqlqlExecutionError({
+        operation: "compile executable view rel",
+        message: `View ${viewName} returned an unsupported rel definition.`,
+      }),
+    );
   }
 
-  const rel = compileSchemaViewRelNode(definition as SchemaViewRelNode, schema);
+  const relResult = compileSchemaViewRelNodeResult(definition as SchemaViewRelNode, schema);
+  if (Result.isError(relResult)) {
+    return relResult;
+  }
+  const rel = relResult.value;
   const binding = getNormalizedTableBinding(schema, viewName);
   if (!binding || binding.kind !== "view") {
-    return rel;
+    return Result.ok(rel);
   }
 
   const columns = Object.entries(getNormalizedColumnSourceMap(binding));
-  return {
+  return Result.ok({
     id: nextSyntheticRelId("view_project"),
     kind: "project",
     convention: "local",
@@ -637,18 +856,26 @@ function compileViewRelToExecutable(
       output,
     })),
     output: columns.map(([name]) => ({ name })),
-  };
+  });
 }
 
-function compileSchemaViewRelNode(node: SchemaViewRelNode, schema: SchemaDefinition): RelNode {
+function compileSchemaViewRelNodeResult(
+  node: SchemaViewRelNode,
+  schema: SchemaDefinition,
+): SqlqlResult<RelNode> {
   switch (node.kind) {
     case "scan": {
       const table = schema.tables[node.table];
       if (!table) {
-        throw new Error(`Unknown table in view rel scan: ${node.table}`);
+        return Result.err(
+          new SqlqlExecutionError({
+            operation: "compile executable view rel",
+            message: `Unknown table in view rel scan: ${node.table}`,
+          }),
+        );
       }
       const select = Object.keys(table.columns);
-      return {
+      return Result.ok({
         id: nextSyntheticRelId("view_scan"),
         kind: "scan",
         convention: "local",
@@ -656,56 +883,103 @@ function compileSchemaViewRelNode(node: SchemaViewRelNode, schema: SchemaDefinit
         alias: node.table,
         select,
         output: select.map((column) => ({ name: `${node.table}.${column}` })),
-      };
+      });
     }
     case "join": {
-      const left = compileSchemaViewRelNode(node.left, schema);
-      const right = compileSchemaViewRelNode(node.right, schema);
-      return {
+      const leftResult = compileSchemaViewRelNodeResult(node.left, schema);
+      if (Result.isError(leftResult)) {
+        return leftResult;
+      }
+      const rightResult = compileSchemaViewRelNodeResult(node.right, schema);
+      if (Result.isError(rightResult)) {
+        return rightResult;
+      }
+      const leftRefResult = resolveSchemaColRefResult(node.on.left);
+      if (Result.isError(leftRefResult)) {
+        return leftRefResult;
+      }
+      const rightRefResult = resolveSchemaColRefResult(node.on.right);
+      if (Result.isError(rightRefResult)) {
+        return rightRefResult;
+      }
+      return Result.ok({
         id: nextSyntheticRelId("view_join"),
         kind: "join",
         convention: "local",
         joinType: node.type,
-        left,
-        right,
-        leftKey: parseRef(resolveSchemaColRef(node.on.left)),
-        rightKey: parseRef(resolveSchemaColRef(node.on.right)),
-        output: [...left.output, ...right.output],
-      };
+        left: leftResult.value,
+        right: rightResult.value,
+        leftKey: parseRef(leftRefResult.value),
+        rightKey: parseRef(rightRefResult.value),
+        output: [...leftResult.value.output, ...rightResult.value.output],
+      });
     }
     case "aggregate": {
-      const input = compileSchemaViewRelNode(node.from, schema);
-      const groupBy = Object.entries(node.groupBy).map(([name, column]) => ({
-        name,
-        ref: parseRef(resolveSchemaColRef(column)),
-      }));
-      const metrics = Object.entries(node.measures).map(([output, metric]) => ({
-        fn: metric.fn,
-        as: output,
-        ...(metric.column ? { column: parseRef(resolveSchemaColRef(metric.column)) } : {}),
-      }));
+      const inputResult = compileSchemaViewRelNodeResult(node.from, schema);
+      if (Result.isError(inputResult)) {
+        return inputResult;
+      }
+      const groupBy: Array<{ name: string; ref: { alias?: string; table?: string; column: string } }> = [];
+      for (const [name, column] of Object.entries(node.groupBy)) {
+        const refResult = resolveSchemaColRefResult(column);
+        if (Result.isError(refResult)) {
+          return refResult;
+        }
+        groupBy.push({
+          name,
+          ref: parseRef(refResult.value),
+        });
+      }
+      const metrics: Array<{
+        fn: "count" | "sum" | "avg" | "min" | "max";
+        as: string;
+        column?: { alias?: string; table?: string; column: string };
+      }> = [];
+      for (const [output, metric] of Object.entries(node.measures)) {
+        if (metric.column) {
+          const columnResult = resolveSchemaColRefResult(metric.column);
+          if (Result.isError(columnResult)) {
+            return columnResult;
+          }
+          metrics.push({
+            fn: metric.fn,
+            as: output,
+            column: parseRef(columnResult.value),
+          });
+          continue;
+        }
+        metrics.push({
+          fn: metric.fn,
+          as: output,
+        });
+      }
 
-      return {
+      return Result.ok({
         id: nextSyntheticRelId("view_aggregate"),
         kind: "aggregate",
         convention: "local",
-        input,
+        input: inputResult.value,
         groupBy: groupBy.map((entry) => entry.ref),
         metrics,
         output: [
           ...groupBy.map((column) => ({ name: column.name })),
           ...metrics.map((metric) => ({ name: metric.as })),
         ],
-      };
+      });
     }
   }
 }
 
-function resolveSchemaColRef(ref: { ref?: string }): string {
+function resolveSchemaColRefResult(ref: { ref?: string }): SqlqlResult<string> {
   if (!ref.ref) {
-    throw new Error("View rel column reference was not normalized to a string reference.");
+    return Result.err(
+      new SqlqlExecutionError({
+        operation: "compile executable view rel",
+        message: "View rel column reference was not normalized to a string reference.",
+      }),
+    );
   }
-  return ref.ref;
+  return Result.ok(ref.ref);
 }
 
 function isRelNode(value: unknown): value is RelNode {
@@ -886,119 +1160,208 @@ function matchesClause(row: Record<string, unknown>, clause: ScanFilterClause): 
   }
 }
 
-function evaluateRelExpr(expr: RelExpr, row: InternalRow): unknown {
+function evaluateRelExprResult(expr: RelExpr, row: InternalRow): SqlqlResult<unknown> {
   switch (expr.kind) {
     case "literal":
-      return expr.value;
+      return Result.ok(expr.value);
     case "column":
-      return readRowValue(row, toColumnKey(expr.ref)) ?? null;
+      return Result.ok(readRowValue(row, toColumnKey(expr.ref)) ?? null);
     case "function": {
-      const args = expr.args.map((arg) => evaluateRelExpr(arg, row));
+      const args: unknown[] = [];
+      for (const arg of expr.args) {
+        const argResult = evaluateRelExprResult(arg, row);
+        if (Result.isError(argResult)) {
+          return argResult;
+        }
+        args.push(argResult.value);
+      }
       switch (expr.name) {
         case "eq":
-          return args[0] != null && args[0] === args[1];
+          return Result.ok(args[0] != null && args[0] === args[1]);
         case "neq":
-          return args[0] != null && args[0] !== args[1];
+          return Result.ok(args[0] != null && args[0] !== args[1]);
         case "gt":
-          return args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) > 0;
+          return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) > 0);
         case "gte":
-          return args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) >= 0;
+          return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) >= 0);
         case "lt":
-          return args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) < 0;
+          return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) < 0);
         case "lte":
-          return args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) <= 0;
+          return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) <= 0);
         case "and":
-          return args.every(Boolean);
+          return Result.ok(args.every(Boolean));
         case "or":
-          return args.some(Boolean);
+          return Result.ok(args.some(Boolean));
         case "not":
-          return !args[0];
-        case "add":
-          return toFiniteNumber(args[0], "ADD") + toFiniteNumber(args[1], "ADD");
-        case "subtract":
-          return toFiniteNumber(args[0], "SUBTRACT") - toFiniteNumber(args[1], "SUBTRACT");
-        case "multiply":
-          return toFiniteNumber(args[0], "MULTIPLY") * toFiniteNumber(args[1], "MULTIPLY");
-        case "divide":
-          return toFiniteNumber(args[0], "DIVIDE") / toFiniteNumber(args[1], "DIVIDE");
-        case "mod":
-          return toFiniteNumber(args[0], "MOD") % toFiniteNumber(args[1], "MOD");
+          return Result.ok(!args[0]);
+        case "add": {
+          const leftResult = toFiniteNumberResult(args[0], "ADD");
+          if (Result.isError(leftResult)) {
+            return leftResult;
+          }
+          const rightResult = toFiniteNumberResult(args[1], "ADD");
+          if (Result.isError(rightResult)) {
+            return rightResult;
+          }
+          return Result.ok(leftResult.value + rightResult.value);
+        }
+        case "subtract": {
+          const leftResult = toFiniteNumberResult(args[0], "SUBTRACT");
+          if (Result.isError(leftResult)) {
+            return leftResult;
+          }
+          const rightResult = toFiniteNumberResult(args[1], "SUBTRACT");
+          if (Result.isError(rightResult)) {
+            return rightResult;
+          }
+          return Result.ok(leftResult.value - rightResult.value);
+        }
+        case "multiply": {
+          const leftResult = toFiniteNumberResult(args[0], "MULTIPLY");
+          if (Result.isError(leftResult)) {
+            return leftResult;
+          }
+          const rightResult = toFiniteNumberResult(args[1], "MULTIPLY");
+          if (Result.isError(rightResult)) {
+            return rightResult;
+          }
+          return Result.ok(leftResult.value * rightResult.value);
+        }
+        case "divide": {
+          const leftResult = toFiniteNumberResult(args[0], "DIVIDE");
+          if (Result.isError(leftResult)) {
+            return leftResult;
+          }
+          const rightResult = toFiniteNumberResult(args[1], "DIVIDE");
+          if (Result.isError(rightResult)) {
+            return rightResult;
+          }
+          return Result.ok(leftResult.value / rightResult.value);
+        }
+        case "mod": {
+          const leftResult = toFiniteNumberResult(args[0], "MOD");
+          if (Result.isError(leftResult)) {
+            return leftResult;
+          }
+          const rightResult = toFiniteNumberResult(args[1], "MOD");
+          if (Result.isError(rightResult)) {
+            return rightResult;
+          }
+          return Result.ok(leftResult.value % rightResult.value);
+        }
         case "concat":
-          return args.map((arg) => (arg == null ? "" : String(arg))).join("");
+          return Result.ok(args.map((arg) => (arg == null ? "" : String(arg))).join(""));
         case "like":
-          return typeof args[0] === "string" && typeof args[1] === "string"
-            ? testSqlLikePattern(args[0], args[1])
-            : false;
+          return Result.ok(
+            typeof args[0] === "string" && typeof args[1] === "string"
+              ? testSqlLikePattern(args[0], args[1])
+              : false,
+          );
         case "not_like":
-          return typeof args[0] === "string" && typeof args[1] === "string"
-            ? !testSqlLikePattern(args[0], args[1])
-            : false;
+          return Result.ok(
+            typeof args[0] === "string" && typeof args[1] === "string"
+              ? !testSqlLikePattern(args[0], args[1])
+              : false,
+          );
         case "in":
-          return args[0] != null && args.slice(1).some((arg) => arg === args[0]);
+          return Result.ok(args[0] != null && args.slice(1).some((arg) => arg === args[0]));
         case "not_in":
-          return args[0] != null && args.slice(1).every((arg) => arg !== args[0]);
+          return Result.ok(args[0] != null && args.slice(1).every((arg) => arg !== args[0]));
         case "is_null":
-          return args[0] == null;
+          return Result.ok(args[0] == null);
         case "is_not_null":
-          return args[0] != null;
+          return Result.ok(args[0] != null);
         case "is_distinct_from":
-          return args[0] !== args[1];
+          return Result.ok(args[0] !== args[1]);
         case "is_not_distinct_from":
-          return args[0] === args[1];
+          return Result.ok(args[0] === args[1]);
         case "between":
-          return args[0] != null && args[1] != null && args[2] != null
-            ? compareNonNull(args[0], args[1]) >= 0 && compareNonNull(args[0], args[2]) <= 0
-            : false;
+          return Result.ok(
+            args[0] != null && args[1] != null && args[2] != null
+              ? compareNonNull(args[0], args[1]) >= 0 && compareNonNull(args[0], args[2]) <= 0
+              : false,
+          );
         case "lower":
-          return args[0] == null ? null : String(args[0]).toLowerCase();
+          return Result.ok(args[0] == null ? null : String(args[0]).toLowerCase());
         case "upper":
-          return args[0] == null ? null : String(args[0]).toUpperCase();
+          return Result.ok(args[0] == null ? null : String(args[0]).toUpperCase());
         case "trim":
-          return args[0] == null ? null : String(args[0]).trim();
+          return Result.ok(args[0] == null ? null : String(args[0]).trim());
         case "length":
-          return args[0] == null ? null : String(args[0]).length;
+          return Result.ok(args[0] == null ? null : String(args[0]).length);
         case "substr": {
           if (args[0] == null || args[1] == null) {
-            return null;
+            return Result.ok(null);
           }
           const input = String(args[0]);
-          const start = Math.trunc(toFiniteNumber(args[1], "SUBSTR"));
+          const startResult = toFiniteNumberResult(args[1], "SUBSTR");
+          if (Result.isError(startResult)) {
+            return startResult;
+          }
+          const start = Math.trunc(startResult.value);
           const begin = start >= 0 ? Math.max(0, start - 1) : Math.max(input.length + start, 0);
           if (args[2] == null) {
-            return input.slice(begin);
+            return Result.ok(input.slice(begin));
           }
-          const length = Math.max(0, Math.trunc(toFiniteNumber(args[2], "SUBSTR")));
-          return input.slice(begin, begin + length);
+          const lengthResult = toFiniteNumberResult(args[2], "SUBSTR");
+          if (Result.isError(lengthResult)) {
+            return lengthResult;
+          }
+          const length = Math.max(0, Math.trunc(lengthResult.value));
+          return Result.ok(input.slice(begin, begin + length));
         }
         case "coalesce":
-          return args.find((arg) => arg != null) ?? null;
+          return Result.ok(args.find((arg) => arg != null) ?? null);
         case "nullif":
-          return args[0] === args[1] ? null : (args[0] ?? null);
-        case "abs":
-          return args[0] == null ? null : Math.abs(toFiniteNumber(args[0], "ABS"));
+          return Result.ok(args[0] === args[1] ? null : (args[0] ?? null));
+        case "abs": {
+          if (args[0] == null) {
+            return Result.ok(null);
+          }
+          const valueResult = toFiniteNumberResult(args[0], "ABS");
+          if (Result.isError(valueResult)) {
+            return valueResult;
+          }
+          return Result.ok(Math.abs(valueResult.value));
+        }
         case "round": {
           if (args[0] == null) {
-            return null;
+            return Result.ok(null);
           }
-          const value = toFiniteNumber(args[0], "ROUND");
-          const precision = args[1] == null ? 0 : Math.trunc(toFiniteNumber(args[1], "ROUND"));
+          const valueResult = toFiniteNumberResult(args[0], "ROUND");
+          if (Result.isError(valueResult)) {
+            return valueResult;
+          }
+          let precision = 0;
+          if (args[1] != null) {
+            const precisionResult = toFiniteNumberResult(args[1], "ROUND");
+            if (Result.isError(precisionResult)) {
+              return precisionResult;
+            }
+            precision = Math.trunc(precisionResult.value);
+          }
           const scale = 10 ** precision;
-          return Math.round(value * scale) / scale;
+          return Result.ok(Math.round(valueResult.value * scale) / scale);
         }
         case "cast":
-          return castValue(args[0], args[1]);
+          return castValueResult(args[0], args[1]);
         case "case": {
           const lastIndex = args.length - 1;
           const hasElse = args.length % 2 === 1;
           for (let index = 0; index < (hasElse ? lastIndex : args.length); index += 2) {
             if (args[index]) {
-              return args[index + 1] ?? null;
+              return Result.ok(args[index + 1] ?? null);
             }
           }
-          return hasElse ? (args[lastIndex] ?? null) : null;
+          return Result.ok(hasElse ? (args[lastIndex] ?? null) : null);
         }
         default:
-          throw new UnsupportedRelExecutionError(`Unsupported computed expression function: ${expr.name}`);
+          return Result.err(
+            new SqlqlExecutionError({
+              operation: "evaluate relational expression",
+              message: `Unsupported computed expression function: ${expr.name}`,
+            }),
+          );
       }
     }
   }
@@ -1012,62 +1375,87 @@ function testSqlLikePattern(value: string, pattern: string): boolean {
   return regex.test(value);
 }
 
-function castValue(value: unknown, target: unknown): unknown {
+function castValueResult(value: unknown, target: unknown): SqlqlResult<unknown> {
   if (value == null) {
-    return null;
+    return Result.ok(null);
   }
   const normalized = String(target ?? "").trim().toLowerCase();
   switch (normalized) {
     case "text":
-      return String(value);
+      return Result.ok(String(value));
     case "integer":
     case "int":
-      return Math.trunc(Number(value));
+      return Result.ok(Math.trunc(Number(value)));
     case "real":
     case "numeric":
     case "float":
-      return Number(value);
+      return Result.ok(Number(value));
     case "boolean":
-      return Boolean(value);
+      return Result.ok(Boolean(value));
     default:
-      throw new UnsupportedRelExecutionError(`Unsupported CAST target type: ${String(target)}`);
+      return Result.err(
+        new SqlqlExecutionError({
+          operation: "evaluate relational expression",
+          message: `Unsupported CAST target type: ${String(target)}`,
+        }),
+      );
   }
 }
 
-function evaluateAggregateMetric(
+function evaluateAggregateMetricResult(
   fn: "count" | "sum" | "avg" | "min" | "max",
   values: unknown[],
   bucketSize: number,
   hasColumn: boolean,
-): unknown {
+): SqlqlResult<unknown> {
   switch (fn) {
     case "count":
-      return hasColumn ? values.filter((value) => value != null).length : bucketSize;
+      return Result.ok(hasColumn ? values.filter((value) => value != null).length : bucketSize);
     case "sum": {
-      const numeric = values.filter((value) => value != null).map((value) => toFiniteNumber(value, "SUM"));
-      return numeric.length > 0 ? numeric.reduce((sum, value) => sum + value, 0) : null;
+      const numeric: number[] = [];
+      for (const value of values.filter((entry) => entry != null)) {
+        const numericResult = toFiniteNumberResult(value, "SUM");
+        if (Result.isError(numericResult)) {
+          return numericResult;
+        }
+        numeric.push(numericResult.value);
+      }
+      return Result.ok(numeric.length > 0 ? numeric.reduce((sum, value) => sum + value, 0) : null);
     }
     case "avg": {
-      const numeric = values.filter((value) => value != null).map((value) => toFiniteNumber(value, "AVG"));
-      return numeric.length > 0
-        ? numeric.reduce((sum, value) => sum + value, 0) / numeric.length
-        : null;
+      const numeric: number[] = [];
+      for (const value of values.filter((entry) => entry != null)) {
+        const numericResult = toFiniteNumberResult(value, "AVG");
+        if (Result.isError(numericResult)) {
+          return numericResult;
+        }
+        numeric.push(numericResult.value);
+      }
+      return Result.ok(
+        numeric.length > 0
+          ? numeric.reduce((sum, value) => sum + value, 0) / numeric.length
+          : null,
+      );
     }
     case "min": {
       const candidates = values.filter((value) => value != null);
-      return candidates.length > 0
-        ? candidates.reduce((left, right) =>
-            compareNullableValues(left, right) <= 0 ? left : right,
-          )
-        : null;
+      return Result.ok(
+        candidates.length > 0
+          ? candidates.reduce((left, right) =>
+              compareNullableValues(left, right) <= 0 ? left : right,
+            )
+          : null,
+      );
     }
     case "max": {
       const candidates = values.filter((value) => value != null);
-      return candidates.length > 0
-        ? candidates.reduce((left, right) =>
-            compareNullableValues(left, right) >= 0 ? left : right,
-          )
-        : null;
+      return Result.ok(
+        candidates.length > 0
+          ? candidates.reduce((left, right) =>
+              compareNullableValues(left, right) >= 0 ? left : right,
+            )
+          : null,
+      );
     }
   }
 }
@@ -1147,7 +1535,7 @@ function compareNonNull(left: unknown, right: unknown): number {
   return leftString < rightString ? -1 : 1;
 }
 
-function toFiniteNumber(
+function toFiniteNumberResult(
   value: unknown,
   functionName:
     | "SUM"
@@ -1160,10 +1548,15 @@ function toFiniteNumber(
     | "SUBSTR"
     | "ABS"
     | "ROUND",
-): number {
+): SqlqlResult<number> {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
-    throw new Error(`${functionName} expects numeric values.`);
+    return Result.err(
+      new SqlqlExecutionError({
+        operation: "evaluate relational expression",
+        message: `${functionName} expects numeric values.`,
+      }),
+    );
   }
-  return parsed;
+  return Result.ok(parsed);
 }

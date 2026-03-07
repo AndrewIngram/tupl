@@ -212,14 +212,14 @@ describe("query/planning", () => {
           return true;
         },
         async compile(fragment) {
-          return {
+          return Result.ok({
             provider: "orders",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
-          return [];
+          return Result.ok([]);
         },
       },
       users: {
@@ -227,17 +227,17 @@ describe("query/planning", () => {
           return true;
         },
         async compile(fragment) {
-          return {
+          return Result.ok({
             provider: "users",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
-          return [];
+          return Result.ok([]);
         },
         async lookupMany() {
-          return [];
+          return Result.ok([]);
         },
       },
     });
@@ -293,14 +293,14 @@ describe("query/planning", () => {
           return fragment.kind === "rel";
         },
         async compile(fragment) {
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
-          return [];
+          return Result.ok([]);
         },
       },
     });
@@ -360,14 +360,14 @@ describe("query/planning", () => {
           return fragment.kind === "scan";
         },
         async compile(fragment) {
-          return {
+          return Result.ok({
             provider: "warehouse",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
-          return [];
+          return Result.ok([]);
         },
       },
     });
@@ -423,14 +423,14 @@ describe("query/planning", () => {
           return true;
         },
         async compile(fragment) {
-          return {
+          return Result.ok({
             provider: "orders",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
-          return [];
+          return Result.ok([]);
         },
       },
       users: {
@@ -438,17 +438,17 @@ describe("query/planning", () => {
           return true;
         },
         async compile(fragment) {
-          return {
+          return Result.ok({
             provider: "users",
             kind: fragment.kind,
             payload: fragment,
-          };
+          });
         },
         async execute() {
-          return [];
+          return Result.ok([]);
         },
         async lookupMany() {
-          return [];
+          return Result.ok([]);
         },
       },
     });

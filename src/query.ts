@@ -1,7 +1,8 @@
 import type { ConstraintValidationOptions } from "./constraints";
-import { Result } from "better-result";
+import { Result, type Result as BetterResult } from "better-result";
 import {
   SqlqlDiagnosticError,
+  SqlqlExecutionError,
   SqlqlGuardrailError,
   SqlqlRuntimeError,
   SqlqlTimeoutError,
@@ -10,6 +11,7 @@ import {
 } from "./errors";
 import {
   normalizeCapability,
+  unwrapProviderOperationResult,
   validateProviderBindingsResult,
   type ProviderAdapter,
   type ProviderCapabilityReport,
@@ -19,7 +21,7 @@ import {
   type SqlqlDiagnostic,
 } from "./provider";
 import { countRelNodes, type RelNode } from "./rel";
-import { executeRelWithProviders } from "./executor";
+import { executeRelWithProvidersResult } from "./executor";
 import {
   buildProviderFragmentForRelResult,
   expandRelViewsResult,
@@ -276,6 +278,7 @@ type QueryResult<T> = SqlqlResult<T>;
 function toSqlqlRuntimeError(error: unknown, operation: string): SqlqlError {
   if (
     SqlqlDiagnosticError.is(error) ||
+    SqlqlExecutionError.is(error) ||
     SqlqlGuardrailError.is(error) ||
     SqlqlTimeoutError.is(error) ||
     SqlqlRuntimeError.is(error)
@@ -298,7 +301,7 @@ function toSqlqlRuntimeError(error: unknown, operation: string): SqlqlError {
   });
 }
 
-function unwrapQueryResult<T>(result: QueryResult<T>): T {
+function unwrapQueryResult<T, E>(result: BetterResult<T, E>): T {
   if (Result.isOk(result)) {
     return result.value;
   }
@@ -568,10 +571,43 @@ function maybeRejectFallbackResult<TContext>(
   input: QueryInput<TContext>,
   resolution: QueryCapabilityResolution<TContext>,
 ): QueryResult<QueryCapabilityResolution<TContext>> {
-  return tryQueryStep("apply fallback policy", () => {
-    maybeRejectFallback(input, resolution);
-    return resolution;
-  });
+  if (!resolution.provider || !resolution.report || resolution.report.supported) {
+    return Result.ok(resolution);
+  }
+
+  const policy = resolveFallbackPolicy(input.fallbackPolicy, resolution.provider.fallbackPolicy);
+  const exceedsEstimatedCost =
+    policy.rejectOnEstimatedCost &&
+    resolution.report.estimatedCost != null &&
+    Number.isFinite(policy.maxJoinExpansionRisk) &&
+    resolution.report.estimatedCost > policy.maxJoinExpansionRisk;
+
+  if (!policy.allowFallback || policy.rejectOnMissingAtom || exceedsEstimatedCost) {
+    const diagnostics = resolution.diagnostics.length > 0
+      ? resolution.diagnostics
+      : [
+          makeDiagnostic(
+            "SQLQL_ERR_FALLBACK",
+            "error",
+            summarizeCapabilityReason(resolution.report),
+            {
+              provider: resolution.provider.name,
+              fragment: resolution.fragment?.kind,
+              missingAtoms: resolution.report.missingAtoms,
+            },
+            "42000",
+          ),
+        ];
+
+    return Result.err(
+      new SqlqlDiagnosticError({
+        message: summarizeCapabilityReason(resolution.report),
+        diagnostics,
+      }),
+    );
+  }
+
+  return Result.ok(resolution);
 }
 
 function hasSqlNode(node: RelNode): boolean {
@@ -595,14 +631,6 @@ function hasSqlNode(node: RelNode): boolean {
   }
 }
 
-function assertNoSqlNodesWithoutProviderFragment(rel: RelNode): void {
-  if (hasSqlNode(rel)) {
-    throw new Error(
-      "Query lowered to a SQL-shaped relational node that cannot be executed by the provider runtime without provider rel pushdown.",
-    );
-  }
-}
-
 async function maybeExecuteWholeQueryFragment<TContext>(
   input: QueryInput<TContext>,
   rel: RelNode,
@@ -617,8 +645,11 @@ async function maybeExecuteWholeQueryFragment<TContext>(
     return null;
   }
 
-  const compiled = await resolution.provider.compile(resolution.fragment, input.context);
-  return resolution.provider.execute(compiled, input.context);
+  const compiled = unwrapProviderOperationResult(
+    await resolution.provider.compile(resolution.fragment, input.context),
+  );
+  const executed = await resolution.provider.execute(compiled, input.context);
+  return unwrapProviderOperationResult(executed);
 }
 
 function enforcePlannerNodeLimitResult(
@@ -719,8 +750,8 @@ function createProviderFragmentSession<TContext>(
       startedAt,
     };
 
-    const compiledResult = await tryQueryStepAsync("compile provider fragment", () =>
-      Promise.resolve(provider.compile(fragment, input.context))
+    const compiledResult = await tryQueryStepAsync("compile provider fragment", async () =>
+      unwrapProviderOperationResult(await Promise.resolve(provider.compile(fragment, input.context)))
     );
     if (Result.isError(compiledResult)) {
       state = setFailedStepState(state, compiledResult.error, Date.now());
@@ -729,7 +760,8 @@ function createProviderFragmentSession<TContext>(
 
     const executeRowsResult = await withTimeoutResult(
       "execute provider fragment",
-      () => provider.execute(compiledResult.value, input.context),
+      async () =>
+        unwrapProviderOperationResult(await provider.execute(compiledResult.value, input.context)),
       guardrails.timeoutMs,
     );
     if (Result.isError(executeRowsResult)) {
@@ -876,7 +908,7 @@ function createRelExecutionSession<TContext>(
     const rowsResult = await withTimeoutResult(
       "execute relational query",
       () =>
-        executeRelWithProviders(
+        executeRelWithProvidersResult(
           rel,
           input.schema,
           input.providers,
@@ -886,7 +918,7 @@ function createRelExecutionSession<TContext>(
             maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
             maxLookupBatches: guardrails.maxLookupBatches,
           },
-        ),
+        ).then(unwrapQueryResult),
       guardrails.timeoutMs,
     );
     if (Result.isError(rowsResult)) {
@@ -1435,14 +1467,6 @@ function tryCreateSyncProviderFragmentSession<TContext>(
   );
 }
 
-function tryCreateSyncProviderFragmentSessionResult<TContext>(
-  input: QuerySessionInput<TContext>,
-  guardrails: QueryGuardrails,
-  rel: RelNode,
-): QueryResult<QuerySession | null> {
-  return tryCreateSyncProviderFragmentSession(input, guardrails, rel);
-}
-
 function normalizeRuntimeSchema<TContext>(input: QueryInput<TContext>): QueryInput<TContext> {
   const schema = resolveSchemaLinkedEnums(input.schema);
   return {
@@ -1460,12 +1484,16 @@ function normalizeRuntimeSchemaResult<TContext>(input: QueryInput<TContext>): Qu
 }
 
 function assertNoSqlNodesWithoutProviderFragmentResult(rel: RelNode): QueryResult<RelNode> {
-  const assertionResult = tryQueryStep("validate provider fragment execution shape", () => {
-    assertNoSqlNodesWithoutProviderFragment(rel);
-  });
-  if (Result.isError(assertionResult)) {
-    return assertionResult;
+  if (hasSqlNode(rel)) {
+    return Result.err(
+      new SqlqlRuntimeError({
+        operation: "validate provider fragment execution shape",
+        message:
+          "Query lowered to a SQL-shaped relational node that cannot be executed by the provider runtime without provider rel pushdown.",
+      }),
+    );
   }
+
   return Result.ok(rel);
 }
 
@@ -1491,7 +1519,7 @@ function createQuerySessionResult<TContext>(input: QuerySessionInput<TContext>):
 
     yield* enforcePlannerNodeLimitResult(plannerNodeCount, guardrails);
 
-    const providerSession = yield* tryCreateSyncProviderFragmentSessionResult(
+    const providerSession = yield* tryCreateSyncProviderFragmentSession(
       resolvedInput,
       guardrails,
       lowered.rel,
@@ -1546,7 +1574,7 @@ async function queryInternalResult<TContext>(input: QueryInput<TContext>): Promi
       withTimeoutResult(
         "execute relational query",
         () =>
-          executeRelWithProviders(
+          executeRelWithProvidersResult(
             executableRel,
             resolvedInput.schema,
             resolvedInput.providers,
@@ -1556,7 +1584,7 @@ async function queryInternalResult<TContext>(input: QueryInput<TContext>): Promi
               maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
               maxLookupBatches: guardrails.maxLookupBatches,
             },
-          ),
+          ).then(unwrapQueryResult),
         guardrails.timeoutMs,
       ),
     );

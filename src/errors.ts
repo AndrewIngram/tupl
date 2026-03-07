@@ -39,6 +39,12 @@ export class SqlqlPlanningError extends TaggedError("SqlqlPlanningError")<{
   operation: string;
 }>() {}
 
+export class SqlqlExecutionError extends TaggedError("SqlqlExecutionError")<{
+  cause?: unknown;
+  message: string;
+  operation: string;
+}>() {}
+
 export class SqlqlProviderBindingError extends TaggedError("SqlqlProviderBindingError")<{
   cause?: unknown;
   message: string;
@@ -53,6 +59,7 @@ export type SqlqlError =
   | SqlqlRuntimeError
   | SqlqlParseError
   | SqlqlPlanningError
+  | SqlqlExecutionError
   | SqlqlProviderBindingError;
 
 export type SqlqlResult<T> = BetterResult<T, SqlqlError>;

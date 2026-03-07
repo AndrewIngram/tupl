@@ -1,10 +1,10 @@
+import { Result } from "better-result";
 import {
   bindAdapterEntities,
   createDataEntityHandle,
   type DataEntityHandle,
   type ProviderAdapter,
   type ProviderCapabilityReport,
-  type ProviderCompiledPlan,
   type QueryRow,
   type ScanFilterClause,
   type ScanOrderBy,
@@ -246,31 +246,31 @@ export function createKvProvider<
           return false;
       }
     },
-    async compile(fragment): Promise<ProviderCompiledPlan> {
+    async compile(fragment) {
       if (fragment.kind !== "scan") {
-        throw new Error(`Unsupported fragment kind for KV provider: ${fragment.kind}`);
+        return Result.err(new Error(`Unsupported fragment kind for KV provider: ${fragment.kind}`));
       }
 
       const mapping = getEntityMappingOrThrow(fragment.table);
       const allowedColumns = new Set(mapping.columns);
       for (const column of fragment.request.select) {
         if (!allowedColumns.has(column)) {
-          throw new Error(`Unsupported KV column in select for ${fragment.table}: ${column}`);
+          return Result.err(new Error(`Unsupported KV column in select for ${fragment.table}: ${column}`));
         }
       }
 
-      return {
+      return Result.ok({
         provider: providerName,
         kind: fragment.kind,
         payload: {
           table: fragment.table,
           request: fragment.request,
         } satisfies KvCompiledScanPlan,
-      };
+      });
     },
-    async execute(plan, context): Promise<QueryRow[]> {
+    async execute(plan, context) {
       if (plan.kind !== "scan") {
-        throw new Error(`Unsupported KV compiled plan kind: ${plan.kind}`);
+        return Result.err(new Error(`Unsupported KV compiled plan kind: ${plan.kind}`));
       }
 
       const compiled = plan.payload as KvCompiledScanPlan;
@@ -289,18 +289,18 @@ export function createKvProvider<
         },
       });
 
-      return applyScanRequest(rows, compiled.request);
+      return Result.ok(applyScanRequest(rows, compiled.request));
     },
-    async lookupMany(request, context): Promise<QueryRow[]> {
+    async lookupMany(request, context) {
       const mapping = getEntityMappingOrThrow(request.table);
       const allowedColumns = new Set(mapping.columns);
 
       if (!allowedColumns.has(request.key)) {
-        throw new Error(`Unsupported KV lookup key column for ${request.table}: ${request.key}`);
+        return Result.err(new Error(`Unsupported KV lookup key column for ${request.table}: ${request.key}`));
       }
       for (const column of request.select) {
         if (!allowedColumns.has(column)) {
-          throw new Error(`Unsupported KV lookup select column for ${request.table}: ${column}`);
+          return Result.err(new Error(`Unsupported KV lookup select column for ${request.table}: ${column}`));
         }
       }
 
@@ -333,7 +333,7 @@ export function createKvProvider<
         },
       });
 
-      return selected;
+      return Result.ok(selected);
     },
   } satisfies ProviderAdapter<TContext> & {
     entities: { [K in keyof TEntities]: DataEntityHandle<TEntities[K]["columns"][number]> };

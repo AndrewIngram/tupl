@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import {
   bindAdapterEntities,
   collectCapabilityAtomsForFragment,
@@ -12,7 +13,6 @@ import {
   type ProviderAdapter,
   type ProviderCapabilityAtom,
   type ProviderCapabilityReport,
-  type ProviderCompiledPlan,
   type ProviderFragment,
   type QueryRow,
   type RelNode,
@@ -319,58 +319,59 @@ export function createObjectionProvider<
           return false;
       }
     },
-    async compile(fragment): Promise<ProviderCompiledPlan> {
+    async compile(fragment) {
       switch (fragment.kind) {
         case "scan":
           if (!entityConfigs[fragment.table]) {
-            throw new Error(`Unknown Objection entity config: ${fragment.table}`);
+            return Result.err(new Error(`Unknown Objection entity config: ${fragment.table}`));
           }
-          return {
+          return Result.ok({
             provider: providerName,
             kind: "scan",
             payload: fragment,
-          };
+          });
         case "rel": {
           const strategy = resolveObjectionRelCompileStrategy(fragment.rel, entityConfigs);
           if (!strategy) {
-            throw new Error("Unsupported relational fragment for Objection provider.");
+            return Result.err(new Error("Unsupported relational fragment for Objection provider."));
           }
-          return {
+          return Result.ok({
             provider: providerName,
             kind: "rel",
             payload: {
               strategy,
               rel: fragment.rel,
             } satisfies ObjectionRelCompiledPlan,
-          };
+          });
         }
         default:
-          throw new Error(
-            `Unsupported Objection fragment kind: ${(fragment as { kind?: unknown }).kind}`,
+          return Result.err(
+            new Error(`Unsupported Objection fragment kind: ${(fragment as { kind?: unknown }).kind}`),
           );
       }
     },
-    async execute(plan, context): Promise<QueryRow[]> {
+    async execute(plan, context) {
       switch (plan.kind) {
         case "scan": {
           const fragment = plan.payload as Extract<ProviderFragment, { kind: "scan" }>;
-          return executeScan(options.knex, entityConfigs, fragment.request, context);
+          return Result.tryPromise({
+            try: () => executeScan(options.knex, entityConfigs, fragment.request, context),
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+          });
         }
         case "rel": {
           const compiled = plan.payload as ObjectionRelCompiledPlan;
-          return executeRelSingleQuery(
-            options.knex,
-            entityConfigs,
-            compiled.rel,
-            compiled.strategy,
-            context,
-          );
+          return Result.tryPromise({
+            try: () =>
+              executeRelSingleQuery(options.knex, entityConfigs, compiled.rel, compiled.strategy, context),
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+          });
         }
         default:
-          throw new Error(`Unsupported Objection compiled plan kind: ${plan.kind}`);
+          return Result.err(new Error(`Unsupported Objection compiled plan kind: ${plan.kind}`));
       }
     },
-    async lookupMany(request, context): Promise<QueryRow[]> {
+    async lookupMany(request, context) {
       const scanRequest: TableScanRequest = {
         table: request.table,
         select: request.select,
@@ -384,7 +385,10 @@ export function createObjectionProvider<
         ],
       };
 
-      return executeScan(options.knex, entityConfigs, scanRequest, context);
+      return Result.tryPromise({
+        try: () => executeScan(options.knex, entityConfigs, scanRequest, context),
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      });
     },
   } satisfies ProviderAdapter<TContext> & {
     entities: {
