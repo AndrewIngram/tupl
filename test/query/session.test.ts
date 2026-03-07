@@ -3,10 +3,10 @@ import { createMethodsSession, queryWithMethods } from "../support/methods-provi
 import { createArrayTableMethods } from "../../src/array-methods";
 
 import {
-  defineSchema,
   defineTableMethods,
 } from "../../src";
 import { commerceRows, commerceSchema } from "../support/commerce-fixture";
+import { buildStaticSchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -18,21 +18,19 @@ function sleep(ms: number): Promise<void> {
 
 describe("query/session", () => {
   it("links CTE-backed scans to their producer step in the static plan", () => {
-    const schema = defineSchema({
-      tables: {
-        athletes: {
-          columns: {
-            id: { type: "text", nullable: false },
-            display_name: { type: "text", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      athletes: {
+        columns: {
+          id: { type: "text", nullable: false },
+          display_name: { type: "text", nullable: false },
         },
-        workouts: {
-          columns: {
-            id: { type: "text", nullable: false },
-            athlete_id: { type: "text", nullable: false },
-            duration_min: { type: "integer", nullable: false },
-            completed_at: { type: "timestamp", nullable: false },
-          },
+      },
+      workouts: {
+        columns: {
+          id: { type: "text", nullable: false },
+          athlete_id: { type: "text", nullable: false },
+          duration_min: { type: "integer", nullable: false },
+          completed_at: { type: "timestamp", nullable: false },
         },
       },
     });
@@ -301,12 +299,10 @@ describe("query/session", () => {
   });
 
   it("propagates execution failures via next()", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
         },
       },
     });
@@ -326,12 +322,10 @@ describe("query/session", () => {
   });
 
   it("marks the root step failed when execution times out", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
         },
       },
     });

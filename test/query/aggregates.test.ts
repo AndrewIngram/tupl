@@ -3,12 +3,12 @@ import { createMethodsProvider } from "../support/methods-provider";
 import { aggregateArrayRows, createArrayTableMethods } from "../../src/array-methods";
 
 import {
-  defineSchema,
   defineTableMethods,
   type TableAggregateRequest,
 } from "../../src";
 import { commerceRows, commerceSchema } from "../support/commerce-fixture";
 import { withQueryHarness } from "../support/query-harness";
+import { buildStaticSchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -65,13 +65,11 @@ describe("query/aggregates", () => {
   });
 
   it("matches sqlite aggregate behavior on empty tables", async () => {
-    const schema = defineSchema({
-      tables: {
-        entries: {
-          columns: {
-            id: { type: "text", nullable: false },
-            amount: { type: "integer", nullable: true },
-          },
+    const schema = buildStaticSchema({
+      entries: {
+        columns: {
+          id: { type: "text", nullable: false },
+          amount: { type: "integer", nullable: true },
         },
       },
     });
@@ -112,14 +110,12 @@ describe("query/aggregates", () => {
   });
 
   it("handles null grouping keys and null aggregate inputs", async () => {
-    const schema = defineSchema({
-      tables: {
-        events: {
-          columns: {
-            id: { type: "text", nullable: false },
-            group_key: { type: "text", nullable: true },
-            value: { type: "integer", nullable: true },
-          },
+    const schema = buildStaticSchema({
+      events: {
+        columns: {
+          id: { type: "text", nullable: false },
+          group_key: { type: "text", nullable: true },
+          value: { type: "integer", nullable: true },
         },
       },
     });

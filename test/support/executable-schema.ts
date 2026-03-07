@@ -1,6 +1,7 @@
 import {
   bindAdapterEntities,
   createDataEntityHandle,
+  createSchemaBuilder,
   createExecutableSchema,
   getNormalizedTableBinding,
   isNormalizedSourceColumnBinding,
@@ -180,113 +181,110 @@ export function createExecutableSchemaFromProviders<
     boundAdapter.entities ??= {};
   }
 
-  return createExecutableSchema(({ table, view }) => ({
-    tables: Object.fromEntries(
-      Object.entries(schema.tables).map(([tableName, tableDefinition]) => {
-        const binding = getNormalizedTableBinding(schema, tableName);
-        if (binding?.kind === "view") {
-          return [
-            tableName,
-            view({
-              rel: (_helpers: unknown, context: TContext) => binding.rel(context),
-              columns: () =>
-                Object.fromEntries(
-                  Object.entries(binding.columnBindings).flatMap(([columnName, columnBinding]) =>
-                    isNormalizedSourceColumnBinding(columnBinding)
-                      ? [[
-                          columnName,
-                          {
-                            source: columnBinding.source,
-                            ...(typeof columnBinding.definition === "string"
-                              ? { type: columnBinding.definition }
-                              : columnBinding.definition ?? {}),
-                            ...(columnBinding.coerce ? { coerce: columnBinding.coerce } : {}),
-                          },
-                        ] as const]
-                      : [],
-                  ),
-                ),
-              ...(("constraints" in tableDefinition && tableDefinition.constraints)
-                ? { constraints: tableDefinition.constraints }
-                : {}),
-            } as any),
-          ];
-        }
+  const builder = createSchemaBuilder<TContext>();
 
-        const providerName = binding?.provider ?? tableDefinition.provider ?? singleProviderName;
-        if (!providerName) {
-          throw new Error(
-            `Table ${tableName} must declare table.provider when more than one provider is involved.`,
-          );
-        }
+  for (const [tableName, tableDefinition] of Object.entries(schema.tables)) {
+    const binding = getNormalizedTableBinding(schema, tableName);
+    if (binding?.kind === "view") {
+      builder.view({
+        name: tableName,
+        rel: (_helpers: unknown, context: TContext) => binding.rel(context),
+        columns: () =>
+          Object.fromEntries(
+            Object.entries(binding.columnBindings).flatMap(([columnName, columnBinding]) =>
+              isNormalizedSourceColumnBinding(columnBinding)
+                ? [[
+                    columnName,
+                    {
+                      source: columnBinding.source,
+                      ...(typeof columnBinding.definition === "string"
+                        ? { type: columnBinding.definition }
+                        : columnBinding.definition ?? {}),
+                      ...(columnBinding.coerce ? { coerce: columnBinding.coerce } : {}),
+                    },
+                  ] as const]
+                : [],
+            ),
+          ),
+        ...(("constraints" in tableDefinition && tableDefinition.constraints)
+          ? { constraints: tableDefinition.constraints }
+          : {}),
+      } as any);
+      continue;
+    }
 
-        const adapter = providers[providerName] as ProviderAdapter<TContext> | undefined;
-        if (!adapter) {
-          throw new Error(`No provider registered for table ${tableName}: ${providerName}`);
-        }
+    const providerName = binding?.provider ?? tableDefinition.provider ?? singleProviderName;
+    if (!providerName) {
+      throw new Error(
+        `Table ${tableName} must declare table.provider when more than one provider is involved.`,
+      );
+    }
 
-        if (!adapter.entities?.[tableName]) {
-          adapter.entities ??= {};
-          adapter.entities[tableName] = createDataEntityHandle({
-            entity: binding?.kind === "physical" ? binding.entity : tableName,
-            provider: providerName,
-            adapter,
-            columns: binding?.kind === "physical"
-              ? toEntityColumnsFromBindings(binding.columnBindings, tableDefinition.columns)
-              : toEntityColumns(tableDefinition.columns),
-          });
-        }
+    const adapter = providers[providerName] as ProviderAdapter<TContext> | undefined;
+    if (!adapter) {
+      throw new Error(`No provider registered for table ${tableName}: ${providerName}`);
+    }
 
-        bindAdapterEntities(adapter);
+    if (!adapter.entities?.[tableName]) {
+      adapter.entities ??= {};
+      adapter.entities[tableName] = createDataEntityHandle({
+        entity: binding?.kind === "physical" ? binding.entity : tableName,
+        provider: providerName,
+        adapter,
+        columns: binding?.kind === "physical"
+          ? toEntityColumnsFromBindings(binding.columnBindings, tableDefinition.columns)
+          : toEntityColumns(tableDefinition.columns),
+      });
+    }
 
-        return [
-          tableName,
-          table(adapter.entities[tableName], {
-            columns: ({ col }) =>
-              Object.fromEntries(
-                binding?.kind === "physical"
-                  ? Object.entries(binding.columnBindings).map(([columnName, columnBinding]) => {
-                      if (isNormalizedSourceColumnBinding(columnBinding)) {
-                        return [
-                          columnName,
-                          {
-                            ...toLensDefinitionFromSource(
-                              columnName,
-                              columnBinding.definition ?? tableDefinition.columns[columnName] ?? "text",
-                              columnBinding.source,
-                            ),
-                            ...(columnBinding.coerce ? { coerce: columnBinding.coerce } : {}),
-                          },
-                        ] as const;
-                      }
+    bindAdapterEntities(adapter);
 
-                      if (columnBinding.kind !== "expr") {
-                        throw new Error(`Unsupported column binding kind for ${tableName}.${columnName}`);
-                      }
-
-                      const definition = columnBinding.definition ?? tableDefinition.columns[columnName] ?? "text";
-                      const methodName = getCalculatedColumnMethodName(definition);
-                      const calcMethod = (col as unknown as Record<string, (expr: any, options?: any) => unknown>)[
-                        methodName
-                      ];
-                      if (typeof calcMethod !== "function") {
-                        throw new Error(`Unsupported calculated column type for ${tableName}.${columnName}`);
-                      }
-
-                      return [
+    builder.table(adapter.entities[tableName], {
+      name: tableName,
+      columns: ({ col }) =>
+        Object.fromEntries(
+          binding?.kind === "physical"
+            ? Object.entries(binding.columnBindings).map(([columnName, columnBinding]) => {
+                if (isNormalizedSourceColumnBinding(columnBinding)) {
+                  return [
+                    columnName,
+                    {
+                      ...toLensDefinitionFromSource(
                         columnName,
-                        calcMethod(columnBinding.expr, getCalculatedColumnOptions(columnBinding, definition)),
-                      ] as const;
-                    })
-                  : Object.entries(tableDefinition.columns).map(([columnName, definition]) => [
-                      columnName,
-                      toLensDefinition(columnName, definition),
-                    ]),
-              ) as Record<string, any>,
-            ...(tableDefinition.constraints ? { constraints: tableDefinition.constraints } : {}),
-          }),
-        ];
-      }),
-    ),
-  }));
+                        columnBinding.definition ?? tableDefinition.columns[columnName] ?? "text",
+                        columnBinding.source,
+                      ),
+                      ...(columnBinding.coerce ? { coerce: columnBinding.coerce } : {}),
+                    },
+                  ] as const;
+                }
+
+                if (columnBinding.kind !== "expr") {
+                  throw new Error(`Unsupported column binding kind for ${tableName}.${columnName}`);
+                }
+
+                const definition = columnBinding.definition ?? tableDefinition.columns[columnName] ?? "text";
+                const methodName = getCalculatedColumnMethodName(definition);
+                const calcMethod = (col as unknown as Record<string, (expr: any, options?: any) => unknown>)[
+                  methodName
+                ];
+                if (typeof calcMethod !== "function") {
+                  throw new Error(`Unsupported calculated column type for ${tableName}.${columnName}`);
+                }
+
+                return [
+                  columnName,
+                  calcMethod(columnBinding.expr, getCalculatedColumnOptions(columnBinding, definition)),
+                ] as const;
+              })
+            : Object.entries(tableDefinition.columns).map(([columnName, definition]) => [
+                columnName,
+                toLensDefinition(columnName, definition),
+              ]),
+        ) as Record<string, any>,
+      ...(tableDefinition.constraints ? { constraints: tableDefinition.constraints } : {}),
+    });
+  }
+
+  return createExecutableSchema(builder);
 }

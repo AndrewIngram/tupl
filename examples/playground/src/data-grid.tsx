@@ -5,13 +5,15 @@ import type { QueryRow, TableColumnDefinition, TableDefinition } from "../../../
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  coerceCellInput,
-  deleteRow,
-  formatCellValue,
-  updateRowCell,
-} from "@/data-editing";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { coerceCellInput, deleteRow, formatCellValue, updateRowCell } from "@/data-editing";
 import { isColumnNullable, readColumnEnumValues, readColumnType } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +46,9 @@ function toDateTimeLocalValue(value: unknown): string {
     return `${dateOnly[1]}T00:00`;
   }
 
-  const dateTime = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z)?$/u.exec(trimmed);
+  const dateTime = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z)?$/u.exec(
+    trimmed,
+  );
   if (dateTime?.[1] && dateTime?.[2]) {
     return `${dateTime[1]}T${dateTime[2]}`;
   }
@@ -133,12 +137,7 @@ export function DataGrid({
 
   return (
     <div className="flex min-h-0 flex-col">
-      <ScrollArea
-        className={cn(
-          scrollAreaClassName ?? "h-[520px]",
-          "min-h-0",
-        )}
-      >
+      <ScrollArea className={cn(scrollAreaClassName ?? "h-[520px]", "min-h-0")}>
         <Table>
           <TableHeader>
             <TableRow>

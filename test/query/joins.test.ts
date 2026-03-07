@@ -3,13 +3,13 @@ import { createMethodsProvider } from "../support/methods-provider";
 import { createArrayTableMethods, scanArrayRows } from "../../src/array-methods";
 
 import {
-  defineSchema,
   defineTableMethods,
   type TableLookupRequest,
   type TableScanRequest,
 } from "../../src";
 import { commerceRows, commerceSchema } from "../support/commerce-fixture";
 import { withQueryHarness } from "../support/query-harness";
+import { buildStaticSchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -117,20 +117,18 @@ describe("query/joins", () => {
   });
 
   it("does not match null join keys on inner joins", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: { type: "text", nullable: false },
-            org_id: { type: "text", nullable: false },
-            user_id: { type: "text", nullable: true },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: { type: "text", nullable: false },
+          org_id: { type: "text", nullable: false },
+          user_id: { type: "text", nullable: true },
         },
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: true },
-          },
+      },
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: true },
         },
       },
     });
@@ -167,19 +165,17 @@ describe("query/joins", () => {
   });
 
   it("returns no rows when a joined table is empty", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: { type: "text", nullable: false },
-            user_id: { type: "text", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: { type: "text", nullable: false },
+          user_id: { type: "text", nullable: false },
         },
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: true },
-          },
+      },
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: true },
         },
       },
     });
@@ -209,19 +205,17 @@ describe("query/joins", () => {
   });
 
   it("supports LEFT JOIN with null-extended right rows", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: { type: "text", nullable: false },
-            user_id: { type: "text", nullable: true },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: { type: "text", nullable: false },
+          user_id: { type: "text", nullable: true },
         },
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: true },
-          },
+      },
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: true },
         },
       },
     });
@@ -260,19 +254,17 @@ describe("query/joins", () => {
   });
 
   it("supports RIGHT JOIN with null-extended left rows", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: { type: "text", nullable: false },
-            user_id: { type: "text", nullable: true },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: { type: "text", nullable: false },
+          user_id: { type: "text", nullable: true },
         },
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: true },
-          },
+      },
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: true },
         },
       },
     });
@@ -312,19 +304,17 @@ describe("query/joins", () => {
   });
 
   it("supports FULL JOIN with null-extension on both sides", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: { type: "text", nullable: false },
-            user_id: { type: "text", nullable: true },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: { type: "text", nullable: false },
+          user_id: { type: "text", nullable: true },
         },
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-            email: { type: "text", nullable: true },
-          },
+      },
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+          email: { type: "text", nullable: true },
         },
       },
     });

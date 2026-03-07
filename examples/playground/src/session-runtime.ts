@@ -14,9 +14,7 @@ import {
   type SchemaDefinition,
 } from "../../../src/index";
 
-import {
-  DOWNSTREAM_ROWS_SCHEMA,
-} from "./downstream-model";
+import { DOWNSTREAM_ROWS_SCHEMA } from "./downstream-model";
 import { requestSandboxWorker } from "./playground-sandbox-client";
 import {
   buildPlaygroundModules,
@@ -24,10 +22,7 @@ import {
   type PlaygroundSchemaProgramOptions,
 } from "./playground-program-files";
 import type { DownstreamRows, ExecutedProviderOperation, PlaygroundContext } from "./types";
-import {
-  parseDownstreamRowsText,
-  parseFacadeSchemaCode,
-} from "./validation";
+import { parseDownstreamRowsText, parseFacadeSchemaCode } from "./validation";
 
 export interface PlaygroundCompileSuccess {
   ok: true;
@@ -257,12 +252,19 @@ function validateExpressionReferences(
     );
   }
 
-  const exprList = (rawExpr as { type?: unknown; value?: unknown }).type === "expr_list"
-    ? (rawExpr as { value?: unknown }).value
-    : undefined;
+  const exprList =
+    (rawExpr as { type?: unknown; value?: unknown }).type === "expr_list"
+      ? (rawExpr as { value?: unknown }).value
+      : undefined;
   if (Array.isArray(exprList)) {
     for (const item of exprList) {
-      const issue = validateExpressionReferences(item, bindings, schema, availableCtes, allowUnqualified);
+      const issue = validateExpressionReferences(
+        item,
+        bindings,
+        schema,
+        availableCtes,
+        allowUnqualified,
+      );
       if (issue) {
         return issue;
       }
@@ -272,7 +274,13 @@ function validateExpressionReferences(
   const argsRaw = (rawExpr as { args?: { value?: unknown } }).args?.value;
   const args = Array.isArray(argsRaw) ? argsRaw : argsRaw != null ? [argsRaw] : [];
   for (const arg of args) {
-    const issue = validateExpressionReferences(arg, bindings, schema, availableCtes, allowUnqualified);
+    const issue = validateExpressionReferences(
+      arg,
+      bindings,
+      schema,
+      availableCtes,
+      allowUnqualified,
+    );
     if (issue) {
       return issue;
     }
@@ -343,8 +351,7 @@ function validateSelectReferences(
         return `Unknown table: ${table}`;
       }
 
-      const alias =
-        typeof entry.as === "string" && entry.as.length > 0 ? entry.as : table;
+      const alias = typeof entry.as === "string" && entry.as.length > 0 ? entry.as : table;
       bindings.set(alias, {
         table,
         isCte,
@@ -450,7 +457,10 @@ function hasSqlNode(node: RelNode): boolean {
   }
 }
 
-function resolveDownstreamEnumValues(ref: { table: string; column: string }): readonly string[] | undefined {
+function resolveDownstreamEnumValues(ref: {
+  table: string;
+  column: string;
+}): readonly string[] | undefined {
   const table = DOWNSTREAM_ROWS_SCHEMA.tables[ref.table];
   if (!table) {
     return undefined;
@@ -518,12 +528,7 @@ export async function preparePlaygroundInput(
       };
       return prepared;
     })();
-    setBoundedCacheEntry(
-      preparedInputCache,
-      cacheKey,
-      cached,
-      MAX_PREPARED_INPUT_CACHE_ENTRIES,
-    );
+    setBoundedCacheEntry(preparedInputCache, cacheKey, cached, MAX_PREPARED_INPUT_CACHE_ENTRIES);
   }
 
   return cached;
@@ -646,12 +651,8 @@ function applyStepEvent(state: SandboxSessionState, event: QueryStepEvent): void
     endedAt: event.endedAt,
     durationMs: event.durationMs,
     ...(typeof event.rowCount === "number" ? { rowCount: event.rowCount } : {}),
-    ...(typeof event.inputRowCount === "number"
-      ? { inputRowCount: event.inputRowCount }
-      : {}),
-    ...(typeof event.outputRowCount === "number"
-      ? { outputRowCount: event.outputRowCount }
-      : {}),
+    ...(typeof event.inputRowCount === "number" ? { inputRowCount: event.inputRowCount } : {}),
+    ...(typeof event.outputRowCount === "number" ? { outputRowCount: event.outputRowCount } : {}),
     ...(event.rows ? { rows: event.rows } : {}),
     ...(event.routeUsed ? { routeUsed: event.routeUsed } : {}),
     ...(event.notes ? { notes: event.notes } : {}),

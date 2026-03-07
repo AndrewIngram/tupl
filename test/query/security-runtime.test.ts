@@ -1,18 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { queryWithMethods } from "../support/methods-provider";
 import { createArrayTableMethods } from "../../src/array-methods";
-import { defineSchema, defineTableMethods } from "../../src";
+import { defineTableMethods } from "../../src";
+import { buildStaticSchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
 describe("query/security", () => {
   it("rejects selecting columns that are not declared in the schema facade", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: "text",
         },
       },
     });
@@ -32,13 +31,11 @@ describe("query/security", () => {
   });
 
   it("rejects filtering on columns that are not declared in the schema facade", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: "text",
-            email: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -58,19 +55,17 @@ describe("query/security", () => {
   });
 
   it("rejects joining on undeclared columns", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -91,13 +86,11 @@ describe("query/security", () => {
   });
 
   it("rejects sorting on columns that are not declared in the schema facade", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: "text",
-            email: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -117,13 +110,11 @@ describe("query/security", () => {
   });
 
   it("allows querying declared facade columns", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: "text",
-            email: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });

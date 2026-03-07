@@ -99,10 +99,7 @@ function collectReferencedTables(ast: unknown, tables: Set<string>): void {
   }
 }
 
-export function checkQueryCompatibility(
-  schema: SchemaDefinition,
-  sql: string,
-): QueryCompatibility {
+export function checkQueryCompatibility(schema: SchemaDefinition, sql: string): QueryCompatibility {
   const normalizedSql = normalizeSql(sql);
   if (normalizedSql.length === 0) {
     return {

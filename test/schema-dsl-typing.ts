@@ -1,4 +1,4 @@
-import { createDataEntityHandle, defineSchema } from "../src";
+import { createDataEntityHandle, createSchemaBuilder } from "../src";
 
 const ordersEntity = createDataEntityHandle({
   entity: "orders_raw",
@@ -52,83 +52,84 @@ const typedMetricsEntity = createDataEntityHandle<
   },
 });
 
-defineSchema(({ table, view }) => {
-  const myOrders = table(ordersEntity, {
-    columns: () => ({
-      id: { source: "id", type: "text", nullable: false },
-      vendorId: { source: "vendor_id", type: "text" },
-      totalCents: { source: "total_cents", type: "integer" },
-    }),
-  });
+const schemaBuilder = createSchemaBuilder<Record<string, never>>();
 
-  const typedOrders = table(vendorsEntity, {
-    columns: ({ col }) => ({
-      id: col.id("id"),
-      name: col.string("name"),
-      // @ts-expect-error - typed builders still validate source columns against the bound entity
-      missing: col.string("doesNotExist"),
-    }),
-  });
-  void typedOrders;
-
-  const typedMetrics = table(typedMetricsEntity, {
-    columns: ({ col }) => ({
-      integerValue: col.integer("integerColumn"),
-      realValue: col.real("realColumn"),
-      timestampValue: col.timestamp("timestampColumn"),
-      jsonValue: col.json("jsonColumn"),
-      blobValue: col.blob("blobColumn"),
-      dateValue: col.date("dateColumn"),
-      datetimeValue: col.datetime("datetimeColumn"),
-      coercedInteger: col.integer("timestampColumn", { coerce: "isoTimestamp" }),
-      // @ts-expect-error - incompatible source types require explicit coerce
-      invalidInteger: col.integer("timestampColumn"),
-      // @ts-expect-error - integers are not accepted by text builders without explicit coerce
-      invalidString: col.string("integerColumn"),
-    }),
-  });
-  void typedMetrics;
-
-  return {
-    tables: {
-      myOrders,
-      spendByVendor: view(
-        ({ scan, join, aggregate, col, expr, agg }) => {
-          const entityScan = scan(vendorsEntity);
-          void entityScan;
-
-          const okEntityColRef = col(vendorsEntity, "id");
-          void okEntityColRef;
-          // @ts-expect-error - column does not exist on vendorsEntity
-          col(vendorsEntity, "doesNotExist");
-
-          const okColRef = col(myOrders, "vendorId");
-          void okColRef;
-          // @ts-expect-error - column does not exist on myOrders
-          col(myOrders, "doesNotExist");
-
-          return aggregate({
-            from: join({
-              left: scan(myOrders),
-              right: scan(myOrders),
-              on: expr.eq(col(myOrders, "vendorId"), col(myOrders, "id")),
-              type: "inner",
-            }),
-            groupBy: {
-              vendorId: col(myOrders, "vendorId"),
-            },
-            measures: {
-              spend: agg.sum(col(myOrders, "totalCents")),
-            },
-          });
-        },
-        {
-          columns: ({ col }) => ({
-            vendorId: col.string("vendorId"),
-            spend: col.integer("spend"),
-          }),
-        },
-      ),
-    },
-  };
+const myOrders = schemaBuilder.table(ordersEntity, {
+  name: "myOrders",
+  columns: () => ({
+    id: { source: "id", type: "text", nullable: false },
+    vendorId: { source: "vendor_id", type: "text" },
+    totalCents: { source: "total_cents", type: "integer" },
+  }),
 });
+
+const typedOrders = schemaBuilder.table(vendorsEntity, {
+  name: "typedOrders",
+  columns: ({ col }) => ({
+    id: col.id("id"),
+    name: col.string("name"),
+    // @ts-expect-error - typed builders still validate source columns against the bound entity
+    missing: col.string("doesNotExist"),
+  }),
+});
+void typedOrders;
+
+const typedMetrics = schemaBuilder.table(typedMetricsEntity, {
+  name: "typedMetrics",
+  columns: ({ col }) => ({
+    integerValue: col.integer("integerColumn"),
+    realValue: col.real("realColumn"),
+    timestampValue: col.timestamp("timestampColumn"),
+    jsonValue: col.json("jsonColumn"),
+    blobValue: col.blob("blobColumn"),
+    dateValue: col.date("dateColumn"),
+    datetimeValue: col.datetime("datetimeColumn"),
+    coercedInteger: col.integer("timestampColumn", { coerce: "isoTimestamp" }),
+    // @ts-expect-error - incompatible source types require explicit coerce
+    invalidInteger: col.integer("timestampColumn"),
+    // @ts-expect-error - integers are not accepted by text builders without explicit coerce
+    invalidString: col.string("integerColumn"),
+  }),
+});
+void typedMetrics;
+
+schemaBuilder.view(
+  ({ scan, join, aggregate, col, expr, agg }) => {
+    const entityScan = scan(vendorsEntity);
+    void entityScan;
+
+    const okEntityColRef = col(vendorsEntity, "id");
+    void okEntityColRef;
+    // @ts-expect-error - column does not exist on vendorsEntity
+    col(vendorsEntity, "doesNotExist");
+
+    const okColRef = col(myOrders, "vendorId");
+    void okColRef;
+    // @ts-expect-error - column does not exist on myOrders
+    col(myOrders, "doesNotExist");
+
+    return aggregate({
+      from: join({
+        left: scan(myOrders),
+        right: scan(myOrders),
+        on: expr.eq(col(myOrders, "vendorId"), col(myOrders, "id")),
+        type: "inner",
+      }),
+      groupBy: {
+        vendorId: col(myOrders, "vendorId"),
+      },
+      measures: {
+        spend: agg.sum(col(myOrders, "totalCents")),
+      },
+    });
+  },
+  {
+    name: "spendByVendor",
+    columns: ({ col }) => ({
+      vendorId: col.string("vendorId"),
+      spend: col.integer("spend"),
+    }),
+  },
+);
+
+schemaBuilder.build();

@@ -3,6 +3,7 @@ import {
   bindAdapterEntities,
   type ConstraintValidationOptions,
   createDataEntityHandle,
+  createSchemaBuilder,
   createExecutableSchema,
   type QueryGuardrails,
   type QuerySessionOptions,
@@ -128,25 +129,24 @@ export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDe
   providerName = "memory",
 ) {
   const provider = createMethodsProvider(schema, methods, providerName);
+  const builder = createSchemaBuilder<TContext>();
 
-  return createExecutableSchema(({ table }) => ({
-    tables: Object.fromEntries(
-      Object.entries(schema.tables).map(([tableName, tableDefinition]) => [
-        tableName,
-        table(provider.entities![tableName]!, {
-          columns: () => Object.fromEntries(
-            Object.entries(tableDefinition.columns).map(([columnName, definition]) => [
-              columnName,
-              typeof definition === "string"
-                ? { source: columnName, type: definition }
-                : { source: columnName, ...definition },
-            ]),
-          ),
-          ...(tableDefinition.constraints ? { constraints: tableDefinition.constraints } : {}),
-        }),
-      ]),
-    ),
-  }));
+  for (const [tableName, tableDefinition] of Object.entries(schema.tables)) {
+    builder.table(provider.entities![tableName]!, {
+      name: tableName,
+      columns: () => Object.fromEntries(
+        Object.entries(tableDefinition.columns).map(([columnName, definition]) => [
+          columnName,
+          typeof definition === "string"
+            ? { source: columnName, type: definition }
+            : { source: columnName, ...definition },
+        ]),
+      ),
+      ...(tableDefinition.constraints ? { constraints: tableDefinition.constraints } : {}),
+    });
+  }
+
+  return createExecutableSchema(builder);
 }
 
 export function queryWithMethods<TContext>(

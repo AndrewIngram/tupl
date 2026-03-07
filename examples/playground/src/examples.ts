@@ -1,6 +1,6 @@
 import {
+  createSchemaBuilder,
   createDataEntityHandle,
-  defineSchema,
   type SchemaDefinition,
 } from "../../../src/index";
 
@@ -27,7 +27,9 @@ const vendorsEntity = createDataEntityHandle<"id" | "org_id" | "name" | "tier">(
   provider: "dbProvider",
   entity: "vendors",
 });
-const productsEntity = createDataEntityHandle<"id" | "org_id" | "sku" | "name" | "category" | "active">({
+const productsEntity = createDataEntityHandle<
+  "id" | "org_id" | "sku" | "name" | "category" | "active"
+>({
   provider: "dbProvider",
   entity: "products",
 });
@@ -40,245 +42,230 @@ const productViewCountsEntity = createDataEntityHandle<"product_id" | "view_coun
   entity: "product_view_counts",
 });
 
-export const FACADE_SCHEMA: SchemaDefinition = defineSchema(({ table, view }) => {
-  const myOrders = table(ordersEntity, {
-    columns: ({ col, expr }) => ({
-      id: col.id("id"),
-      vendor_id: col.string("vendor_id", {
-        nullable: false,
-        foreignKey: {
-          table: "vendors_for_org",
-          column: "id",
-        },
-      }),
-      status: col.string("status", {
-        nullable: false,
-        enum: ["pending", "paid", "shipped"] as const,
-      }),
-      total_cents: col.integer("total_cents", { nullable: false }),
-      created_at: col.timestamp("created_at", { nullable: false }),
-      total_dollars: col.real(
-        expr.divide(col("total_cents"), expr.literal(100)),
-        { nullable: false },
-      ),
-      is_large_order: col.boolean(
-        expr.gte(col("total_cents"), expr.literal(30000)),
-        { nullable: false },
-      ),
-    }),
-  });
+const facadeSchemaBuilder = createSchemaBuilder<Record<string, never>>();
 
-  const myOrderItems = table(orderItemsEntity, {
-    columns: ({ col, expr }) => ({
-      id: col.id("id"),
-      order_id: col.string("order_id", {
-        nullable: false,
-        foreignKey: {
-          table: "my_orders",
-          column: "id",
-        },
-      }),
-      product_id: col.string("product_id", {
-        nullable: false,
-        foreignKey: {
-          table: "active_products",
-          column: "id",
-        },
-      }),
-      quantity: col.integer("quantity", { nullable: false }),
-      line_total_cents: col.integer("line_total_cents", { nullable: false }),
-      unit_price_cents: col.real(
-        expr.divide(col("line_total_cents"), col("quantity")),
-        { nullable: false },
-      ),
+facadeSchemaBuilder.table(ordersEntity, {
+  name: "my_orders",
+  columns: ({ col, expr }) => ({
+    id: col.id("id"),
+    vendor_id: col.string("vendor_id", {
+      nullable: false,
+      foreignKey: {
+        table: "vendors_for_org",
+        column: "id",
+      },
     }),
-  });
+    status: col.string("status", {
+      nullable: false,
+      enum: ["pending", "paid", "shipped"] as const,
+    }),
+    total_cents: col.integer("total_cents", { nullable: false }),
+    created_at: col.timestamp("created_at", { nullable: false }),
+    total_dollars: col.real(expr.divide(col("total_cents"), expr.literal(100)), {
+      nullable: false,
+    }),
+    is_large_order: col.boolean(expr.gte(col("total_cents"), expr.literal(30000)), {
+      nullable: false,
+    }),
+  }),
+});
 
-  const vendorsForOrg = table(vendorsEntity, {
+const myOrderItemsRef = facadeSchemaBuilder.table(orderItemsEntity, {
+  name: "my_order_items",
+  columns: ({ col, expr }) => ({
+    id: col.id("id"),
+    order_id: col.string("order_id", {
+      nullable: false,
+      foreignKey: {
+        table: "my_orders",
+        column: "id",
+      },
+    }),
+    product_id: col.string("product_id", {
+      nullable: false,
+      foreignKey: {
+        table: "active_products",
+        column: "id",
+      },
+    }),
+    quantity: col.integer("quantity", { nullable: false }),
+    line_total_cents: col.integer("line_total_cents", { nullable: false }),
+    unit_price_cents: col.real(expr.divide(col("line_total_cents"), col("quantity")), {
+      nullable: false,
+    }),
+  }),
+});
+
+facadeSchemaBuilder.table(vendorsEntity, {
+  name: "vendors_for_org",
+  columns: ({ col }) => ({
+    id: col.id("id"),
+    name: col.string("name", { nullable: false }),
+    tier: col.string("tier", {
+      nullable: false,
+      enum: ["standard", "preferred"] as const,
+    }),
+  }),
+});
+
+const productsForOrgRef = facadeSchemaBuilder.table(productsEntity, {
+  name: "products_for_org",
+  columns: ({ col }) => ({
+    id: col.id("id"),
+    sku: col.string("sku", { nullable: false }),
+    name: col.string("name", { nullable: false }),
+    category: col.string("category", {
+      nullable: false,
+      enum: ["hardware", "software", "services"] as const,
+    }),
+  }),
+});
+
+const productAccessForUserRef = facadeSchemaBuilder.table(userProductAccessEntity, {
+  name: "product_access_for_user",
+  columns: ({ col }) => ({
+    product_id: col.string("product_id", {
+      nullable: false,
+      foreignKey: {
+        table: "products_for_org",
+        column: "id",
+      },
+    }),
+  }),
+});
+
+const activeProductsRef = facadeSchemaBuilder.view(
+  ({ scan, join, col, expr }) =>
+    join({
+      left: scan(productsForOrgRef),
+      right: scan(productAccessForUserRef),
+      on: expr.eq(col(productsForOrgRef, "id"), col(productAccessForUserRef, "product_id")),
+      type: "inner",
+    }),
+  {
+    name: "active_products",
     columns: ({ col }) => ({
-      id: col.id("id"),
-      name: col.string("name", { nullable: false }),
-      tier: col.string("tier", {
-        nullable: false,
-        enum: ["standard", "preferred"] as const,
-      }),
-    }),
-  });
-
-  const productsForOrg = table(productsEntity, {
-    columns: ({ col }) => ({
-      id: col.id("id"),
-      sku: col.string("sku", { nullable: false }),
-      name: col.string("name", { nullable: false }),
-      category: col.string("category", {
+      id: col.id(productsForOrgRef, "id"),
+      sku: col.string(productsForOrgRef, "sku", { nullable: false }),
+      name: col.string(productsForOrgRef, "name", { nullable: false }),
+      category: col.string(productsForOrgRef, "category", {
         nullable: false,
         enum: ["hardware", "software", "services"] as const,
       }),
     }),
-  });
+  },
+);
 
-  const productAccessForUser = table(userProductAccessEntity, {
-    columns: ({ col }) => ({
-      product_id: col.string("product_id", {
-        nullable: false,
-        foreignKey: {
-          table: "products_for_org",
-          column: "id",
-        },
-      }),
+const myOrderLinesRef = facadeSchemaBuilder.view(
+  ({ scan, join, col, expr }) =>
+    join({
+      left: scan(myOrderItemsRef),
+      right: scan(activeProductsRef),
+      on: expr.eq(col(myOrderItemsRef, "product_id"), col(activeProductsRef, "id")),
+      type: "inner",
     }),
-  });
-
-  const activeProducts = view(
-    ({ scan, join, col, expr }) =>
-      join({
-        left: scan(productsForOrg),
-        right: scan(productAccessForUser),
-        on: expr.eq(
-          col(productsForOrg, "id"),
-          col(productAccessForUser, "product_id"),
-        ),
-        type: "inner",
-      }),
-    {
-      columns: ({ col }) => ({
-        id: col.id(productsForOrg, "id"),
-        sku: col.string(productsForOrg, "sku", { nullable: false }),
-        name: col.string(productsForOrg, "name", { nullable: false }),
-        category: col.string(productsForOrg, "category", {
-          nullable: false,
-          enum: ["hardware", "software", "services"] as const,
-        }),
-      }),
-    },
-  );
-
-  const myOrderLines = view(
-    ({ scan, join, col, expr }) =>
-      join({
-        left: scan(myOrderItems),
-        right: scan(activeProducts),
-        on: expr.eq(
-          col(myOrderItems, "product_id"),
-          col(activeProducts, "id"),
-        ),
-        type: "inner",
-      }),
-    {
-      columns: ({ col }) => ({
-        order_id: col.string(myOrderItems, "order_id", {
-          nullable: false,
-          foreignKey: { table: "my_orders", column: "id" },
-        }),
-        product_id: col.string(activeProducts, "id", {
-          nullable: false,
-          foreignKey: { table: "active_products", column: "id" },
-        }),
-        product_sku: col.string(activeProducts, "sku", { nullable: false }),
-        product_name: col.string(activeProducts, "name", { nullable: false }),
-        product_category: col.string(activeProducts, "category", {
-          nullable: false,
-          enum: ["hardware", "software", "services"] as const,
-        }),
-        quantity: col.integer(myOrderItems, "quantity", { nullable: false }),
-        line_total_cents: col.integer(myOrderItems, "line_total_cents", { nullable: false }),
-        unit_price_cents: col.real(myOrderItems, "unit_price_cents", { nullable: false }),
-      }),
-    },
-  );
-
-  const productViewCounts = table(productViewCountsEntity, {
+  {
+    name: "my_order_lines",
     columns: ({ col }) => ({
-      product_id: col.string("product_id", {
+      order_id: col.string(myOrderItemsRef, "order_id", {
         nullable: false,
+        foreignKey: { table: "my_orders", column: "id" },
+      }),
+      product_id: col.string(activeProductsRef, "id", {
+        nullable: false,
+        foreignKey: { table: "active_products", column: "id" },
+      }),
+      product_sku: col.string(activeProductsRef, "sku", { nullable: false }),
+      product_name: col.string(activeProductsRef, "name", { nullable: false }),
+      product_category: col.string(activeProductsRef, "category", {
+        nullable: false,
+        enum: ["hardware", "software", "services"] as const,
+      }),
+      quantity: col.integer(myOrderItemsRef, "quantity", { nullable: false }),
+      line_total_cents: col.integer(myOrderItemsRef, "line_total_cents", { nullable: false }),
+      unit_price_cents: col.real(myOrderItemsRef, "unit_price_cents", { nullable: false }),
+    }),
+  },
+);
+
+const productViewCountsRef = facadeSchemaBuilder.table(productViewCountsEntity, {
+  name: "product_view_counts",
+  columns: ({ col }) => ({
+    product_id: col.string("product_id", {
+      nullable: false,
+      foreignKey: {
+        table: "active_products",
+        column: "id",
+      },
+    }),
+    view_count: col.integer("view_count", { nullable: false }),
+  }),
+});
+
+facadeSchemaBuilder.view(
+  ({ scan, join, col, expr }) =>
+    join({
+      left: scan(activeProductsRef),
+      right: scan(productViewCountsRef),
+      on: expr.eq(col(activeProductsRef, "id"), col(productViewCountsRef, "product_id")),
+      type: "left",
+    }),
+  {
+    name: "product_engagement",
+    columns: ({ col, expr }) => ({
+      product_id: col.id(activeProductsRef, "id"),
+      product_sku: col.string(activeProductsRef, "sku", { nullable: false }),
+      product_name: col.string(activeProductsRef, "name", { nullable: false }),
+      product_category: col.string(activeProductsRef, "category", {
+        nullable: false,
+        enum: ["hardware", "software", "services"] as const,
+      }),
+      view_count: col.integer(productViewCountsRef, "view_count", { nullable: true }),
+      engagement_score: col.real(
+        expr.divide(expr.add(col("view_count"), expr.literal(1)), expr.literal(10)),
+        { nullable: false },
+      ),
+    }),
+  },
+);
+
+facadeSchemaBuilder.view(
+  ({ scan, aggregate, col, agg }) =>
+    aggregate({
+      from: scan(myOrderLinesRef),
+      groupBy: {
+        product_id: col(myOrderLinesRef, "product_id"),
+        product_name: col(myOrderLinesRef, "product_name"),
+        product_category: col(myOrderLinesRef, "product_category"),
+      },
+      measures: {
+        line_count: agg.count(),
+        units_sold: agg.sum(col(myOrderLinesRef, "quantity")),
+        revenue_cents: agg.sum(col(myOrderLinesRef, "line_total_cents")),
+      },
+    }),
+  {
+    name: "product_performance",
+    columns: ({ col }) => ({
+      product_id: col.id("product_id", {
         foreignKey: {
           table: "active_products",
           column: "id",
         },
       }),
-      view_count: col.integer("view_count", { nullable: false }),
+      product_name: col.string("product_name", { nullable: false }),
+      product_category: col.string("product_category", {
+        nullable: false,
+        enum: ["hardware", "software", "services"] as const,
+      }),
+      line_count: col.integer("line_count", { nullable: false }),
+      units_sold: col.integer("units_sold", { nullable: false }),
+      revenue_cents: col.integer("revenue_cents", { nullable: false }),
     }),
-  });
+  },
+);
 
-  const productEngagement = view(
-    ({ scan, join, col, expr }) =>
-      join({
-        left: scan(activeProducts),
-        right: scan(productViewCounts),
-        on: expr.eq(
-          col(activeProducts, "id"),
-          col(productViewCounts, "product_id"),
-        ),
-        type: "left",
-      }),
-    {
-      columns: ({ col, expr }) => ({
-        product_id: col.id(activeProducts, "id"),
-        product_sku: col.string(activeProducts, "sku", { nullable: false }),
-        product_name: col.string(activeProducts, "name", { nullable: false }),
-        product_category: col.string(activeProducts, "category", {
-          nullable: false,
-          enum: ["hardware", "software", "services"] as const,
-        }),
-        view_count: col.integer(productViewCounts, "view_count", { nullable: true }),
-        engagement_score: col.real(
-          expr.divide(expr.add(col("view_count"), expr.literal(1)), expr.literal(10)),
-          { nullable: false },
-        ),
-      }),
-    },
-  );
-
-  const productPerformance = view(
-    ({ scan, aggregate, col, agg }) =>
-      aggregate({
-        from: scan(myOrderLines),
-        groupBy: {
-          product_id: col(myOrderLines, "product_id"),
-          product_name: col(myOrderLines, "product_name"),
-          product_category: col(myOrderLines, "product_category"),
-        },
-        measures: {
-          line_count: agg.count(),
-          units_sold: agg.sum(col(myOrderLines, "quantity")),
-          revenue_cents: agg.sum(col(myOrderLines, "line_total_cents")),
-        },
-      }),
-    {
-      columns: ({ col }) => ({
-        product_id: col.id("product_id", {
-          foreignKey: {
-            table: "active_products",
-            column: "id",
-          },
-        }),
-        product_name: col.string("product_name", { nullable: false }),
-        product_category: col.string("product_category", {
-          nullable: false,
-          enum: ["hardware", "software", "services"] as const,
-        }),
-        line_count: col.integer("line_count", { nullable: false }),
-        units_sold: col.integer("units_sold", { nullable: false }),
-        revenue_cents: col.integer("revenue_cents", { nullable: false }),
-      }),
-    },
-  );
-
-  return {
-    tables: {
-      my_orders: myOrders,
-      my_order_items: myOrderItems,
-      vendors_for_org: vendorsForOrg,
-      products_for_org: productsForOrg,
-      product_access_for_user: productAccessForUser,
-      active_products: activeProducts,
-      my_order_lines: myOrderLines,
-      product_view_counts: productViewCounts,
-      product_engagement: productEngagement,
-      product_performance: productPerformance,
-    },
-  };
-});
+export const FACADE_SCHEMA: SchemaDefinition = facadeSchemaBuilder.build();
 
 export const GENERATED_DB_MODULE_ID = "./generated-db";
 export const DB_PROVIDER_MODULE_ID = "./db-provider";
@@ -465,40 +452,43 @@ export const kvProvider = createProvider(playgroundKvRuntime);
 `.trim();
 
 export const DEFAULT_FACADE_SCHEMA_CODE = `
-import { createExecutableSchema } from "sqlql";
+import { createExecutableSchema, createSchemaBuilder } from "sqlql";
 import type { QueryContext } from "${CONTEXT_MODULE_ID}";
 import { dbProvider } from "${DB_PROVIDER_MODULE_ID}";
 import { kvProvider } from "${KV_PROVIDER_MODULE_ID}";
 
-export const executableSchema = createExecutableSchema<QueryContext>(({ table, view }) => {
-  const myOrders = table(dbProvider.entities.orders, {
-    columns: ({ col, expr }) => ({
-      id: col.id("id"),
-      vendor_id: col.string("vendor_id", {
-        nullable: false,
-        foreignKey: {
-          table: "vendors_for_org",
-          column: "id",
-        },
-      }),
-      status: col.string("status", {
-        nullable: false,
-        enum: ["pending", "paid", "shipped"] as const,
-      }),
-      total_cents: col.integer("total_cents", { nullable: false }),
-      created_at: col.timestamp("created_at", { nullable: false }),
-      total_dollars: col.real(
-        expr.divide(col("total_cents"), expr.literal(100)),
-        { nullable: false },
-      ),
-      is_large_order: col.boolean(
-        expr.gte(col("total_cents"), expr.literal(30000)),
-        { nullable: false },
-      ),
-    }),
-  });
+const builder = createSchemaBuilder<QueryContext>();
 
-  const myOrderItems = table(dbProvider.entities.order_items, {
+builder.table(dbProvider.entities.orders, {
+  name: "my_orders",
+  columns: ({ col, expr }) => ({
+    id: col.id("id"),
+    vendor_id: col.string("vendor_id", {
+      nullable: false,
+      foreignKey: {
+        table: "vendors_for_org",
+        column: "id",
+      },
+    }),
+    status: col.string("status", {
+      nullable: false,
+      enum: ["pending", "paid", "shipped"] as const,
+    }),
+    total_cents: col.integer("total_cents", { nullable: false }),
+    created_at: col.timestamp("created_at", { nullable: false }),
+    total_dollars: col.real(
+      expr.divide(col("total_cents"), expr.literal(100)),
+      { nullable: false },
+    ),
+    is_large_order: col.boolean(
+      expr.gte(col("total_cents"), expr.literal(30000)),
+      { nullable: false },
+    ),
+  }),
+});
+
+const myOrderItemsRef = builder.table(dbProvider.entities.order_items, {
+    name: "my_order_items",
     columns: ({ col, expr }) => ({
       id: col.id("id"),
       order_id: col.string("order_id", {
@@ -522,20 +512,22 @@ export const executableSchema = createExecutableSchema<QueryContext>(({ table, v
         { nullable: false },
       ),
     }),
-  });
+});
 
-  const vendorsForOrg = table(dbProvider.entities.vendors, {
-    columns: ({ col }) => ({
-      id: col.id("id"),
-      name: col.string("name", { nullable: false }),
-      tier: col.string("tier", {
-        nullable: false,
-        enum: ["standard", "preferred"] as const,
-      }),
+builder.table(dbProvider.entities.vendors, {
+  name: "vendors_for_org",
+  columns: ({ col }) => ({
+    id: col.id("id"),
+    name: col.string("name", { nullable: false }),
+    tier: col.string("tier", {
+      nullable: false,
+      enum: ["standard", "preferred"] as const,
     }),
-  });
+  }),
+});
 
-  const productsForOrg = table(dbProvider.entities.products, {
+const productsForOrgRef = builder.table(dbProvider.entities.products, {
+    name: "products_for_org",
     columns: ({ col }) => ({
       id: col.id("id"),
       sku: col.string("sku", { nullable: false }),
@@ -545,9 +537,10 @@ export const executableSchema = createExecutableSchema<QueryContext>(({ table, v
         enum: ["hardware", "software", "services"] as const,
       }),
     }),
-  });
+});
 
-  const productAccessForUser = table(dbProvider.entities.user_product_access, {
+const productAccessForUserRef = builder.table(dbProvider.entities.user_product_access, {
+    name: "product_access_for_user",
     columns: ({ col }) => ({
       product_id: col.string("product_id", {
         nullable: false,
@@ -557,73 +550,76 @@ export const executableSchema = createExecutableSchema<QueryContext>(({ table, v
         },
       }),
     }),
-  });
+});
 
-  const activeProducts = view(
-    ({ scan, join, col, expr }) =>
-      join({
-        left: scan(productsForOrg),
-        right: scan(productAccessForUser),
-        on: expr.eq(
-          col(productsForOrg, "id"),
-          col(productAccessForUser, "product_id"),
-        ),
-        type: "inner",
+const activeProductsRef = builder.view(
+  ({ scan, join, col, expr }) =>
+    join({
+      left: scan(productsForOrgRef),
+      right: scan(productAccessForUserRef),
+      on: expr.eq(
+        col(productsForOrgRef, "id"),
+        col(productAccessForUserRef, "product_id"),
+      ),
+      type: "inner",
+    }),
+  {
+    name: "active_products",
+    columns: ({ col }) => ({
+      id: col.id(productsForOrgRef, "id"),
+      sku: col.string(productsForOrgRef, "sku", { nullable: false }),
+      name: col.string(productsForOrgRef, "name", { nullable: false }),
+      category: col.string(productsForOrgRef, "category", {
+        nullable: false,
+        enum: ["hardware", "software", "services"] as const,
       }),
-    {
-      columns: ({ col }) => ({
-        id: col.id(productsForOrg, "id"),
-        sku: col.string(productsForOrg, "sku", { nullable: false }),
-        name: col.string(productsForOrg, "name", { nullable: false }),
-        category: col.string(productsForOrg, "category", {
-          nullable: false,
-          enum: ["hardware", "software", "services"] as const,
-        }),
       }),
     },
-  );
+);
 
-  const myOrderLines = view(
-    ({ scan, join, col, expr }) =>
-      join({
-        left: scan(myOrderItems),
-        right: scan(activeProducts),
-        on: expr.eq(
-          col(myOrderItems, "product_id"),
-          col(activeProducts, "id"),
-        ),
-        type: "inner",
-      }),
-    {
-      columns: ({ col }) => ({
-        order_id: col.string(myOrderItems, "order_id", {
+const myOrderLinesRef = builder.view(
+  ({ scan, join, col, expr }) =>
+    join({
+      left: scan(myOrderItemsRef),
+      right: scan(activeProductsRef),
+      on: expr.eq(
+        col(myOrderItemsRef, "product_id"),
+        col(activeProductsRef, "id"),
+      ),
+      type: "inner",
+    }),
+  {
+    name: "my_order_lines",
+    columns: ({ col }) => ({
+        order_id: col.string(myOrderItemsRef, "order_id", {
           nullable: false,
           foreignKey: {
             table: "my_orders",
             column: "id",
           },
         }),
-        product_id: col.string(activeProducts, "id", {
+        product_id: col.string(activeProductsRef, "id", {
           nullable: false,
           foreignKey: {
             table: "active_products",
             column: "id",
           },
         }),
-        product_sku: col.string(activeProducts, "sku", { nullable: false }),
-        product_name: col.string(activeProducts, "name", { nullable: false }),
-        product_category: col.string(activeProducts, "category", {
+        product_sku: col.string(activeProductsRef, "sku", { nullable: false }),
+        product_name: col.string(activeProductsRef, "name", { nullable: false }),
+        product_category: col.string(activeProductsRef, "category", {
           nullable: false,
           enum: ["hardware", "software", "services"] as const,
         }),
-        quantity: col.integer(myOrderItems, "quantity", { nullable: false }),
-        line_total_cents: col.integer(myOrderItems, "line_total_cents", { nullable: false }),
-        unit_price_cents: col.real(myOrderItems, "unit_price_cents", { nullable: false }),
+        quantity: col.integer(myOrderItemsRef, "quantity", { nullable: false }),
+        line_total_cents: col.integer(myOrderItemsRef, "line_total_cents", { nullable: false }),
+        unit_price_cents: col.real(myOrderItemsRef, "unit_price_cents", { nullable: false }),
       }),
     },
-  );
+);
 
-  const productViewCounts = table(kvProvider.entities.product_view_counts, {
+const productViewCountsRef = builder.table(kvProvider.entities.product_view_counts, {
+    name: "product_view_counts",
     columns: ({ col }) => ({
       product_id: col.string("product_id", {
         nullable: false,
@@ -634,53 +630,55 @@ export const executableSchema = createExecutableSchema<QueryContext>(({ table, v
       }),
       view_count: col.integer("view_count", { nullable: false }),
     }),
-  });
+});
 
-  const productEngagement = view(
-    ({ scan, join, col, expr }) =>
-      join({
-        left: scan(activeProducts),
-        right: scan(productViewCounts),
-        on: expr.eq(
-          col(activeProducts, "id"),
-          col(productViewCounts, "product_id"),
-        ),
-        type: "left",
+builder.view(
+  ({ scan, join, col, expr }) =>
+    join({
+      left: scan(activeProductsRef),
+      right: scan(productViewCountsRef),
+      on: expr.eq(
+        col(activeProductsRef, "id"),
+        col(productViewCountsRef, "product_id"),
+      ),
+      type: "left",
+    }),
+  {
+    name: "product_engagement",
+    columns: ({ col, expr }) => ({
+      product_id: col.id(activeProductsRef, "id"),
+      product_sku: col.string(activeProductsRef, "sku", { nullable: false }),
+      product_name: col.string(activeProductsRef, "name", { nullable: false }),
+      product_category: col.string(activeProductsRef, "category", {
+        nullable: false,
+        enum: ["hardware", "software", "services"] as const,
       }),
-    {
-      columns: ({ col, expr }) => ({
-        product_id: col.id(activeProducts, "id"),
-        product_sku: col.string(activeProducts, "sku", { nullable: false }),
-        product_name: col.string(activeProducts, "name", { nullable: false }),
-        product_category: col.string(activeProducts, "category", {
-          nullable: false,
-          enum: ["hardware", "software", "services"] as const,
-        }),
-        view_count: col.integer(productViewCounts, "view_count", { nullable: true }),
-        engagement_score: col.real(
-          expr.divide(expr.add(col("view_count"), expr.literal(1)), expr.literal(10)),
-          { nullable: false },
-        ),
-      }),
-    },
-  );
+      view_count: col.integer(productViewCountsRef, "view_count", { nullable: true }),
+      engagement_score: col.real(
+        expr.divide(expr.add(col("view_count"), expr.literal(1)), expr.literal(10)),
+        { nullable: false },
+      ),
+    }),
+  },
+);
 
-  const productPerformance = view(
+builder.view(
     ({ scan, aggregate, col, agg }) =>
       aggregate({
-        from: scan(myOrderLines),
+        from: scan(myOrderLinesRef),
         groupBy: {
-          product_id: col(myOrderLines, "product_id"),
-          product_name: col(myOrderLines, "product_name"),
-          product_category: col(myOrderLines, "product_category"),
+          product_id: col(myOrderLinesRef, "product_id"),
+          product_name: col(myOrderLinesRef, "product_name"),
+          product_category: col(myOrderLinesRef, "product_category"),
         },
         measures: {
           line_count: agg.count(),
-          units_sold: agg.sum(col(myOrderLines, "quantity")),
-          revenue_cents: agg.sum(col(myOrderLines, "line_total_cents")),
+          units_sold: agg.sum(col(myOrderLinesRef, "quantity")),
+          revenue_cents: agg.sum(col(myOrderLinesRef, "line_total_cents")),
         },
       }),
     {
+      name: "product_performance",
       columns: ({ col }) => ({
         product_id: col.id("product_id", {
           foreignKey: {
@@ -698,23 +696,9 @@ export const executableSchema = createExecutableSchema<QueryContext>(({ table, v
         revenue_cents: col.integer("revenue_cents", { nullable: false }),
       }),
     },
-  );
+);
 
-  return {
-    tables: {
-      my_orders: myOrders,
-      my_order_items: myOrderItems,
-      vendors_for_org: vendorsForOrg,
-      products_for_org: productsForOrg,
-      product_access_for_user: productAccessForUser,
-      active_products: activeProducts,
-      my_order_lines: myOrderLines,
-      product_view_counts: productViewCounts,
-      product_engagement: productEngagement,
-      product_performance: productPerformance,
-    },
-  };
-});
+export const executableSchema = createExecutableSchema(builder);
 `.trim();
 
 export const QUERY_PRESETS: PlaygroundQueryPreset[] = [
@@ -1464,7 +1448,8 @@ export const SCENARIO_PRESETS: PlaygroundScenarioPreset[] = [
   {
     id: "acme_alex",
     label: "Acme: Alex",
-    description: "Alex is a buyer in Acme. Data includes multiple vendors and active/inactive products.",
+    description:
+      "Alex is a buyer in Acme. Data includes multiple vendors and active/inactive products.",
     context: {
       orgId: "org_acme",
       userId: "u_alex",

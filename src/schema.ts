@@ -325,6 +325,7 @@ type DslViewColumnInput<TSourceColumns extends string = string> =
 type SchemaDslRelationRef<TColumns extends string> =
   | SchemaDslTableToken<TColumns>
   | DslTableDefinition<TColumns, string>
+  | DslStaticTableDefinition<TColumns>
   | DslViewDefinition<any, TColumns, string>;
 
 interface DslTableDefinition<
@@ -335,6 +336,14 @@ interface DslTableDefinition<
   tableToken: SchemaDslTableToken<TMappedColumns>;
   from: SchemaDataEntityHandle<TSourceColumns>;
   columns: Record<TMappedColumns, DslTableColumnInput<TSourceColumns>>;
+  constraints?: TableConstraints;
+}
+
+interface DslStaticTableDefinition<TColumns extends string = string> {
+  kind: "dsl_static_table";
+  tableToken: SchemaDslTableToken<TColumns>;
+  provider?: string;
+  columns: Record<TColumns, TableColumnDefinition>;
   constraints?: TableConstraints;
 }
 
@@ -519,58 +528,53 @@ interface SchemaColumnExprHelpers {
   not: (input: RelExpr) => RelExpr;
 }
 
-export interface SchemaDslHelpers<TContext> {
-  table: {
-    <
-      TSourceColumns extends string,
-      TColumns extends string,
-      TRow extends Partial<Record<TSourceColumns, unknown>> = Record<TSourceColumns, unknown>,
-      TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>> = DataEntityReadMetadataMap<
-        TSourceColumns,
-        TRow
-      >,
-    >(input: {
-      from: SchemaDataEntityHandle<TSourceColumns, TRow, TColumnMetadata>;
-      columns: Record<TColumns, DslTableColumnInput<TSourceColumns>>;
+type SchemaBuilderTableMethods = {
+  <TColumns extends string>(input: {
+    name: string;
+    provider?: string;
+    columns: Record<TColumns, TableColumnDefinition>;
+    constraints?: TableConstraints;
+  }): DslStaticTableDefinition<TColumns>;
+  <
+    TSourceColumns extends string,
+    TColumns extends string,
+    TRow extends Partial<Record<TSourceColumns, unknown>> = Record<TSourceColumns, unknown>,
+    TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>> = DataEntityReadMetadataMap<
+      TSourceColumns,
+      TRow
+    >,
+  >(input: {
+    name: string;
+    from: SchemaDataEntityHandle<TSourceColumns, TRow, TColumnMetadata>;
+    columns: Record<TColumns, DslTableColumnInput<TSourceColumns>>;
+    constraints?: TableConstraints;
+  }): DslTableDefinition<TColumns, TSourceColumns>;
+  <
+    TSourceColumns extends string,
+    TMappedColumns extends string,
+    TRow extends Partial<Record<TSourceColumns, unknown>> = Record<TSourceColumns, unknown>,
+    TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>> = DataEntityReadMetadataMap<
+      TSourceColumns,
+      TRow
+    >,
+  >(
+    from: SchemaDataEntityHandle<TSourceColumns, TRow, TColumnMetadata>,
+    input: {
+      name: string;
+      columns: (helpers: {
+        col: SchemaColumnsColHelper<TSourceColumns, TColumnMetadata>;
+        expr: SchemaColumnExprHelpers;
+      }) => Record<TMappedColumns, DslTableColumnInput<TSourceColumns>>;
       constraints?: TableConstraints;
-    }): DslTableDefinition<TColumns, TSourceColumns>;
-    <
-      TSourceColumns extends string,
-      TMappedColumns extends string,
-      TRow extends Partial<Record<TSourceColumns, unknown>> = Record<TSourceColumns, unknown>,
-      TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>> = DataEntityReadMetadataMap<
-        TSourceColumns,
-        TRow
-      >,
-    >(
-      from: SchemaDataEntityHandle<TSourceColumns, TRow, TColumnMetadata>,
-      input: {
-        columns: (helpers: {
-          col: SchemaColumnsColHelper<TSourceColumns, TColumnMetadata>;
-          expr: SchemaColumnExprHelpers;
-        }) => Record<TMappedColumns, DslTableColumnInput<TSourceColumns>>;
-        constraints?: TableConstraints;
-      },
-    ): DslTableDefinition<TMappedColumns, TSourceColumns>;
-  };
-  view: {
-    <TRelColumns extends string, TColumns extends string>(
-      rel: (helpers: SchemaDslViewRelHelpers, context: TContext) => SchemaViewRelNodeInput<TRelColumns> | unknown,
-      input: {
-        columns:
-          | ((helpers: {
-              col: SchemaColumnsColHelper<
-                TRelColumns,
-                DataEntityReadMetadataMap<TRelColumns, Record<TRelColumns, unknown>>
-              >;
-              expr: SchemaColumnExprHelpers;
-            }) => Record<TColumns, DslViewColumnInput<TRelColumns>>)
-          | Record<TColumns, DslViewColumnInput<TRelColumns>>;
-        constraints?: TableConstraints;
-      },
-    ): DslViewDefinition<TContext, TColumns, TRelColumns>;
-    <TRelColumns extends string, TColumns extends string>(input: {
-      rel: (helpers: SchemaDslViewRelHelpers, context: TContext) => SchemaViewRelNodeInput<TRelColumns> | unknown;
+    },
+  ): DslTableDefinition<TMappedColumns, TSourceColumns>;
+};
+
+type SchemaBuilderViewMethods<TContext> = {
+  <TRelColumns extends string, TColumns extends string>(
+    rel: (helpers: SchemaDslViewRelHelpers, context: TContext) => SchemaViewRelNodeInput<TRelColumns> | unknown,
+    input: {
+      name: string;
       columns:
         | ((helpers: {
             col: SchemaColumnsColHelper<
@@ -581,17 +585,43 @@ export interface SchemaDslHelpers<TContext> {
           }) => Record<TColumns, DslViewColumnInput<TRelColumns>>)
         | Record<TColumns, DslViewColumnInput<TRelColumns>>;
       constraints?: TableConstraints;
-    }): DslViewDefinition<TContext, TColumns, TRelColumns>;
-    <TColumns extends string>(input: {
-      rel: (context: TContext) => SchemaViewRelNodeInput<string> | unknown;
-      columns: Record<TColumns, DslViewColumnInput<string>>;
-      constraints?: TableConstraints;
-    }): DslViewDefinition<TContext, TColumns, string>;
-  };
+    },
+  ): DslViewDefinition<TContext, TColumns, TRelColumns>;
+  <TRelColumns extends string, TColumns extends string>(input: {
+    name: string;
+    rel: (helpers: SchemaDslViewRelHelpers, context: TContext) => SchemaViewRelNodeInput<TRelColumns> | unknown;
+    columns:
+      | ((helpers: {
+          col: SchemaColumnsColHelper<
+            TRelColumns,
+            DataEntityReadMetadataMap<TRelColumns, Record<TRelColumns, unknown>>
+          >;
+          expr: SchemaColumnExprHelpers;
+        }) => Record<TColumns, DslViewColumnInput<TRelColumns>>)
+      | Record<TColumns, DslViewColumnInput<TRelColumns>>;
+    constraints?: TableConstraints;
+  }): DslViewDefinition<TContext, TColumns, TRelColumns>;
+  <TColumns extends string>(input: {
+    name: string;
+    rel: (context: TContext) => SchemaViewRelNodeInput<string> | unknown;
+    columns: Record<TColumns, DslViewColumnInput<string>>;
+    constraints?: TableConstraints;
+  }): DslViewDefinition<TContext, TColumns, string>;
+};
+
+export interface SchemaBuilder<TContext> {
+  table: SchemaBuilderTableMethods;
+  view: SchemaBuilderViewMethods<TContext>;
+  build(): SchemaDefinition;
 }
 
-export interface SchemaDslDefinition<TContext> {
-  tables: Record<string, DslTableDefinition | DslViewDefinition<TContext, string, string> | TableDefinition>;
+type RegisteredSchemaDefinition<TContext> =
+  | DslStaticTableDefinition<string>
+  | DslTableDefinition<string, string>
+  | DslViewDefinition<TContext, string, string>;
+
+interface SchemaBuilderState<TContext> {
+  definitions: Map<string, RegisteredSchemaDefinition<TContext>>;
 }
 
 export interface NormalizedPhysicalTableBinding {
@@ -637,6 +667,7 @@ interface SchemaNormalizationState {
 }
 
 const normalizedSchemaState = new WeakMap<SchemaDefinition, SchemaNormalizationState>();
+const schemaBuilderState = new WeakMap<object, SchemaBuilderState<any>>();
 
 export type TableName<TSchema extends SchemaDefinition> = Extract<keyof TSchema["tables"], string>;
 
@@ -684,17 +715,115 @@ export type TableRow<TSchema extends SchemaDefinition, TTableName extends TableN
   >;
 };
 
-export function defineSchema<TContext>(
-  schemaBuilder: (helpers: SchemaDslHelpers<TContext>) => SchemaDslDefinition<TContext>,
-): SchemaDefinition;
-export function defineSchema<TSchema extends SchemaDefinition>(schema: TSchema): TSchema;
-export function defineSchema<TSchema extends SchemaDefinition, TContext>(
-  input: TSchema | ((helpers: SchemaDslHelpers<TContext>) => SchemaDslDefinition<TContext>),
-): TSchema | SchemaDefinition {
-  const schema = typeof input === "function"
-    ? normalizeDslSchema(input as (helpers: SchemaDslHelpers<TContext>) => SchemaDslDefinition<TContext>)
-    : (input as SchemaDefinition);
+export function createSchemaBuilder<TContext>(): SchemaBuilder<TContext> {
+  const state: SchemaBuilderState<TContext> = {
+    definitions: new Map(),
+  };
 
+  const registerDefinition = <TDefinition extends RegisteredSchemaDefinition<TContext>>(
+    name: string,
+    definition: TDefinition,
+  ): TDefinition => {
+    if (typeof name !== "string" || name.trim().length === 0) {
+      throw new Error("Schema builder table/view name must be a non-empty string.");
+    }
+    if (state.definitions.has(name)) {
+      throw new Error(`Schema builder already contains a table or view named ${name}.`);
+    }
+    state.definitions.set(name, definition);
+    return definition;
+  };
+
+  const table = ((arg1: any, arg2?: any) => {
+    if (isSchemaDataEntityHandle(arg1)) {
+      const input = arg2;
+      if (!input) {
+        throw new Error("Schema builder table(...) requires a config object.");
+      }
+
+      const columns = input.columns({
+        col: buildSchemaColumnsColHelper(),
+        expr: buildColumnExprHelpers(),
+      });
+      return registerDefinition(input.name, {
+        kind: "dsl_table" as const,
+        tableToken: createSchemaDslTableToken(),
+        from: arg1,
+        columns,
+        ...(input.constraints ? { constraints: input.constraints } : {}),
+      });
+    }
+
+    if (isSchemaDataEntityHandle(arg1?.from)) {
+      return registerDefinition(arg1.name, {
+        kind: "dsl_table" as const,
+        tableToken: createSchemaDslTableToken(),
+        from: arg1.from,
+        columns: arg1.columns,
+        ...(arg1.constraints ? { constraints: arg1.constraints } : {}),
+      });
+    }
+
+    if (!arg1 || typeof arg1 !== "object") {
+      throw new Error("Schema builder table(...) requires a config object.");
+    }
+
+    return registerDefinition(arg1.name, {
+      kind: "dsl_static_table" as const,
+      tableToken: createSchemaDslTableToken(),
+      ...(arg1.provider ? { provider: arg1.provider } : {}),
+      columns: arg1.columns,
+      ...(arg1.constraints ? { constraints: arg1.constraints } : {}),
+    });
+  }) as SchemaBuilder<TContext>["table"];
+
+  const view = ((arg1: any, arg2?: any) => {
+    const input = typeof arg1 === "function"
+      ? {
+          ...arg2,
+          rel: arg1,
+        }
+      : arg1;
+    if (!input) {
+      throw new Error("Schema builder view(...) requires a config object.");
+    }
+    const rel = (context: TContext, helpers: SchemaDslViewRelHelpers) =>
+      input.rel.length === 0
+        ? (input.rel as () => SchemaViewRelNodeInput<string> | unknown)()
+        : input.rel(helpers, context);
+    const columns = typeof input.columns === "function"
+      ? input.columns({
+          col: buildSchemaColumnsColHelper(),
+          expr: buildColumnExprHelpers(),
+        })
+      : input.columns;
+
+    return registerDefinition(input.name, {
+      kind: "dsl_view" as const,
+      tableToken: createSchemaDslTableToken(),
+      rel,
+      columns,
+      ...(input.constraints ? { constraints: input.constraints } : {}),
+    });
+  }) as SchemaBuilder<TContext>["view"];
+
+  const builder: SchemaBuilder<TContext> = {
+    table,
+    view,
+    build() {
+      return buildRegisteredSchemaDefinition(state);
+    },
+  };
+
+  schemaBuilderState.set(builder as object, state);
+  return builder;
+}
+
+export function isSchemaBuilder<TContext = unknown>(value: unknown): value is SchemaBuilder<TContext> {
+  return !!value && typeof value === "object" && schemaBuilderState.has(value as object);
+}
+
+export function finalizeSchemaDefinition<TSchema extends SchemaDefinition>(schema: TSchema): TSchema {
   attachIdentityBindingsIfMissing(schema);
   validateTableProviders(schema);
   validateSchemaConstraints(schema);
@@ -1283,18 +1412,16 @@ function toRelOutputKey(ref: RelColumnRef): string | null {
   return alias ? `${alias}.${ref.column}` : null;
 }
 
-function normalizeDslSchema<TContext>(
-  schemaBuilder: (helpers: SchemaDslHelpers<TContext>) => SchemaDslDefinition<TContext>,
+function buildRegisteredSchemaDefinition<TContext>(
+  state: SchemaBuilderState<TContext>,
 ): SchemaDefinition {
-  const helpers = buildSchemaDslHelpers<TContext>();
-  const built = schemaBuilder(helpers);
-
   const tables: Record<string, TableDefinition> = {};
   const bindings: Record<string, NormalizedTableBinding> = {};
   const tableTokenToName = new Map<symbol, string>();
+  const entries = [...state.definitions.entries()];
 
-  for (const [tableName, rawTable] of Object.entries(built.tables)) {
-    if (isDslTableDefinition(rawTable) || isDslViewDefinition(rawTable)) {
+  for (const [tableName, rawTable] of entries) {
+    if (isDslTableDefinition(rawTable) || isDslStaticTableDefinition(rawTable) || isDslViewDefinition(rawTable)) {
       tableTokenToName.set(rawTable.tableToken.__id, tableName);
     }
   }
@@ -1314,7 +1441,7 @@ function normalizeDslSchema<TContext>(
   };
   const viewRelHelpers = buildSchemaDslViewRelHelpers();
 
-  for (const [tableName, rawTable] of Object.entries(built.tables)) {
+  for (const [tableName, rawTable] of entries) {
     if (isDslTableDefinition(rawTable)) {
       const normalizedColumns: TableColumns = {};
       const columnBindings: Record<string, NormalizedColumnBinding> = {};
@@ -1344,6 +1471,23 @@ function normalizeDslSchema<TContext>(
         columnBindings,
         columnToSource: buildColumnSourceMapFromBindings(columnBindings),
         ...(adapter ? { adapter } : {}),
+      };
+      continue;
+    }
+
+    if (isDslStaticTableDefinition(rawTable)) {
+      const columns = Object.keys(rawTable.columns);
+      tables[tableName] = {
+        ...(rawTable.provider ? { provider: rawTable.provider } : {}),
+        columns: rawTable.columns,
+        ...(rawTable.constraints ? { constraints: rawTable.constraints } : {}),
+      };
+      bindings[tableName] = {
+        kind: "physical",
+        ...(rawTable.provider ? { provider: rawTable.provider } : {}),
+        entity: tableName,
+        columnBindings: Object.fromEntries(columns.map((column) => [column, { kind: "source", source: column }])),
+        columnToSource: Object.fromEntries(columns.map((column) => [column, column])),
       };
       continue;
     }
@@ -1380,13 +1524,12 @@ function normalizeDslSchema<TContext>(
       continue;
     }
 
-    tables[tableName] = rawTable as TableDefinition;
+    tables[tableName] = rawTable as never;
   }
 
   const schema: SchemaDefinition = { tables };
-
   normalizedSchemaState.set(schema, { tables: bindings });
-  return schema;
+  return finalizeSchemaDefinition(schema);
 }
 
 function attachIdentityBindingsIfMissing(schema: SchemaDefinition): void {
@@ -2305,70 +2448,20 @@ function buildSchemaDslViewRelHelpers(): SchemaDslViewRelHelpers {
   };
 }
 
-function buildSchemaDslHelpers<TContext>(): SchemaDslHelpers<TContext> {
-  const tableHelper = ((arg1: any, arg2?: any) => {
-    const from = isSchemaDataEntityHandle(arg1) ? arg1 : arg1.from;
-    const input = isSchemaDataEntityHandle(arg1)
-      ? arg2
-      : {
-          columns: () => arg1.columns,
-          ...(arg1.constraints ? { constraints: arg1.constraints } : {}),
-        };
-    if (!input) {
-      throw new Error("Schema DSL table(...) requires a config object.");
-    }
-
-    const columns = input.columns({
-      col: buildSchemaColumnsColHelper(),
-      expr: buildColumnExprHelpers(),
-    });
-
-    return {
-      kind: "dsl_table" as const,
-      tableToken: createSchemaDslTableToken(),
-      from,
-      columns,
-      ...(input.constraints ? { constraints: input.constraints } : {}),
-    };
-  }) as SchemaDslHelpers<TContext>["table"];
-
-  const viewHelper = ((arg1: any, arg2?: any) => {
-    const input = typeof arg1 === "function"
-      ? {
-          rel: arg1,
-          ...arg2,
-        }
-      : arg1;
-    const rel = (context: TContext, helpers: SchemaDslViewRelHelpers) =>
-      input.rel.length === 0
-        ? (input.rel as () => SchemaViewRelNodeInput<string> | unknown)()
-        : input.rel(helpers, context);
-    const columns = typeof input.columns === "function"
-      ? input.columns({
-          col: buildSchemaColumnsColHelper(),
-          expr: buildColumnExprHelpers(),
-        })
-      : input.columns;
-    return {
-      kind: "dsl_view" as const,
-      tableToken: createSchemaDslTableToken(),
-      rel,
-      columns,
-      ...(input.constraints ? { constraints: input.constraints } : {}),
-    };
-  }) as SchemaDslHelpers<TContext>["view"];
-
-  return {
-    table: tableHelper,
-    view: viewHelper,
-  };
-}
-
 function isDslTableDefinition(value: unknown): value is DslTableDefinition {
   return (
     !!value &&
     typeof value === "object" &&
     (value as { kind?: unknown }).kind === "dsl_table" &&
+    isSchemaDslTableToken((value as { tableToken?: unknown }).tableToken)
+  );
+}
+
+function isDslStaticTableDefinition(value: unknown): value is DslStaticTableDefinition {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    (value as { kind?: unknown }).kind === "dsl_static_table" &&
     isSchemaDslTableToken((value as { tableToken?: unknown }).tableToken)
   );
 }

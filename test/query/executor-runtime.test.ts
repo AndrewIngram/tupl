@@ -2,7 +2,6 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import {
-  defineSchema,
   executeRelWithProviders,
   executeRelWithProvidersResult,
   type ProviderAdapter,
@@ -13,6 +12,7 @@ import {
   type TableScanRequest,
 } from "../../src";
 import { finalizeProviders } from "../support/executable-schema";
+import { buildSchema, buildStaticSchema } from "../support/schema-builder";
 
 function scanRows(rows: QueryRow[], request: TableScanRequest): QueryRow[] {
   let out = rows.filter((row) => applyFilters(row, request.where ?? []));
@@ -152,13 +152,11 @@ function matchesLike(value: string, pattern: string): boolean {
 
 describe("query/local executor", () => {
   it("returns tagged execution errors from the result API when a provider adapter is missing", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "memory",
-          columns: {
-            id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "memory",
+        columns: {
+          id: "text",
         },
       },
     });
@@ -192,21 +190,19 @@ describe("query/local executor", () => {
   });
 
   it("returns tagged guardrail errors from the result API when lookup batches are exceeded", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "orders_provider",
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "orders_provider",
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          provider: "users_provider",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "users_provider",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -305,13 +301,11 @@ describe("query/local executor", () => {
   });
 
   it("accepts adapter execute() methods that return Result errors", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "memory",
-          columns: {
-            id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "memory",
+        columns: {
+          id: "text",
         },
       },
     });
@@ -359,13 +353,11 @@ describe("query/local executor", () => {
   });
 
   it("returns tagged execution errors for invalid numeric coercions in local expressions", async () => {
-    const schema = defineSchema({
-      tables: {
-        numbers: {
-          provider: "memory",
-          columns: {
-            value: "text",
-          },
+    const schema = buildStaticSchema({
+      numbers: {
+        provider: "memory",
+        columns: {
+          value: "text",
         },
       },
     });
@@ -438,16 +430,15 @@ describe("query/local executor", () => {
   });
 
   it("returns tagged execution errors for invalid executable view rels", async () => {
-    const schema = defineSchema(({ view }) => ({
-      tables: {
-        broken_view: view({
-          rel: ({ scan }) => scan("missing_table"),
-          columns: {
-            id: { source: "missing_table.id" },
-          },
-        }),
-      },
-    }));
+    const schema = buildSchema((builder) => {
+      builder.view({
+        name: "broken_view",
+        rel: ({ scan }) => scan("missing_table"),
+        columns: {
+          id: { source: "missing_table.id" },
+        },
+      });
+    });
 
     const rel: RelNode = {
       id: "scan_1",
@@ -478,15 +469,13 @@ describe("query/local executor", () => {
   });
 
   it("executes filter + aggregate nodes locally over provider scans", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "memory",
-          columns: {
-            id: "text",
-            org_id: "text",
-            total_cents: "integer",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "memory",
+        columns: {
+          id: "text",
+          org_id: "text",
+          total_cents: "integer",
         },
       },
     });
@@ -557,19 +546,17 @@ describe("query/local executor", () => {
   });
 
   it("executes set operations locally", async () => {
-    const schema = defineSchema({
-      tables: {
-        left_items: {
-          provider: "memory",
-          columns: {
-            id: "text",
-          },
+    const schema = buildStaticSchema({
+      left_items: {
+        provider: "memory",
+        columns: {
+          id: "text",
         },
-        right_items: {
-          provider: "memory",
-          columns: {
-            id: "text",
-          },
+      },
+      right_items: {
+        provider: "memory",
+        columns: {
+          id: "text",
         },
       },
     });
@@ -651,15 +638,13 @@ describe("query/local executor", () => {
   });
 
   it("executes WITH nodes via local cte materialization", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          provider: "memory",
-          columns: {
-            id: "text",
-            email: "text",
-            team: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        provider: "memory",
+        columns: {
+          id: "text",
+          email: "text",
+          team: "text",
         },
       },
     });
@@ -762,20 +747,18 @@ describe("query/local executor", () => {
   });
 
   it("executes semi joins for IN-subquery style membership filtering", async () => {
-    const schema = defineSchema({
-      tables: {
-        my_orders: {
-          provider: "memory",
-          columns: {
-            id: "text",
-            vendor_id: "text",
-          },
+    const schema = buildStaticSchema({
+      my_orders: {
+        provider: "memory",
+        columns: {
+          id: "text",
+          vendor_id: "text",
         },
-        preferred_vendors: {
-          provider: "memory",
-          columns: {
-            vendor_id: "text",
-          },
+      },
+      preferred_vendors: {
+        provider: "memory",
+        columns: {
+          vendor_id: "text",
         },
       },
     });
@@ -859,15 +842,13 @@ describe("query/local executor", () => {
   });
 
   it("executes rank window functions locally", async () => {
-    const schema = defineSchema({
-      tables: {
-        scores: {
-          provider: "memory",
-          columns: {
-            id: "text",
-            team: "text",
-            score: "integer",
-          },
+    const schema = buildStaticSchema({
+      scores: {
+        provider: "memory",
+        columns: {
+          id: "text",
+          team: "text",
+          score: "integer",
         },
       },
     });

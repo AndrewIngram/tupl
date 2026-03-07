@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   createDataEntityHandle,
-  defineSchema,
   getNormalizedTableBinding,
   type ProviderAdapter,
   type ProviderFragment,
@@ -13,6 +12,7 @@ import {
 } from "../../src";
 import { validateProviderBindingsResult } from "../../src/provider";
 import { createExecutableSchemaFromProviders } from "../support/executable-schema";
+import { buildSchema, buildStaticSchema } from "../support/schema-builder";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -158,15 +158,13 @@ function matchesLike(value: string, pattern: string): boolean {
 
 describe("query/provider runtime", () => {
   it("routes same-provider queries through scan fragments", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            org_id: "text",
-            total_cents: "integer",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          org_id: "text",
+          total_cents: "integer",
         },
       },
     });
@@ -211,14 +209,12 @@ describe("query/provider runtime", () => {
   });
 
   it("executes same-provider rel fragment when provider supports rel pushdown", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            org_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          org_id: "text",
         },
       },
     });
@@ -265,34 +261,34 @@ describe("query/provider runtime", () => {
       provider: "warehouse",
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        my_orders: table({
-          from: ordersEntity,
-          columns: {
-            id: { source: "id" },
-            totalCents: { source: "total_cents" },
-            status: {
-              source: "status",
-              type: "text",
-              enumFrom: "orders.status",
-              enumMap: {
-                pending: "open",
-                paid: "settled",
-                shipped: "settled",
-              },
-              enum: ["open", "settled"] as const,
+    const schema = buildSchema((builder) => {
+      builder.table({
+        name: "my_orders",
+        from: ordersEntity,
+        columns: {
+          id: { source: "id" },
+          totalCents: { source: "total_cents" },
+          status: {
+            source: "status",
+            type: "text",
+            enumFrom: "orders.status",
+            enumMap: {
+              pending: "open",
+              paid: "settled",
+              shipped: "settled",
             },
+            enum: ["open", "settled"] as const,
           },
-        }),
-        orders: table({
-          from: ordersEntity,
-          columns: {
-            status: { source: "status", type: "text", enum: ["pending", "paid", "shipped"] as const },
-          },
-        }),
-      },
-    }));
+        },
+      });
+      builder.table({
+        name: "orders",
+        from: ordersEntity,
+        columns: {
+          status: { source: "status", type: "text", enum: ["pending", "paid", "shipped"] as const },
+        },
+      });
+    });
 
     let capturedRel: unknown = null;
 
@@ -359,17 +355,16 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        my_orders: table(ordersEntity, {
-          columns: ({ col }) => ({
-            id: col.id("id"),
-            totalCents: col.integer("totalCents"),
-            createdAt: col.string("createdAt", { coerce: "isoTimestamp" }),
-          }),
+    const schema = buildSchema((builder) => {
+      builder.table(ordersEntity, {
+        name: "my_orders",
+        columns: ({ col }) => ({
+          id: col.id("id"),
+          totalCents: col.integer("totalCents"),
+          createdAt: col.string("createdAt", { coerce: "isoTimestamp" }),
         }),
-      },
-    }));
+      });
+    });
 
     let capturedScan: { request: TableScanRequest } | null = null;
     const executableSchema = createExecutableSchemaFromProviders(schema, {
@@ -419,21 +414,19 @@ describe("query/provider runtime", () => {
   });
 
   it("uses lookupMany for cross-provider lookup join paths", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "orders_provider",
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "orders_provider",
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          provider: "users_provider",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "users_provider",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -521,21 +514,19 @@ describe("query/provider runtime", () => {
   });
 
   it("enforces lookup batching guardrails", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "orders_provider",
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "orders_provider",
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          provider: "users_provider",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "users_provider",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -615,21 +606,19 @@ describe("query/provider runtime", () => {
   });
 
   it("preserves LEFT JOIN null semantics on lookup joins", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "orders_provider",
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "orders_provider",
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          provider: "users_provider",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "users_provider",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -715,35 +704,35 @@ describe("query/provider runtime", () => {
       provider: "warehouse",
     });
 
-    const schema = defineSchema(({ table, view }) => ({
-      tables: {
-        my_orders: table({
-          from: ordersEntity,
-          columns: {
-            id: { source: "id", type: "text", nullable: false },
-            total_cents: { source: "total_cents", type: "integer", nullable: false },
-          },
-        }),
-        order_spend: view(
-          ({ scan, aggregate, col, agg }) =>
-            aggregate({
-              from: scan("my_orders"),
-              groupBy: {
-                order_id: col("my_orders.id"),
-              },
-              measures: {
-                spend: agg.sum(col("my_orders.total_cents")),
-              },
-            }),
-          {
-            columns: ({ col }) => ({
-              order_id: col.string("order_id", { nullable: false }),
-              spend: col.integer("spend"),
-            }),
-          },
-        ),
-      },
-    }));
+    const schema = buildSchema((builder) => {
+      builder.table({
+        name: "my_orders",
+        from: ordersEntity,
+        columns: {
+          id: { source: "id", type: "text", nullable: false },
+          total_cents: { source: "total_cents", type: "integer", nullable: false },
+        },
+      });
+      builder.view(
+        ({ scan, aggregate, col, agg }) =>
+          aggregate({
+            from: scan("my_orders"),
+            groupBy: {
+              order_id: col("my_orders.id"),
+            },
+            measures: {
+              spend: agg.sum(col("my_orders.total_cents")),
+            },
+          }),
+        {
+          name: "order_spend",
+          columns: ({ col }) => ({
+            order_id: col.string("order_id", { nullable: false }),
+            spend: col.integer("spend"),
+          }),
+        },
+      );
+    });
 
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
@@ -802,24 +791,23 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        myOrders: table(ordersEntity, {
-          columns: ({ col, expr }) => ({
-            id: col.id("id"),
-            totalCents: col.integer("totalCents"),
-            totalDollars: col.real(
-              expr.divide(col("totalCents"), expr.literal(100)),
-              { nullable: false },
-            ),
-            isLargeOrder: col.boolean(
-              expr.gte(col("totalCents"), expr.literal(2000)),
-              { nullable: false },
-            ),
-          }),
+    const schema = buildSchema((builder) => {
+      builder.table(ordersEntity, {
+        name: "myOrders",
+        columns: ({ col, expr }) => ({
+          id: col.id("id"),
+          totalCents: col.integer("totalCents"),
+          totalDollars: col.real(
+            expr.divide(col("totalCents"), expr.literal(100)),
+            { nullable: false },
+          ),
+          isLargeOrder: col.boolean(
+            expr.gte(col("totalCents"), expr.literal(2000)),
+            { nullable: false },
+          ),
         }),
-      },
-    }));
+      });
+    });
 
     expect(getNormalizedTableBinding(schema, "myOrders")).toMatchObject({
       kind: "physical",
@@ -882,24 +870,23 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        myOrders: table(ordersEntity, {
-          columns: ({ col, expr }) => ({
-            id: col.id("id"),
-            totalCents: col.integer("totalCents"),
-            totalDollars: col.real(
-              expr.divide(col("totalCents"), expr.literal(100)),
-              { nullable: false },
-            ),
-            isLargeOrder: col.boolean(
-              expr.gte(col("totalCents"), expr.literal(20000)),
-              { nullable: false },
-            ),
-          }),
+    const schema = buildSchema((builder) => {
+      builder.table(ordersEntity, {
+        name: "myOrders",
+        columns: ({ col, expr }) => ({
+          id: col.id("id"),
+          totalCents: col.integer("totalCents"),
+          totalDollars: col.real(
+            expr.divide(col("totalCents"), expr.literal(100)),
+            { nullable: false },
+          ),
+          isLargeOrder: col.boolean(
+            expr.gte(col("totalCents"), expr.literal(20000)),
+            { nullable: false },
+          ),
         }),
-      },
-    }));
+      });
+    });
 
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
@@ -946,22 +933,20 @@ describe("query/provider runtime", () => {
   });
 
   it("coerces pushed-down aggregate and window outputs back to numeric query types", async () => {
-    const schema = defineSchema({
-      tables: {
-        my_orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            vendor_id: "text",
-            total_cents: { type: "integer", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      my_orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          vendor_id: "text",
+          total_cents: { type: "integer", nullable: false },
         },
-        vendors_for_org: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            name: "text",
-          },
+      },
+      vendors_for_org: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          name: "text",
         },
       },
     });
@@ -1078,33 +1063,32 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const schema = defineSchema(({ view }) => ({
-      tables: {
-        spendByVendor: view(
-          ({ scan, join, aggregate, col, expr, agg }) =>
-            aggregate({
-              from: join({
-                left: scan(ordersEntity),
-                right: scan(vendorsEntity),
-                on: expr.eq(col(ordersEntity, "vendorId"), col(vendorsEntity, "id")),
-                type: "inner",
-              }),
-              groupBy: {
-                vendorName: col(vendorsEntity, "name"),
-              },
-              measures: {
-                spendCents: agg.sum(col(ordersEntity, "totalCents")),
-              },
+    const schema = buildSchema((builder) => {
+      builder.view(
+        ({ scan, join, aggregate, col, expr, agg }) =>
+          aggregate({
+            from: join({
+              left: scan(ordersEntity),
+              right: scan(vendorsEntity),
+              on: expr.eq(col(ordersEntity, "vendorId"), col(vendorsEntity, "id")),
+              type: "inner",
             }),
-          {
-            columns: ({ col }) => ({
-              vendorName: col.string("vendorName", { nullable: false }),
-              spendCents: col.integer("spendCents"),
-            }),
-          },
-        ),
-      },
-    }));
+            groupBy: {
+              vendorName: col(vendorsEntity, "name"),
+            },
+            measures: {
+              spendCents: agg.sum(col(ordersEntity, "totalCents")),
+            },
+          }),
+        {
+          name: "spendByVendor",
+          columns: ({ col }) => ({
+            vendorName: col.string("vendorName", { nullable: false }),
+            spendCents: col.integer("spendCents"),
+          }),
+        },
+      );
+    });
 
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: warehouseProvider,
@@ -1152,8 +1136,9 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const schema = defineSchema(({ table, view }) => {
-      const myOrderItems = table(orderItemsEntity, {
+    const schema = buildSchema((builder) => {
+      const myOrderItems = builder.table(orderItemsEntity, {
+        name: "myOrderItems",
         columns: ({ col, expr }) => ({
           orderId: col.string("orderId"),
           productId: col.string("productId"),
@@ -1166,20 +1151,22 @@ describe("query/provider runtime", () => {
         }),
       });
 
-      const productsForOrg = table(productsEntity, {
+      const productsForOrg = builder.table(productsEntity, {
+        name: "productsForOrg",
         columns: ({ col }) => ({
           id: col.id("id"),
           name: col.string("name"),
         }),
       });
 
-      const productAccess = table(accessEntity, {
+      const productAccess = builder.table(accessEntity, {
+        name: "productAccess",
         columns: ({ col }) => ({
           productId: col.string("productId"),
         }),
       });
 
-      const activeProducts = view(
+      const activeProducts = builder.view(
         ({ scan, join, col, expr }) =>
           join({
             left: scan(productsForOrg),
@@ -1188,6 +1175,7 @@ describe("query/provider runtime", () => {
             type: "inner",
           }),
         {
+          name: "activeProducts",
           columns: ({ col }) => ({
             id: col.id(productsForOrg, "id"),
             name: col.string(productsForOrg, "name", { nullable: false }),
@@ -1195,7 +1183,7 @@ describe("query/provider runtime", () => {
         },
       );
 
-      const myOrderLines = view(
+      builder.view(
         ({ scan, join, col, expr }) =>
           join({
             left: scan(myOrderItems),
@@ -1204,6 +1192,7 @@ describe("query/provider runtime", () => {
             type: "inner",
           }),
         {
+          name: "myOrderLines",
           columns: ({ col }) => ({
             orderId: col.string(myOrderItems, "orderId", { nullable: false }),
             productId: col.string(activeProducts, "id", { nullable: false }),
@@ -1212,16 +1201,6 @@ describe("query/provider runtime", () => {
           }),
         },
       );
-
-      return {
-        tables: {
-          myOrderItems,
-          productsForOrg,
-          productAccess,
-          activeProducts,
-          myOrderLines,
-        },
-      };
     });
 
     const executableSchema = createExecutableSchemaFromProviders(schema, {
@@ -1304,8 +1283,9 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const schema = defineSchema(({ table, view }) => {
-      const myOrderItems = table(orderItemsEntity, {
+    const schema = buildSchema((builder) => {
+      const myOrderItems = builder.table(orderItemsEntity, {
+        name: "myOrderItems",
         columns: ({ col }) => ({
           orderId: col.string("orderId"),
           productId: col.string("productId"),
@@ -1314,20 +1294,22 @@ describe("query/provider runtime", () => {
         }),
       });
 
-      const productsForOrg = table(productsEntity, {
+      const productsForOrg = builder.table(productsEntity, {
+        name: "productsForOrg",
         columns: ({ col }) => ({
           id: col.id("id"),
           name: col.string("name"),
         }),
       });
 
-      const productAccess = table(accessEntity, {
+      const productAccess = builder.table(accessEntity, {
+        name: "productAccess",
         columns: ({ col }) => ({
           productId: col.string("productId"),
         }),
       });
 
-      const activeProducts = view(
+      const activeProducts = builder.view(
         ({ scan, join, col, expr }) =>
           join({
             left: scan(productsForOrg),
@@ -1336,6 +1318,7 @@ describe("query/provider runtime", () => {
             type: "inner",
           }),
         {
+          name: "activeProducts",
           columns: ({ col }) => ({
             id: col.id(productsForOrg, "id"),
             name: col.string(productsForOrg, "name", { nullable: false }),
@@ -1343,7 +1326,7 @@ describe("query/provider runtime", () => {
         },
       );
 
-      const myOrderLines = view(
+      const myOrderLines = builder.view(
         ({ scan, join, col, expr }) =>
           join({
             left: scan(myOrderItems),
@@ -1352,6 +1335,7 @@ describe("query/provider runtime", () => {
             type: "inner",
           }),
         {
+          name: "myOrderLines",
           columns: ({ col }) => ({
             productId: col.string(activeProducts, "id", { nullable: false }),
             productName: col.string(activeProducts, "name", { nullable: false }),
@@ -1361,8 +1345,8 @@ describe("query/provider runtime", () => {
         },
       );
 
-      const productPerformance = view({
-        rel: ({ scan, aggregate, col, agg }) =>
+      builder.view(
+        ({ scan, aggregate, col, agg }) =>
           aggregate({
             from: scan(myOrderLines),
             groupBy: {
@@ -1374,24 +1358,16 @@ describe("query/provider runtime", () => {
               revenueCents: agg.sum(col(myOrderLines, "lineTotalCents")),
             },
           }),
-        columns: ({ col }) => ({
-          productId: col.id("productId"),
-          productName: col.string("productName"),
-          unitsSold: col.integer("unitsSold"),
-          revenueCents: col.integer("revenueCents"),
-        }),
-      });
-
-      return {
-        tables: {
-          myOrderItems,
-          productsForOrg,
-          productAccess,
-          activeProducts,
-          myOrderLines,
-          productPerformance,
+        {
+          name: "productPerformance",
+          columns: ({ col }) => ({
+            productId: col.id("productId"),
+            productName: col.string("productName"),
+            unitsSold: col.integer("unitsSold"),
+            revenueCents: col.integer("revenueCents"),
+          }),
         },
-      };
+      );
     });
 
     const executableSchema = createExecutableSchemaFromProviders(schema, {
@@ -1466,42 +1442,39 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const schema = defineSchema(({ table, view }) => {
-      const products = table(productsEntity, {
+    const schema = buildSchema((builder) => {
+      const products = builder.table(productsEntity, {
+        name: "products",
         columns: ({ col }) => ({
           id: col.id("id"),
           productName: col.string("name"),
         }),
       });
 
-      const productViewCounts = table(viewCountsEntity, {
+      const productViewCounts = builder.table(viewCountsEntity, {
+        name: "productViewCounts",
         columns: ({ col }) => ({
           productId: col.string("productId"),
           viewCount: col.integer("viewCount"),
         }),
       });
 
-      const productEngagement = view({
-        rel: ({ scan, join, col, expr }) =>
+      builder.view(
+        ({ scan, join, col, expr }) =>
           join({
             left: scan(products),
             right: scan(productViewCounts),
             on: expr.eq(col(products, "id"), col(productViewCounts, "productId")),
             type: "left",
           }),
-        columns: {
-          productName: { source: "products.productName", type: "text", nullable: false },
-          viewCount: { source: "productViewCounts.viewCount", type: "integer", nullable: true },
+        {
+          name: "productEngagement",
+          columns: {
+            productName: { source: "products.productName", type: "text", nullable: false },
+            viewCount: { source: "productViewCounts.viewCount", type: "integer", nullable: true },
+          },
         },
-      });
-
-      return {
-        tables: {
-          products,
-          productViewCounts,
-          productEngagement,
-        },
-      };
+      );
     });
 
     const executableSchema = createExecutableSchemaFromProviders(schema, {
@@ -1592,49 +1565,46 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const schema = defineSchema(({ table, view }) => {
-      const products = table(productsEntity, {
+    const schema = buildSchema((builder) => {
+      const products = builder.table(productsEntity, {
+        name: "products",
         columns: ({ col }) => ({
           id: col.id("id"),
           name: col.string("name", { nullable: false }),
         }),
       });
 
-      const productAccess = table(productAccessEntity, {
+      const productAccess = builder.table(productAccessEntity, {
+        name: "productAccess",
         columns: ({ col }) => ({
           product_id: col.string("product_id", { nullable: false }),
         }),
       });
 
-      const activeProducts = view({
-        rel: ({ scan, join, col, expr }) =>
+      builder.view(
+        ({ scan, join, col, expr }) =>
           join({
             left: scan(products),
             right: scan(productAccess),
             on: expr.eq(col(products, "id"), col(productAccess, "product_id")),
             type: "inner",
           }),
-        columns: {
-          id: { source: "products.id", type: "text", nullable: false, primaryKey: true },
-          name: { source: "products.name", type: "text", nullable: false },
+        {
+          name: "active_products",
+          columns: {
+            id: { source: "products.id", type: "text", nullable: false, primaryKey: true },
+            name: { source: "products.name", type: "text", nullable: false },
+          },
         },
-      });
+      );
 
-      const productViewCounts = table(viewCountsEntity, {
+      builder.table(viewCountsEntity, {
+        name: "product_view_counts",
         columns: ({ col }) => ({
           product_id: col.string("product_id", { nullable: false }),
           view_count: col.integer("view_count", { nullable: false }),
         }),
       });
-
-      return {
-        tables: {
-          products,
-          productAccess,
-          active_products: activeProducts,
-          product_view_counts: productViewCounts,
-        },
-      };
     });
 
     let warehouseRelExecutions = 0;
@@ -1745,13 +1715,11 @@ describe("query/provider runtime", () => {
   });
 
   it("exposes scan stages in session plans", () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
         },
       },
     });
@@ -1789,21 +1757,19 @@ describe("query/provider runtime", () => {
   });
 
   it("includes fallback diagnostics in explain output for unsupported rel pushdown", () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -1855,21 +1821,19 @@ describe("query/provider runtime", () => {
   });
 
   it("rejects fallback when query policy forbids missing capability atoms", async () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            user_id: "text",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          user_id: "text",
         },
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            email: "text",
-          },
+      },
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          email: "text",
         },
       },
     });
@@ -1914,13 +1878,11 @@ describe("query/provider runtime", () => {
   });
 
   it("surfaces tagged timeout errors through the Promise query API", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
         },
       },
     });
@@ -1962,13 +1924,11 @@ describe("query/provider runtime", () => {
   });
 
   it("returns tagged provider binding errors from the result API", () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-          },
+    const schema = buildStaticSchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
         },
       },
     });
@@ -1989,15 +1949,13 @@ describe("query/provider runtime", () => {
   });
 
   it("executes scalar expressions and missing operators locally when scan pushdown is the only provider capability", async () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          provider: "warehouse",
-          columns: {
-            id: "text",
-            email: "text",
-            score: { type: "integer" },
-          },
+    const schema = buildStaticSchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          email: "text",
+          score: { type: "integer" },
         },
       },
     });

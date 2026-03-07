@@ -2,6 +2,7 @@ import { Kysely, SqliteDialect } from "kysely";
 import { createKyselyProvider } from "@sqlql/kysely";
 import { createSeededSqliteDatabase, type DemoContext } from "@sqlql/example-shared";
 import {
+  createSchemaBuilder,
   createExecutableSchema,
 } from "sqlql";
 
@@ -53,73 +54,70 @@ async function main(): Promise<void> {
     throw new Error("Kysely provider did not expose expected entity handles.");
   }
 
-  const executableSchema = createExecutableSchema<DemoContext>(({ table, view }) => {
-    const myOrders = table(ordersEntity, {
-      columns: ({ col, expr }) => ({
-        id: col.id("id"),
-        vendorId: col.string("vendor_id"),
-        totalCents: col.integer("total_cents"),
-        createdAt: col.string("created_at"),
-        totalDollars: col.real(
-          expr.divide(col("totalCents"), expr.literal(100)),
-          { nullable: false },
-        ),
-        isLargeOrder: col.boolean(
-          expr.gte(col("totalCents"), expr.literal(3000)),
-          { nullable: false },
-        ),
-      }),
-    });
-
-    const myOrderFacts = view(
-      ({ scan, join, col, expr }) =>
-        join({
-          left: scan(myOrders),
-          right: scan(vendorsEntity),
-          on: expr.eq(col(myOrders, "vendorId"), col(vendorsEntity, "id")),
-          type: "inner",
-        }),
-      {
-        columns: ({ col }) => ({
-          orderId: col.id(myOrders, "id"),
-          vendorId: col.string(myOrders, "vendorId", { nullable: false }),
-          vendorName: col.string(vendorsEntity, "name", { nullable: false }),
-          totalCents: col.integer(myOrders, "totalCents", { nullable: false }),
-          totalDollars: col.real(myOrders, "totalDollars", { nullable: false }),
-          isLargeOrder: col.boolean(myOrders, "isLargeOrder", { nullable: false }),
-        }),
-      },
-    );
-
-    return {
-      tables: {
-        myOrders,
-        myOrderFacts,
-        myVendorSpend: view(
-          ({ scan, aggregate, col, agg }) =>
-            aggregate({
-              from: scan(myOrderFacts),
-              groupBy: {
-                vendorId: col(myOrderFacts, "vendorId"),
-                vendorName: col(myOrderFacts, "vendorName"),
-              },
-              measures: {
-                totalSpendCents: agg.sum(col(myOrderFacts, "totalCents")),
-                orderCount: agg.count(),
-              },
-            }),
-          {
-            columns: ({ col }) => ({
-              vendorId: col.id("vendorId"),
-              vendorName: col.string("vendorName"),
-              totalSpendCents: col.integer("totalSpendCents"),
-              orderCount: col.integer("orderCount"),
-            }),
-          },
-        ),
-      },
-    };
+  const schemaBuilder = createSchemaBuilder<DemoContext>();
+  const myOrders = schemaBuilder.table(ordersEntity, {
+    name: "myOrders",
+    columns: ({ col, expr }) => ({
+      id: col.id("id"),
+      vendorId: col.string("vendor_id"),
+      totalCents: col.integer("total_cents"),
+      createdAt: col.string("created_at"),
+      totalDollars: col.real(
+        expr.divide(col("totalCents"), expr.literal(100)),
+        { nullable: false },
+      ),
+      isLargeOrder: col.boolean(
+        expr.gte(col("totalCents"), expr.literal(3000)),
+        { nullable: false },
+      ),
+    }),
   });
+
+  const myOrderFacts = schemaBuilder.view(
+    ({ scan, join, col, expr }) =>
+      join({
+        left: scan(myOrders),
+        right: scan(vendorsEntity),
+        on: expr.eq(col(myOrders, "vendorId"), col(vendorsEntity, "id")),
+        type: "inner",
+      }),
+    {
+      name: "myOrderFacts",
+      columns: ({ col }) => ({
+        orderId: col.id(myOrders, "id"),
+        vendorId: col.string(myOrders, "vendorId", { nullable: false }),
+        vendorName: col.string(vendorsEntity, "name", { nullable: false }),
+        totalCents: col.integer(myOrders, "totalCents", { nullable: false }),
+        totalDollars: col.real(myOrders, "totalDollars", { nullable: false }),
+        isLargeOrder: col.boolean(myOrders, "isLargeOrder", { nullable: false }),
+      }),
+    },
+  );
+  schemaBuilder.view(
+    ({ scan, aggregate, col, agg }) =>
+      aggregate({
+        from: scan(myOrderFacts),
+        groupBy: {
+          vendorId: col(myOrderFacts, "vendorId"),
+          vendorName: col(myOrderFacts, "vendorName"),
+        },
+        measures: {
+          totalSpendCents: agg.sum(col(myOrderFacts, "totalCents")),
+          orderCount: agg.count(),
+        },
+      }),
+    {
+      name: "myVendorSpend",
+      columns: ({ col }) => ({
+        vendorId: col.id("vendorId"),
+        vendorName: col.string("vendorName"),
+        totalSpendCents: col.integer("totalSpendCents"),
+        orderCount: col.integer("orderCount"),
+      }),
+    },
+  );
+
+  const executableSchema = createExecutableSchema(schemaBuilder);
 
   const virtualRows = await executableSchema.query({
     context: {

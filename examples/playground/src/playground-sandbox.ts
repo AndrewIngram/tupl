@@ -4,7 +4,6 @@ import * as drizzlePgliteModule from "drizzle-orm/pglite";
 import * as pgliteModule from "@electric-sql/pglite";
 import * as betterResultModule from "better-result";
 import {
-  defineSchema,
   type ExecutableSchema,
   type PhysicalPlan,
   type ProviderAdapter,
@@ -16,6 +15,7 @@ import {
   type RelNode,
   type SchemaDefinition,
 } from "../../../src/index";
+import { finalizeSchemaDefinition } from "../../../src/schema";
 
 import { createVirtualModuleRuntime } from "./playground-module-runtime";
 import {
@@ -120,7 +120,10 @@ interface SandboxProviderRuntime<TContext> {
 }
 
 const sessionStore = new Map<string, SessionRecord>();
-const providerRuntimeCache = new Map<string, Promise<SandboxProviderRuntime<PlaygroundRuntimeContext>>>();
+const providerRuntimeCache = new Map<
+  string,
+  Promise<SandboxProviderRuntime<PlaygroundRuntimeContext>>
+>();
 let nextSessionId = 1;
 const MAX_PROVIDER_RUNTIME_CACHE_ENTRIES = 8;
 
@@ -148,7 +151,9 @@ function extractSchemaExport(
       "[SCHEMA_EXPORT_MISSING] Schema module must export `executableSchema` via `export const executableSchema = createExecutableSchema(...)`.",
     );
   }
-  const executableSchema = (exportsRecord as ExecutableSchemaModuleExports<PlaygroundRuntimeContext>).executableSchema;
+  const executableSchema = (
+    exportsRecord as ExecutableSchemaModuleExports<PlaygroundRuntimeContext>
+  ).executableSchema;
   if (
     !executableSchema ||
     typeof executableSchema !== "object" ||
@@ -177,22 +182,23 @@ function readProviderExportOrThrow<TContext>(
     typeof provider.compile !== "function" ||
     typeof provider.execute !== "function"
   ) {
-    throw new Error(`[SCHEMA_EXEC_ERROR] ${moduleId} must export ${exportName} as a provider adapter.`);
+    throw new Error(
+      `[SCHEMA_EXEC_ERROR] ${moduleId} must export ${exportName} as a provider adapter.`,
+    );
   }
 
   return provider;
 }
 
 function readKvInputRows(rows: DownstreamRows): KvInputRow[] {
-  return ((rows[KV_INPUT_TABLE_NAME] ?? []) as Array<Record<string, unknown>>)
-    .flatMap((row) => {
-      const key = row.key;
-      if (typeof key !== "string" || key.trim().length === 0) {
-        return [];
-      }
+  return ((rows[KV_INPUT_TABLE_NAME] ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
+    const key = row.key;
+    if (typeof key !== "string" || key.trim().length === 0) {
+      return [];
+    }
 
-      return [{ key, value: row.value }];
-    });
+    return [{ key, value: row.value }];
+  });
 }
 
 async function buildExternalRuntimeModules(
@@ -226,7 +232,10 @@ function setBoundedProviderRuntimeCacheEntry(
   key: string,
   value: Promise<SandboxProviderRuntime<PlaygroundRuntimeContext>>,
 ): void {
-  if (!providerRuntimeCache.has(key) && providerRuntimeCache.size >= MAX_PROVIDER_RUNTIME_CACHE_ENTRIES) {
+  if (
+    !providerRuntimeCache.has(key) &&
+    providerRuntimeCache.size >= MAX_PROVIDER_RUNTIME_CACHE_ENTRIES
+  ) {
     const oldestKey = providerRuntimeCache.keys().next().value;
     if (typeof oldestKey === "string") {
       providerRuntimeCache.delete(oldestKey);
@@ -262,15 +271,22 @@ function createProviderRuntime<TContext>(
   const sqlqlModule = runtime.executeModule(
     `${workspace.rootPath}/node_modules/sqlql/index.ts`,
   ) as unknown as SqlqlRuntimeModule;
-  const playgroundRuntimeModule = externalModules["@playground/runtime"] as PlaygroundRuntimeModule | undefined;
+  const playgroundRuntimeModule = externalModules["@playground/runtime"] as
+    | PlaygroundRuntimeModule
+    | undefined;
   const db = playgroundRuntimeModule?.getPlaygroundDb();
   if (!db || typeof db !== "object" || typeof db.select !== "function") {
-    throw new Error("[SCHEMA_EXEC_ERROR] Playground runtime must provide a Drizzle database instance.");
+    throw new Error(
+      "[SCHEMA_EXEC_ERROR] Playground runtime must provide a Drizzle database instance.",
+    );
   }
 
   return {
     sqlqlModule,
-    executableSchema: extractSchemaExport(schemaModule) as ExecutableSchema<TContext, SchemaDefinition>,
+    executableSchema: extractSchemaExport(schemaModule) as ExecutableSchema<
+      TContext,
+      SchemaDefinition
+    >,
     dbProvider: readProviderExportOrThrow<TContext>(
       PLAYGROUND_DB_PROVIDER_FILE_PATH,
       dbProviderModule,
@@ -319,9 +335,7 @@ function toRuntimeContext(
 }
 
 function normalizeSchemaError(message: string): SchemaParseResult {
-  const normalized = message.startsWith("[")
-    ? message
-    : `[SCHEMA_EXEC_ERROR] ${message}`;
+  const normalized = message.startsWith("[") ? message : `[SCHEMA_EXEC_ERROR] ${message}`;
   return {
     ok: false,
     issues: [
@@ -380,10 +394,13 @@ export async function validateSchemaInSandbox(
   try {
     const workspace = buildWorkspace(schemaCode, options);
     const externalModules = await buildExternalRuntimeModules({});
-    const { executableSchema } = createProviderRuntime<PlaygroundRuntimeContext>(workspace, externalModules);
+    const { executableSchema } = createProviderRuntime<PlaygroundRuntimeContext>(
+      workspace,
+      externalModules,
+    );
     return {
       ok: true,
-      schema: defineSchema(executableSchema.schema),
+      schema: finalizeSchemaDefinition(executableSchema.schema),
       issues: [],
     };
   } catch (error) {
@@ -417,9 +434,7 @@ export async function createSandboxSession(
   }
   clearExecutedProviderOperations();
 
-  const runtime = await getOrCreateProviderRuntime(
-    compiled,
-  );
+  const runtime = await getOrCreateProviderRuntime(compiled);
   const runtimeContext = toRuntimeContext(context, runtime);
   const { sqlqlModule, executableSchema, dbProvider, kvProvider } = runtime;
 

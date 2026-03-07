@@ -52,11 +52,7 @@ import {
   selectionAfterSchemaChange,
 } from "@/query-selection-state";
 import { SchemaRelationsGraph } from "@/SchemaRelationsGraph";
-import {
-  compilePlaygroundInput,
-  createSession,
-  runSessionToCompletion,
-} from "@/session-runtime";
+import { compilePlaygroundInput, createSession, runSessionToCompletion } from "@/session-runtime";
 import { SqlPreviewLine } from "@/SqlPreviewLine";
 import { registerSqlCompletionProvider } from "@/sql-completion";
 import { configureSchemaTypescriptProject } from "@/schema-monaco";
@@ -68,10 +64,7 @@ import {
   PLAYGROUND_SCHEMA_FILE_URI,
 } from "@/playground-workspace";
 import { KV_INPUT_TABLE_DEFINITION, KV_INPUT_TABLE_NAME } from "@/kv-provider";
-import {
-  parseDownstreamRowsText,
-  parseFacadeSchemaCode,
-} from "@/validation";
+import { parseDownstreamRowsText, parseFacadeSchemaCode } from "@/validation";
 import { DOWNSTREAM_ROWS_SCHEMA, DOWNSTREAM_TABLE_NAMES } from "@/downstream-model";
 import {
   type ExecutedProviderOperation,
@@ -122,6 +115,11 @@ const SCHEMA_SPLIT_MIN_PERCENT = 30;
 const SCHEMA_SPLIT_MAX_PERCENT = 70;
 const QUERY_SPLIT_MIN_PERCENT = 35;
 const QUERY_SPLIT_MAX_PERCENT = 80;
+const MONACO_INDENT_OPTIONS = {
+  detectIndentation: false,
+  insertSpaces: true,
+  tabSize: 2,
+} as const;
 
 type TopTab = "data" | "schema" | "query";
 type SchemaTab = "diagram" | "ddl";
@@ -227,24 +225,36 @@ function findQualifiedIdentifierRange(sql: string, qualifier: string, identifier
   return rangeFromIndex(sql, match.index, match.index + match[0].length);
 }
 
-function findClauseBounds(sql: string, clause: "where" | "order_by"): {
+function findClauseBounds(
+  sql: string,
+  clause: "where" | "order_by",
+): {
   start: number;
   end: number;
 } | null {
   const source = sql;
   const startMatch =
-    clause === "where"
-      ? /\bwhere\b/iu.exec(source)
-      : /\border\s+by\b/iu.exec(source);
+    clause === "where" ? /\bwhere\b/iu.exec(source) : /\border\s+by\b/iu.exec(source);
   if (!startMatch || startMatch.index == null) {
     return null;
   }
 
   const start = startMatch.index;
   const remainder = source.slice(start + startMatch[0].length);
-  const endPatterns = clause === "where"
-    ? [/\bgroup\s+by\b/iu, /\border\s+by\b/iu, /\blimit\b/iu, /\boffset\b/iu, /\bhaving\b/iu, /\bunion\b/iu, /\bintersect\b/iu, /\bexcept\b/iu, /;/u]
-    : [/\blimit\b/iu, /\boffset\b/iu, /\bunion\b/iu, /\bintersect\b/iu, /\bexcept\b/iu, /;/u];
+  const endPatterns =
+    clause === "where"
+      ? [
+          /\bgroup\s+by\b/iu,
+          /\border\s+by\b/iu,
+          /\blimit\b/iu,
+          /\boffset\b/iu,
+          /\bhaving\b/iu,
+          /\bunion\b/iu,
+          /\bintersect\b/iu,
+          /\bexcept\b/iu,
+          /;/u,
+        ]
+      : [/\blimit\b/iu, /\boffset\b/iu, /\bunion\b/iu, /\bintersect\b/iu, /\bexcept\b/iu, /;/u];
   let minRelativeEnd = remainder.length;
 
   for (const pattern of endPatterns) {
@@ -281,12 +291,7 @@ function findQualifiedIdentifierRangeInSlice(
   return rangeFromIndex(sql, absoluteStart, absoluteStart + match[0].length);
 }
 
-function findIdentifierRangeInSlice(
-  sql: string,
-  identifier: string,
-  start: number,
-  end: number,
-) {
+function findIdentifierRangeInSlice(sql: string, identifier: string, start: number, end: number) {
   const slice = sql.slice(start, end);
   const pattern = new RegExp(`\\b${escapeRegExp(identifier)}\\b`, "iu");
   const match = pattern.exec(slice);
@@ -314,7 +319,10 @@ function readAliasesForSql(sqlText: string): Map<string, string> {
   return aliases;
 }
 
-function findStringLiteralRange(sql: string, value: string): ReturnType<typeof rangeFromIndex> | undefined {
+function findStringLiteralRange(
+  sql: string,
+  value: string,
+): ReturnType<typeof rangeFromIndex> | undefined {
   const escapedValue = value.replaceAll("'", "''");
   const pattern = new RegExp(`'${escapeRegExp(escapedValue)}'`, "gu");
   const match = pattern.exec(sql);
@@ -350,11 +358,13 @@ function findEnumLiteralRange(
     const contextStart = Math.max(0, literalMatch.index - 180);
     const contextText = sql.slice(contextStart, literalMatch.index);
     const simpleColumnPattern = new RegExp(`\\b${escapeRegExp(columnName)}\\b`, "iu");
-    const qualifiedPatterns = [...qualifiers].map((qualifier) =>
-      new RegExp(
-        `\\b${escapeRegExp(qualifier)}\\b\\s*\\.\\s*\\b${escapeRegExp(columnName)}\\b`,
-        "iu",
-      ));
+    const qualifiedPatterns = [...qualifiers].map(
+      (qualifier) =>
+        new RegExp(
+          `\\b${escapeRegExp(qualifier)}\\b\\s*\\.\\s*\\b${escapeRegExp(columnName)}\\b`,
+          "iu",
+        ),
+    );
     const hasColumnContext =
       simpleColumnPattern.test(contextText) ||
       qualifiedPatterns.some((pattern) => pattern.test(contextText));
@@ -399,12 +409,7 @@ function inferSqlErrorRange(sql: string, message: string) {
           return range;
         }
       }
-      const range = findIdentifierRangeInSlice(
-        sql,
-        columnName,
-        whereBounds.start,
-        whereBounds.end,
-      );
+      const range = findIdentifierRangeInSlice(sql, columnName, whereBounds.start, whereBounds.end);
       if (range) {
         return range;
       }
@@ -490,8 +495,10 @@ function inferSqlErrorRange(sql: string, message: string) {
       // fall through to generic handling
     }
 
-    return findQualifiedIdentifierRange(sql, invalidEnumMatch[1], invalidEnumMatch[2]) ??
-      findIdentifierRange(sql, invalidEnumMatch[2]);
+    return (
+      findQualifiedIdentifierRange(sql, invalidEnumMatch[1], invalidEnumMatch[2]) ??
+      findIdentifierRange(sql, invalidEnumMatch[2])
+    );
   }
 
   const parserPositionMatch = /\(at position (\d+)\)\s*$/u.exec(message);
@@ -499,9 +506,8 @@ function inferSqlErrorRange(sql: string, message: string) {
     return findTokenRangeAtPosition(sql, Number.parseInt(parserPositionMatch[1], 10));
   }
 
-  const unknownQualifiedColumnMatch = /^Unknown column:\s*([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)/iu.exec(
-    message,
-  );
+  const unknownQualifiedColumnMatch =
+    /^Unknown column:\s*([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)/iu.exec(message);
   if (unknownQualifiedColumnMatch?.[1] && unknownQualifiedColumnMatch?.[2]) {
     return findQualifiedIdentifierRange(
       sql,
@@ -596,7 +602,10 @@ function extractRowsForEditing(
   }
 }
 
-function tableIssueLines(issues: Array<{ path: string; message: string }>, tableName: string): string[] {
+function tableIssueLines(
+  issues: Array<{ path: string; message: string }>,
+  tableName: string,
+): string[] {
   const prefix = `${tableName}`;
   return issues
     .filter((issue) => issue.path === "$" || issue.path.startsWith(prefix))
@@ -615,7 +624,9 @@ function uniqueNonNullValues(rows: QueryRow[], columnName: string): string[] {
   return [...values].sort((a, b) => a.localeCompare(b));
 }
 
-function buildEditableStructureRows(schema: SchemaDefinition): Record<string, EditableStructureColumn[]> {
+function buildEditableStructureRows(
+  schema: SchemaDefinition,
+): Record<string, EditableStructureColumn[]> {
   const rowsByTable: Record<string, EditableStructureColumn[]> = {};
   for (const [tableName, tableDefinition] of Object.entries(schema.tables)) {
     const foreignKeysByColumn = new Map<string, { table: string; column: string }>();
@@ -634,30 +645,32 @@ function buildEditableStructureRows(schema: SchemaDefinition): Record<string, Ed
       });
     }
 
-    rowsByTable[tableName] = Object.entries(tableDefinition.columns).map(([columnName, columnDefinition]) => ({
-      name: columnName,
-      type: readColumnType(columnDefinition),
-      physicalType:
-        typeof columnDefinition === "string"
-          ? mapScalarTypeToPostgresType(columnDefinition)
-          : (columnDefinition.physicalType ?? mapScalarTypeToPostgresType(columnDefinition.type)),
-      enumValues: typeof columnDefinition === "string" ? [] : [...(columnDefinition.enum ?? [])],
-      nullable: isColumnNullable(columnDefinition),
-      foreignTable:
-        typeof columnDefinition !== "string" && columnDefinition.foreignKey
-          ? columnDefinition.foreignKey.table
-          : (foreignKeysByColumn.get(columnName)?.table ?? ""),
-      foreignColumn:
-        typeof columnDefinition !== "string" && columnDefinition.foreignKey
-          ? columnDefinition.foreignKey.column
-          : (foreignKeysByColumn.get(columnName)?.column ?? ""),
-    }));
+    rowsByTable[tableName] = Object.entries(tableDefinition.columns).map(
+      ([columnName, columnDefinition]) => ({
+        name: columnName,
+        type: readColumnType(columnDefinition),
+        physicalType:
+          typeof columnDefinition === "string"
+            ? mapScalarTypeToPostgresType(columnDefinition)
+            : (columnDefinition.physicalType ?? mapScalarTypeToPostgresType(columnDefinition.type)),
+        enumValues: typeof columnDefinition === "string" ? [] : [...(columnDefinition.enum ?? [])],
+        nullable: isColumnNullable(columnDefinition),
+        foreignTable:
+          typeof columnDefinition !== "string" && columnDefinition.foreignKey
+            ? columnDefinition.foreignKey.table
+            : (foreignKeysByColumn.get(columnName)?.table ?? ""),
+        foreignColumn:
+          typeof columnDefinition !== "string" && columnDefinition.foreignKey
+            ? columnDefinition.foreignKey.column
+            : (foreignKeysByColumn.get(columnName)?.column ?? ""),
+      }),
+    );
   }
   return rowsByTable;
 }
 
 function quoteIdentifier(identifier: string): string {
-  return `"${identifier.replaceAll("\"", "\"\"")}"`;
+  return `"${identifier.replaceAll('"', '""')}"`;
 }
 
 function mapScalarTypeToPostgresType(type: SqlScalarType): string {
@@ -696,7 +709,9 @@ function buildPostgresSchemaFromRows(
           {
             type: row.type,
             nullable: row.nullable,
-            ...(row.physicalType.trim().length > 0 ? { physicalType: row.physicalType.trim() } : {}),
+            ...(row.physicalType.trim().length > 0
+              ? { physicalType: row.physicalType.trim() }
+              : {}),
             ...(row.enumValues.length > 0 ? { enum: row.enumValues } : {}),
             ...(row.foreignTable.trim().length > 0 && row.foreignColumn.trim().length > 0
               ? {
@@ -717,9 +732,7 @@ function buildPostgresSchemaFromRows(
   };
 }
 
-function buildPostgresDdlFromRows(
-  rowsByTable: Record<string, EditableStructureColumn[]>,
-): string {
+function buildPostgresDdlFromRows(rowsByTable: Record<string, EditableStructureColumn[]>): string {
   const enumTypeStatements: string[] = [];
   const seenEnumTypes = new Set<string>();
 
@@ -733,7 +746,11 @@ function buildPostgresDdlFromRows(
         continue;
       }
       const upper = physicalType.toUpperCase();
-      if (["TEXT", "INTEGER", "BOOLEAN", "TIMESTAMP", "TIMESTAMPTZ", "NUMERIC", "JSONB"].includes(upper)) {
+      if (
+        ["TEXT", "INTEGER", "BOOLEAN", "TIMESTAMP", "TIMESTAMPTZ", "NUMERIC", "JSONB"].includes(
+          upper,
+        )
+      ) {
         continue;
       }
       if (seenEnumTypes.has(physicalType)) {
@@ -755,10 +772,13 @@ function buildPostgresDdlFromRows(
       return `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (\n);\n`;
     }
 
-    const columnLines = rows.map((row) =>
-      `  ${quoteIdentifier(row.name)} ${
-        row.physicalType.trim().length > 0 ? row.physicalType.trim() : mapScalarTypeToPostgresType(row.type)
-      }${row.nullable ? "" : " NOT NULL"}`,
+    const columnLines = rows.map(
+      (row) =>
+        `  ${quoteIdentifier(row.name)} ${
+          row.physicalType.trim().length > 0
+            ? row.physicalType.trim()
+            : mapScalarTypeToPostgresType(row.type)
+        }${row.nullable ? "" : " NOT NULL"}`,
     );
 
     const hasIdColumn = rows.some((row) => row.name === "id");
@@ -795,9 +815,7 @@ function buildGeneratedDbModuleCode(schema: SchemaDefinition): string {
       .split(/\s+/u)
       .map((part, index) => {
         const lower = part.toLowerCase();
-        return index === 0
-          ? lower
-          : `${lower.slice(0, 1).toUpperCase()}${lower.slice(1)}`;
+        return index === 0 ? lower : `${lower.slice(0, 1).toUpperCase()}${lower.slice(1)}`;
       })
       .join("");
     return normalized.length > 0 ? normalized : "table";
@@ -807,37 +825,42 @@ function buildGeneratedDbModuleCode(schema: SchemaDefinition): string {
     tableVarByName.set(tableName, `${toCamelCase(tableName)}Table`);
   }
 
-  const tableDefinitions = tableNames.map((tableName) => {
-    const table = schema.tables[tableName];
-    const tableVar = tableVarByName.get(tableName) ?? `${toCamelCase(tableName)}Table`;
-    const columns = Object.entries(table?.columns ?? {}).map(([columnName, columnDefinition]) => {
-      const scalarType = readColumnType(columnDefinition);
-      const baseBuilder = scalarType === "timestamp"
-        ? `timestamp(${JSON.stringify(columnName)}, { mode: "string" })`
-        : `${scalarType}(${JSON.stringify(columnName)})`;
+  const tableDefinitions = tableNames
+    .map((tableName) => {
+      const table = schema.tables[tableName];
+      const tableVar = tableVarByName.get(tableName) ?? `${toCamelCase(tableName)}Table`;
+      const columns = Object.entries(table?.columns ?? {})
+        .map(([columnName, columnDefinition]) => {
+          const scalarType = readColumnType(columnDefinition);
+          const baseBuilder =
+            scalarType === "timestamp"
+              ? `timestamp(${JSON.stringify(columnName)}, { mode: "string" })`
+              : `${scalarType}(${JSON.stringify(columnName)})`;
 
-      const modifiers: string[] = [];
-      if (typeof columnDefinition !== "string" && columnDefinition.primaryKey) {
-        modifiers.push("primaryKey()");
-      }
-      if (!isColumnNullable(columnDefinition)) {
-        modifiers.push("notNull()");
-      }
-      if (typeof columnDefinition !== "string" && columnDefinition.foreignKey) {
-        const refVar = tableVarByName.get(columnDefinition.foreignKey.table);
-        if (refVar) {
-          modifiers.push(
-            `references(() => ${refVar}[${JSON.stringify(columnDefinition.foreignKey.column)}])`,
-          );
-        }
-      }
+          const modifiers: string[] = [];
+          if (typeof columnDefinition !== "string" && columnDefinition.primaryKey) {
+            modifiers.push("primaryKey()");
+          }
+          if (!isColumnNullable(columnDefinition)) {
+            modifiers.push("notNull()");
+          }
+          if (typeof columnDefinition !== "string" && columnDefinition.foreignKey) {
+            const refVar = tableVarByName.get(columnDefinition.foreignKey.table);
+            if (refVar) {
+              modifiers.push(
+                `references(() => ${refVar}[${JSON.stringify(columnDefinition.foreignKey.column)}])`,
+              );
+            }
+          }
 
-      const chain = modifiers.length > 0 ? `.${modifiers.join(".")}` : "";
-      return `  ${JSON.stringify(columnName)}: ${baseBuilder}${chain},`;
-    }).join("\n");
+          const chain = modifiers.length > 0 ? `.${modifiers.join(".")}` : "";
+          return `  ${JSON.stringify(columnName)}: ${baseBuilder}${chain},`;
+        })
+        .join("\n");
 
-    return `const ${tableVar} = pgTable(${JSON.stringify(tableName)}, {\n${columns}\n});`;
-  }).join("\n\n");
+      return `const ${tableVar} = pgTable(${JSON.stringify(tableName)}, {\n${columns}\n});`;
+    })
+    .join("\n\n");
 
   const tableEntries = tableNames
     .map((tableName) => {
@@ -874,7 +897,9 @@ function toDateTimeLocalValue(value: unknown): string {
     return `${dateOnly[1]}T00:00`;
   }
 
-  const dateTime = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z)?$/u.exec(trimmed);
+  const dateTime = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z)?$/u.exec(
+    trimmed,
+  );
   if (dateTime?.[1] && dateTime?.[2]) {
     return `${dateTime[1]}T${dateTime[2]}`;
   }
@@ -900,7 +925,12 @@ function ExecutedProviderOperationsPanel({
   className?: string;
 }): React.JSX.Element {
   return (
-    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-white", className)}>
+    <div
+      className={cn(
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-white",
+        className,
+      )}
+    >
       <div className="border-b bg-slate-50 px-3 py-2">
         <div className="text-sm font-semibold text-slate-900">
           Executed provider operations ({operations.length})
@@ -923,10 +953,16 @@ function ExecutedProviderOperationsPanel({
                   <div className="border-b bg-slate-50 px-2 py-1">
                     <div className="flex items-center gap-2 text-[11px] text-slate-600">
                       <span>Operation {index + 1}</span>
-                      <Badge variant="secondary" className="h-5 rounded-sm px-1.5 text-[10px] font-medium">
+                      <Badge
+                        variant="secondary"
+                        className="h-5 rounded-sm px-1.5 text-[10px] font-medium"
+                      >
                         {entry.provider}
                       </Badge>
-                      <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px] font-medium">
+                      <Badge
+                        variant="outline"
+                        className="h-5 rounded-sm px-1.5 text-[10px] font-medium"
+                      >
                         {isSql ? "SQL query" : "KV lookup"}
                       </Badge>
                     </div>
@@ -944,6 +980,7 @@ function ExecutedProviderOperationsPanel({
                         scrollBeyondLastLine: false,
                         lineNumbers: "off",
                         wordWrap: "on",
+                        ...MONACO_INDENT_OPTIONS,
                       }}
                       height={`${editorHeight}px`}
                     />
@@ -1044,7 +1081,11 @@ function StepSection({
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="rounded-md border bg-slate-50 p-3">
       <CollapsibleTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-auto w-full justify-between px-0 py-0 text-sm font-semibold">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-auto w-full justify-between px-0 py-0 text-sm font-semibold"
+        >
           {title}
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </Button>
@@ -1055,10 +1096,10 @@ function StepSection({
 }
 
 export function App(): React.JSX.Element {
-  const defaultScenario = SCENARIO_PRESETS.find((scenario) => scenario.id === DEFAULT_SCENARIO_ID) ??
-    SCENARIO_PRESETS[0];
-  const defaultQuery = QUERY_PRESETS.find((query) => query.id === DEFAULT_QUERY_ID) ??
-    QUERY_PRESETS[0];
+  const defaultScenario =
+    SCENARIO_PRESETS.find((scenario) => scenario.id === DEFAULT_SCENARIO_ID) ?? SCENARIO_PRESETS[0];
+  const defaultQuery =
+    QUERY_PRESETS.find((query) => query.id === DEFAULT_QUERY_ID) ?? QUERY_PRESETS[0];
 
   const [, setActiveScenarioId] = useState(defaultScenario?.id ?? CUSTOM_SCENARIO_ID);
   const [activeTopTab, setActiveTopTab] = useQueryState(
@@ -1213,7 +1254,8 @@ export function App(): React.JSX.Element {
         return SCHEMA_MODEL_PATH;
     }
   }, [activeSchemaSourceTab]);
-  const schemaEditorReadOnly = activeSchemaSourceTab === "context" || activeSchemaSourceTab === "generated";
+  const schemaEditorReadOnly =
+    activeSchemaSourceTab === "context" || activeSchemaSourceTab === "generated";
   const syncSchemaSourceModels = useCallback((): void => {
     const monaco = monacoRef.current;
     if (!monaco) {
@@ -1250,27 +1292,29 @@ export function App(): React.JSX.Element {
 
     void parseFacadeSchemaCode(schemaCodeText, {
       modules: schemaProgramModules,
-    }).then((nextParse) => {
-      if (schemaParseRequestIdRef.current !== requestId) {
-        return;
-      }
-      setSchemaParse(nextParse);
-      schemaForCompletionRef.current = nextParse.ok ? nextParse.schema ?? null : null;
-    }).catch((error: unknown) => {
-      if (schemaParseRequestIdRef.current !== requestId) {
-        return;
-      }
-      setSchemaParse({
-        ok: false,
-        issues: [
-          {
-            path: "schema.ts",
-            message: error instanceof Error ? error.message : "Failed to parse schema module.",
-          },
-        ],
+    })
+      .then((nextParse) => {
+        if (schemaParseRequestIdRef.current !== requestId) {
+          return;
+        }
+        setSchemaParse(nextParse);
+        schemaForCompletionRef.current = nextParse.ok ? (nextParse.schema ?? null) : null;
+      })
+      .catch((error: unknown) => {
+        if (schemaParseRequestIdRef.current !== requestId) {
+          return;
+        }
+        setSchemaParse({
+          ok: false,
+          issues: [
+            {
+              path: "schema.ts",
+              message: error instanceof Error ? error.message : "Failed to parse schema module.",
+            },
+          ],
+        });
+        schemaForCompletionRef.current = null;
       });
-      schemaForCompletionRef.current = null;
-    });
   }, [schemaCodeText, schemaProgramModules]);
 
   useEffect(() => {
@@ -1301,10 +1345,7 @@ export function App(): React.JSX.Element {
     return buildPostgresDdlFromRows(downstreamStructureRowsByTable);
   }, [downstreamStructureRowsByTable]);
 
-  const downstreamTableNames = useMemo(
-    () => [...DOWNSTREAM_TABLE_NAMES, KV_INPUT_TABLE_NAME],
-    [],
-  );
+  const downstreamTableNames = useMemo(() => [...DOWNSTREAM_TABLE_NAMES, KV_INPUT_TABLE_NAME], []);
 
   const editableRowsByTable = useMemo(
     () =>
@@ -1316,9 +1357,10 @@ export function App(): React.JSX.Element {
     [downstreamStructureSchema, rowsJsonText, rowsParse],
   );
 
-  const currentDataTable = selectedDataTable && downstreamTableNames.includes(selectedDataTable)
-    ? selectedDataTable
-    : downstreamTableNames[0] ?? null;
+  const currentDataTable =
+    selectedDataTable && downstreamTableNames.includes(selectedDataTable)
+      ? selectedDataTable
+      : (downstreamTableNames[0] ?? null);
 
   const currentDataTableDefinition =
     currentDataTable === KV_INPUT_TABLE_NAME
@@ -1327,17 +1369,15 @@ export function App(): React.JSX.Element {
         ? downstreamStructureSchema.tables[currentDataTable]
         : undefined;
 
-  const currentDataRows = currentDataTable ? editableRowsByTable[currentDataTable] ?? [] : [];
+  const currentDataRows = currentDataTable ? (editableRowsByTable[currentDataTable] ?? []) : [];
   const currentStructureRows =
     currentDataTable && currentDataTable !== KV_INPUT_TABLE_NAME
-      ? downstreamStructureRowsByTable[currentDataTable] ?? []
+      ? (downstreamStructureRowsByTable[currentDataTable] ?? [])
       : [];
   const selectedTableSupportsStructure = currentDataTable !== KV_INPUT_TABLE_NAME;
 
   const currentTableIssues =
-    !rowsParse.ok && currentDataTable
-      ? tableIssueLines(rowsParse.issues, currentDataTable)
-      : [];
+    !rowsParse.ok && currentDataTable ? tableIssueLines(rowsParse.issues, currentDataTable) : [];
   const filteredPostgresTableNames = useMemo(() => {
     const query = downstreamTableFilter.trim().toLowerCase();
     if (query.length === 0) {
@@ -1352,9 +1392,12 @@ export function App(): React.JSX.Element {
     }
     return KV_INPUT_TABLE_NAME.toLowerCase().includes(query) ? [KV_INPUT_TABLE_NAME] : [];
   }, [downstreamTableFilter]);
-  const hasAnyFilteredTables = filteredPostgresTableNames.length > 0 || filteredKvTableNames.length > 0;
+  const hasAnyFilteredTables =
+    filteredPostgresTableNames.length > 0 || filteredKvTableNames.length > 0;
   const selectedDataRow =
-    selectedDataRowIndex != null && selectedDataRowIndex >= 0 && selectedDataRowIndex < currentDataRows.length
+    selectedDataRowIndex != null &&
+    selectedDataRowIndex >= 0 &&
+    selectedDataRowIndex < currentDataRows.length
       ? currentDataRows[selectedDataRowIndex]
       : null;
   const usersByOrg = useMemo(() => {
@@ -1382,7 +1425,10 @@ export function App(): React.JSX.Element {
     }
 
     for (const [org, users] of map.entries()) {
-      map.set(org, [...users].sort((left, right) => left.localeCompare(right)));
+      map.set(
+        org,
+        [...users].sort((left, right) => left.localeCompare(right)),
+      );
     }
 
     return map;
@@ -1415,7 +1461,9 @@ export function App(): React.JSX.Element {
     const orgIds = uniqueNonNullValues(editableRowsByTable.orgs ?? [], "id");
     const withUsers = orgIds.filter((candidate) => (usersByOrg.get(candidate)?.length ?? 0) > 0);
     const fromUsers = [...usersByOrg.keys()];
-    return [...new Set([...withUsers, ...fromUsers])].sort((left, right) => left.localeCompare(right));
+    return [...new Set([...withUsers, ...fromUsers])].sort((left, right) =>
+      left.localeCompare(right),
+    );
   }, [editableRowsByTable, usersByOrg]);
 
   const userIdOptions = useMemo(() => {
@@ -1464,8 +1512,7 @@ export function App(): React.JSX.Element {
     }
 
     const model =
-      sqlEditorRef.current?.getModel() ??
-      monaco.editor.getModel(monaco.Uri.parse(SQL_MODEL_PATH));
+      sqlEditorRef.current?.getModel() ?? monaco.editor.getModel(monaco.Uri.parse(SQL_MODEL_PATH));
     if (!model) {
       return;
     }
@@ -1510,30 +1557,33 @@ export function App(): React.JSX.Element {
 
     void compilePlaygroundInput(schemaCodeText, rowsJsonText, sqlText, {
       modules: schemaProgramModules,
-    }).then((compileResult) => {
-      if (sqlMarkerRequestIdRef.current !== requestId) {
-        return;
-      }
+    })
+      .then((compileResult) => {
+        if (sqlMarkerRequestIdRef.current !== requestId) {
+          return;
+        }
 
-      if (!compileResult.ok) {
-        const messages = compileResult.issues.length > 0 ? compileResult.issues : ["Invalid SQL."];
-        monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers(messages));
-        return;
-      }
+        if (!compileResult.ok) {
+          const messages =
+            compileResult.issues.length > 0 ? compileResult.issues : ["Invalid SQL."];
+          monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers(messages));
+          return;
+        }
 
-      if (runtimeError) {
-        monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([runtimeError]));
-        return;
-      }
+        if (runtimeError) {
+          monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([runtimeError]));
+          return;
+        }
 
-      monaco.editor.setModelMarkers(model, "sqlql", []);
-    }).catch((error: unknown) => {
-      if (sqlMarkerRequestIdRef.current !== requestId) {
-        return;
-      }
-      const message = error instanceof Error ? error.message : "Invalid SQL.";
-      monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([message]));
-    });
+        monaco.editor.setModelMarkers(model, "sqlql", []);
+      })
+      .catch((error: unknown) => {
+        if (sqlMarkerRequestIdRef.current !== requestId) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : "Invalid SQL.";
+        monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([message]));
+      });
   }, [rowsJsonText, runtimeError, schemaCodeText, schemaParse, schemaProgramModules, sqlText]);
 
   useEffect(() => {
@@ -1600,7 +1650,9 @@ export function App(): React.JSX.Element {
   }, [selectedDataRow, currentDataTableDefinition]);
 
   useEffect(() => {
-    setSelectedCatalogQueryId((current) => selectionAfterSchemaChange(current, queryCompatibilityById));
+    setSelectedCatalogQueryId((current) =>
+      selectionAfterSchemaChange(current, queryCompatibilityById),
+    );
   }, [queryCompatibilityById]);
 
   useEffect(() => {
@@ -1644,7 +1696,7 @@ export function App(): React.JSX.Element {
 
   const markScenarioCustom = (): void => {
     setActiveScenarioId((current) =>
-      current === CUSTOM_SCENARIO_ID ? current : CUSTOM_SCENARIO_ID
+      current === CUSTOM_SCENARIO_ID ? current : CUSTOM_SCENARIO_ID,
     );
   };
 
@@ -2088,10 +2140,7 @@ export function App(): React.JSX.Element {
     });
   };
 
-  const handleRowEditorFieldChange = (
-    columnName: string,
-    rawValue: string,
-  ): void => {
+  const handleRowEditorFieldChange = (columnName: string, rawValue: string): void => {
     if (
       !currentDataTable ||
       !currentDataTableDefinition ||
@@ -2237,996 +2286,921 @@ export function App(): React.JSX.Element {
         <div className="flex h-full min-h-0 flex-col">
           <header className="shrink-0 border-b bg-background shadow-sm">
             <div className="grid gap-2 px-2 py-2 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
-                <TabsList className="gap-1">
-                  <TabsTrigger
-                    value="data"
-                    title="PostgreSQL workspace"
-                    aria-label="PostgreSQL workspace"
-                    className="px-2.5"
-                  >
-                    <Database className="h-4 w-4" />
-                    <span className="sr-only">PostgreSQL workspace</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="schema"
-                    title="sqlql schema"
-                    aria-label="sqlql schema"
-                    className="px-2.5"
-                  >
-                    <Table2 className="h-4 w-4" />
-                    <span className="sr-only">sqlql schema</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="query" title="Query" aria-label="Query" className="px-2.5">
-                    <SearchCode className="h-4 w-4" />
-                    <span className="sr-only">Query</span>
-                  </TabsTrigger>
-                </TabsList>
+              <TabsList className="gap-1">
+                <TabsTrigger
+                  value="data"
+                  title="PostgreSQL workspace"
+                  aria-label="PostgreSQL workspace"
+                  className="px-2.5"
+                >
+                  <Database className="h-4 w-4" />
+                  <span className="sr-only">PostgreSQL workspace</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="schema"
+                  title="sqlql schema"
+                  aria-label="sqlql schema"
+                  className="px-2.5"
+                >
+                  <Table2 className="h-4 w-4" />
+                  <span className="sr-only">sqlql schema</span>
+                </TabsTrigger>
+                <TabsTrigger value="query" title="Query" aria-label="Query" className="px-2.5">
+                  <SearchCode className="h-4 w-4" />
+                  <span className="sr-only">Query</span>
+                </TabsTrigger>
+              </TabsList>
 
-                <div className="min-w-0">
-                  {activeTopTab === "query" ? (
-                    <div className="grid gap-2 lg:grid-cols-[minmax(180px,260px)_minmax(0,1fr)_auto] lg:items-center">
-                      <Select
-                        value={selectedCatalogQueryId}
-                        onValueChange={handleCatalogQuerySelect}
+              <div className="min-w-0">
+                {activeTopTab === "query" ? (
+                  <div className="grid gap-2 lg:grid-cols-[minmax(180px,260px)_minmax(0,1fr)_auto] lg:items-center">
+                    <Select value={selectedCatalogQueryId} onValueChange={handleCatalogQuerySelect}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Preset query" />
+                      </SelectTrigger>
+                      <SelectContent className="min-w-[520px]">
+                        <SelectItem value={CUSTOM_QUERY_ID}>Custom</SelectItem>
+                        <SelectSeparator />
+                        <SelectGroup>
+                          <SelectLabel>Query presets</SelectLabel>
+                          {queryCatalog.map((entry) => {
+                            const compatibility = queryCompatibilityById[entry.id];
+                            const compatible = compatibility?.compatible === true;
+                            const reason = compatibility?.reason ?? "Unsupported for this schema.";
+
+                            return (
+                              <SelectItem
+                                key={entry.id}
+                                value={entry.id}
+                                disabled={!compatible}
+                                title={!compatible ? reason : undefined}
+                              >
+                                <div className="flex min-w-0 flex-col">
+                                  <span>{entry.label}</span>
+                                  {!compatible ? (
+                                    <span className="text-xs text-muted-foreground">
+                                      {truncateReason(reason)}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+
+                    <div ref={queryEditorShellRef} className="relative min-w-0">
+                      <SqlPreviewLine
+                        monaco={monacoRef.current}
+                        sql={sqlText}
+                        onActivate={() => setIsQueryEditorExpanded(true)}
+                      />
+                      {isQueryEditorExpanded ? (
+                        <div className="query-editor-overlay absolute inset-x-0 top-0 overflow-visible rounded-md border bg-white px-3 py-2 shadow-2xl">
+                          <Editor
+                            path={SQL_MODEL_PATH}
+                            language="sql"
+                            value={sqlText}
+                            onMount={handleMonacoMount}
+                            onChange={(value) => handleSqlTextChange(value ?? "")}
+                            options={{
+                              minimap: { enabled: false },
+                              fontSize: 13,
+                              scrollBeyondLastLine: false,
+                              fixedOverflowWidgets: true,
+                              suggestOnTriggerCharacters: true,
+                              quickSuggestions: {
+                                other: true,
+                                comments: false,
+                                strings: true,
+                              },
+                              quickSuggestionsDelay: 0,
+                              ...MONACO_INDENT_OPTIONS,
+                            }}
+                            height={`${expandedQueryEditorHeightPx}px`}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div ref={contextPopoverRef} className="relative">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsContextPopoverOpen((open) => !open)}
                       >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Preset query" />
-                        </SelectTrigger>
-                        <SelectContent className="min-w-[520px]">
-                          <SelectItem value={CUSTOM_QUERY_ID}>Custom</SelectItem>
-                          <SelectSeparator />
-                          <SelectGroup>
-                            <SelectLabel>Query presets</SelectLabel>
-                            {queryCatalog.map((entry) => {
-                              const compatibility = queryCompatibilityById[entry.id];
-                              const compatible = compatibility?.compatible === true;
-                              const reason = compatibility?.reason ?? "Unsupported for this schema.";
-
-                              return (
-                                <SelectItem
-                                  key={entry.id}
-                                  value={entry.id}
-                                  disabled={!compatible}
-                                  title={!compatible ? reason : undefined}
-                                >
-                                  <div className="flex min-w-0 flex-col">
-                                    <span>{entry.label}</span>
-                                    {!compatible ? (
-                                      <span className="text-xs text-muted-foreground">
-                                        {truncateReason(reason)}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-
-                      <div ref={queryEditorShellRef} className="relative min-w-0">
-                        <SqlPreviewLine
-                          monaco={monacoRef.current}
-                          sql={sqlText}
-                          onActivate={() => setIsQueryEditorExpanded(true)}
-                        />
-                        {isQueryEditorExpanded ? (
-                          <div className="query-editor-overlay absolute inset-x-0 top-0 overflow-visible rounded-md border bg-white px-3 py-2 shadow-2xl">
-                            <Editor
-                              path={SQL_MODEL_PATH}
-                              language="sql"
-                              value={sqlText}
-                              onMount={handleMonacoMount}
-                              onChange={(value) => handleSqlTextChange(value ?? "")}
-                              options={{
-                                minimap: { enabled: false },
-                                fontSize: 13,
-                                scrollBeyondLastLine: false,
-                                fixedOverflowWidgets: true,
-                                suggestOnTriggerCharacters: true,
-                                quickSuggestions: {
-                                  other: true,
-                                  comments: false,
-                                  strings: true,
-                                },
-                                quickSuggestionsDelay: 0,
-                              }}
-                              height={`${expandedQueryEditorHeightPx}px`}
-                            />
+                        Context
+                      </Button>
+                      {isContextPopoverOpen ? (
+                        <div className="absolute right-0 top-10 z-40 w-72 rounded-md border bg-white p-3 shadow-xl">
+                          <div className="mb-2 text-sm font-medium text-slate-900">
+                            Query context
                           </div>
-                        ) : null}
-                      </div>
-
-                      <div ref={contextPopoverRef} className="relative">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setIsContextPopoverOpen((open) => !open)}
-                        >
-                          Context
-                        </Button>
-                        {isContextPopoverOpen ? (
-                          <div className="absolute right-0 top-10 z-40 w-72 rounded-md border bg-white p-3 shadow-xl">
-                            <div className="mb-2 text-sm font-medium text-slate-900">Query context</div>
-                            <div className="space-y-3">
-                              <div className="space-y-1">
-                                <label className="text-xs text-slate-600">orgId</label>
-                                <select
-                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
-                                  value={orgId}
-                                  disabled={orgIdOptions.length === 0}
-                                  onChange={(event) => {
-                                    const nextOrgId = event.target.value;
-                                    const nextUserOptions = usersByOrg.get(nextOrgId) ?? [];
-                                    markScenarioCustom();
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <label className="text-xs text-slate-600">orgId</label>
+                              <select
+                                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+                                value={orgId}
+                                disabled={orgIdOptions.length === 0}
+                                onChange={(event) => {
+                                  const nextOrgId = event.target.value;
+                                  const nextUserOptions = usersByOrg.get(nextOrgId) ?? [];
+                                  markScenarioCustom();
+                                  setOrgId(nextOrgId);
+                                  setUserId(
+                                    nextUserOptions.includes(userId)
+                                      ? userId
+                                      : (nextUserOptions[0] ?? ""),
+                                  );
+                                }}
+                              >
+                                {orgIdOptions.map((option) => (
+                                  <option key={option} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs text-slate-600">userId</label>
+                              <select
+                                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+                                value={userId}
+                                disabled={userIdOptions.length === 0}
+                                onChange={(event) => {
+                                  const nextUserId = event.target.value;
+                                  const nextOrgId = orgByUser.get(nextUserId);
+                                  markScenarioCustom();
+                                  setUserId(nextUserId);
+                                  if (nextOrgId && nextOrgId !== orgId) {
                                     setOrgId(nextOrgId);
-                                    setUserId(
-                                      nextUserOptions.includes(userId)
-                                        ? userId
-                                        : (nextUserOptions[0] ?? ""),
-                                    );
-                                  }}
-                                >
-                                  {orgIdOptions.map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="space-y-1">
-                                <label className="text-xs text-slate-600">userId</label>
-                                <select
-                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
-                                  value={userId}
-                                  disabled={userIdOptions.length === 0}
-                                  onChange={(event) => {
-                                    const nextUserId = event.target.value;
-                                    const nextOrgId = orgByUser.get(nextUserId);
-                                    markScenarioCustom();
-                                    setUserId(nextUserId);
-                                    if (nextOrgId && nextOrgId !== orgId) {
-                                      setOrgId(nextOrgId);
-                                    }
-                                  }}
-                                >
-                                  {userIdOptions.map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
+                                  }
+                                }}
+                              >
+                                {userIdOptions.map((option) => (
+                                  <option key={option} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
                           </div>
-                        ) : null}
-                      </div>
+                        </div>
+                      ) : null}
                     </div>
-                  ) : (
-                    <div className="truncate text-xs text-slate-500">
-                      Edit downstream data, facade schema, then run queries.
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 justify-self-start lg:justify-self-end">
-
-                  {activeTopTab === "schema" ? (
-                    <Tabs
-                      value={activeSchemaTab}
-                      onValueChange={(value) => setActiveSchemaTab(value as SchemaTab)}
-                    >
-                      <TabsList className="gap-1">
-                        <TabsTrigger value="diagram">Diagram</TabsTrigger>
-                        <TabsTrigger value="ddl">DDL</TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  ) : null}
-
-                  {activeTopTab === "query" ? (
-                    <Tabs
-                      value={activeQueryTab}
-                      onValueChange={(value) => setActiveQueryTab(value as QueryTab)}
-                    >
-                      <TabsList className="gap-1">
-                        <TabsTrigger value="result">Result</TabsTrigger>
-                        <TabsTrigger value="explain">Explain</TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  ) : null}
-                </div>
+                  </div>
+                ) : (
+                  <div className="truncate text-xs text-slate-500">
+                    Edit downstream data, facade schema, then run queries.
+                  </div>
+                )}
               </div>
-            </header>
+
+              <div className="flex items-center gap-2 justify-self-start lg:justify-self-end">
+                {activeTopTab === "schema" ? (
+                  <Tabs
+                    value={activeSchemaTab}
+                    onValueChange={(value) => setActiveSchemaTab(value as SchemaTab)}
+                  >
+                    <TabsList className="gap-1">
+                      <TabsTrigger value="diagram">Diagram</TabsTrigger>
+                      <TabsTrigger value="ddl">DDL</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                ) : null}
+
+                {activeTopTab === "query" ? (
+                  <Tabs
+                    value={activeQueryTab}
+                    onValueChange={(value) => setActiveQueryTab(value as QueryTab)}
+                  >
+                    <TabsList className="gap-1">
+                      <TabsTrigger value="result">Result</TabsTrigger>
+                      <TabsTrigger value="explain">Explain</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                ) : null}
+              </div>
+            </div>
+          </header>
 
           <div className="min-h-0 flex-1 overflow-hidden bg-background p-2">
-              <TabsContent value="data" forceMount className="mt-0 h-full min-h-0">
-                {downstreamTableNames.length > 0 ? (
-                  <div className="grid h-full min-h-0 gap-2 lg:grid-cols-[240px_minmax(0,1fr)]">
-                    <div className="flex min-h-0 flex-col rounded-md border bg-slate-50 p-2">
-                      <input
-                        value={downstreamTableFilter}
-                        onChange={(event) => setDownstreamTableFilter(event.target.value)}
-                        placeholder="Search tables..."
-                        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs"
-                      />
-                      <ScrollArea className="mt-2 min-h-0 flex-1">
-                        <div className="space-y-2 pr-1">
-                          {!hasAnyFilteredTables ? (
-                            <div className="rounded-md border border-dashed px-3 py-2 text-xs text-slate-500">
-                              No tables match the filter.
-                            </div>
-                          ) : null}
+            <TabsContent value="data" forceMount className="mt-0 h-full min-h-0">
+              {downstreamTableNames.length > 0 ? (
+                <div className="grid h-full min-h-0 gap-2 lg:grid-cols-[240px_minmax(0,1fr)]">
+                  <div className="flex min-h-0 flex-col rounded-md border bg-slate-50 p-2">
+                    <input
+                      value={downstreamTableFilter}
+                      onChange={(event) => setDownstreamTableFilter(event.target.value)}
+                      placeholder="Search tables..."
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs"
+                    />
+                    <ScrollArea className="mt-2 min-h-0 flex-1">
+                      <div className="space-y-2 pr-1">
+                        {!hasAnyFilteredTables ? (
+                          <div className="rounded-md border border-dashed px-3 py-2 text-xs text-slate-500">
+                            No tables match the filter.
+                          </div>
+                        ) : null}
 
-                          <Collapsible
-                            open={openDataSourceSection === "postgres"}
-                            onOpenChange={(open) => {
-                              if (!open) {
-                                return;
-                              }
-                              setOpenDataSourceSection("postgres");
-                            }}
-                            className="overflow-hidden rounded-md border bg-white"
-                          >
-                            <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
-                              <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                                PostgreSQL ({filteredPostgresTableNames.length})
-                              </span>
-                              {openDataSourceSection === "postgres" ? (
-                                <ChevronDown className="h-4 w-4 text-slate-500" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4 text-slate-500" />
-                              )}
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="border-t bg-slate-50/60 px-2 py-2">
-                              {filteredPostgresTableNames.length > 0 ? (
-                                <div className="space-y-1">
-                                  {filteredPostgresTableNames.map((tableName) => (
-                                    <button
-                                      type="button"
-                                      key={tableName}
-                                      className={cn(
-                                        "w-full rounded-md px-3 py-2 text-left text-sm",
-                                        currentDataTable === tableName
-                                          ? "bg-background text-foreground shadow"
-                                          : "hover:bg-slate-100",
-                                      )}
-                                      onClick={() => handleSelectDataTable(tableName)}
-                                    >
-                                      {tableName}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="px-2 py-1 text-xs text-slate-500">
-                                  No PostgreSQL tables match the filter.
-                                </div>
-                              )}
-                            </CollapsibleContent>
-                          </Collapsible>
-
-                          <Collapsible
-                            open={openDataSourceSection === "kv"}
-                            onOpenChange={(open) => {
-                              if (!open) {
-                                return;
-                              }
-                              setOpenDataSourceSection("kv");
-                            }}
-                            className="overflow-hidden rounded-md border bg-white"
-                          >
-                            <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
-                              <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                                KV ({filteredKvTableNames.length})
-                              </span>
-                              {openDataSourceSection === "kv" ? (
-                                <ChevronDown className="h-4 w-4 text-slate-500" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4 text-slate-500" />
-                              )}
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="border-t bg-slate-50/60 px-2 py-2">
-                              {filteredKvTableNames.length > 0 ? (
-                                <div className="space-y-1">
-                                  {filteredKvTableNames.map((tableName) => (
-                                    <button
-                                      type="button"
-                                      key={tableName}
-                                      className={cn(
-                                        "w-full rounded-md px-3 py-2 text-left text-sm",
-                                        currentDataTable === tableName
-                                          ? "bg-background text-foreground shadow"
-                                          : "hover:bg-slate-100",
-                                      )}
-                                      onClick={() => handleSelectDataTable(tableName)}
-                                    >
-                                      {tableName}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="px-2 py-1 text-xs text-slate-500">
-                                  No KV tables match the filter.
-                                </div>
-                              )}
-                            </CollapsibleContent>
-                          </Collapsible>
-                        </div>
-                      </ScrollArea>
-                    </div>
-
-                    <div className="min-h-0 overflow-hidden rounded-md border bg-white">
-                      {currentDataTable && currentDataTableDefinition ? (
-                        <div className="flex h-full min-h-0 flex-col">
-                          <div className="min-h-0 flex-1 overflow-hidden">
-                            {postgresWorkspaceMode === "data" || !selectedTableSupportsStructure ? (
-                              <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_340px]">
-                                <div className="min-h-0 overflow-hidden border-r">
-                                  <DataGrid
-                                    table={currentDataTableDefinition}
-                                    rows={currentDataRows}
-                                    onRowsChange={(nextRows) =>
-                                      handleSetTableRows(currentDataTable, nextRows)
-                                    }
-                                    selectedRowIndex={selectedDataRowIndex}
-                                    onSelectRow={setSelectedDataRowIndex}
-                                    editable={false}
-                                    scrollAreaClassName="h-full rounded-none border-0 bg-white"
-                                  />
-                                </div>
-                                <div className="min-h-0 overflow-hidden border-l bg-slate-50">
-                                  {selectedDataRow ? (
-                                    <ScrollArea className="h-full p-3">
-                                      <div className="space-y-3 pr-2">
-                                        <div className="flex items-start justify-between gap-2">
-                                          <div className="space-y-1">
-                                            <div className="text-sm font-semibold text-slate-900">
-                                              {currentDataTable} row {selectedDataRowIndex != null
-                                                ? selectedDataRowIndex + 1
-                                                : "?"}
-                                            </div>
-                                            <p className="text-xs text-slate-500">
-                                              Edit all fields in one place.
-                                            </p>
-                                          </div>
-                                          <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={handleDeleteSelectedDataRow}
-                                          >
-                                            Delete
-                                          </Button>
-                                        </div>
-                                        {Object.entries(currentDataTableDefinition.columns).map(
-                                          ([columnName, columnDefinition]) => {
-                                            const type = readColumnType(columnDefinition);
-                                            const enumValues = readColumnEnumValues(columnDefinition) ?? [];
-                                            const foreignKey =
-                                              typeof columnDefinition === "string"
-                                                ? undefined
-                                                : columnDefinition.foreignKey;
-                                            const foreignKeyChoices = foreignKey
-                                              ? uniqueNonNullValues(
-                                                  editableRowsByTable[foreignKey.table] ?? [],
-                                                  foreignKey.column,
-                                                )
-                                              : [];
-                                            const inputValue =
-                                              rowEditorDrafts[columnName] ??
-                                              formatCellValue(selectedDataRow[columnName]);
-                                            const error = rowEditorErrors[columnName];
-                                            const timestampValue = toDateTimeLocalValue(inputValue);
-                                            const timestampFallback =
-                                              type === "timestamp" &&
-                                              inputValue.length > 0 &&
-                                              timestampValue.length === 0;
-                                            return (
-                                              <div
-                                                key={columnName}
-                                                className="space-y-1 rounded-md border bg-white p-2"
-                                              >
-                                                <div className="flex items-center justify-between gap-2">
-                                                  <label className="truncate text-xs font-medium text-slate-700">
-                                                    {columnName}
-                                                  </label>
-                                                  <span className="text-[11px] text-slate-500">
-                                                    {type}
-                                                    {isColumnNullable(columnDefinition)
-                                                      ? " | nullable"
-                                                      : ""}
-                                                  </span>
-                                                </div>
-                                                {foreignKey ? (
-                                                  <select
-                                                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
-                                                    value={inputValue.length === 0 ? "__null__" : inputValue}
-                                                    onChange={(event) =>
-                                                      handleRowEditorFieldChange(
-                                                        columnName,
-                                                        event.target.value === "__null__"
-                                                          ? ""
-                                                          : event.target.value,
-                                                      )
-                                                    }
-                                                  >
-                                                    {isColumnNullable(columnDefinition) ? (
-                                                      <option value="__null__"></option>
-                                                    ) : null}
-                                                    {inputValue.length > 0 &&
-                                                    !foreignKeyChoices.includes(inputValue) ? (
-                                                      <option value={inputValue}>{inputValue}</option>
-                                                    ) : null}
-                                                    {foreignKeyChoices.map((value) => (
-                                                      <option key={value} value={value}>
-                                                        {value}
-                                                      </option>
-                                                    ))}
-                                                  </select>
-                                                ) : enumValues.length > 0 ? (
-                                                  <select
-                                                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
-                                                    value={inputValue.length === 0 ? "__null__" : inputValue}
-                                                    onChange={(event) =>
-                                                      handleRowEditorFieldChange(
-                                                        columnName,
-                                                        event.target.value === "__null__"
-                                                          ? ""
-                                                          : event.target.value,
-                                                      )
-                                                    }
-                                                  >
-                                                    {isColumnNullable(columnDefinition) ? (
-                                                      <option value="__null__"></option>
-                                                    ) : null}
-                                                    {enumValues.map((value) => (
-                                                      <option key={value} value={value}>
-                                                        {value}
-                                                      </option>
-                                                    ))}
-                                                  </select>
-                                                ) : type === "boolean" ? (
-                                                  <select
-                                                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
-                                                    value={
-                                                      inputValue.length === 0
-                                                        ? "__null__"
-                                                        : inputValue === "true"
-                                                          ? "true"
-                                                          : "false"
-                                                    }
-                                                    onChange={(event) =>
-                                                      handleRowEditorFieldChange(
-                                                        columnName,
-                                                        event.target.value === "__null__"
-                                                          ? ""
-                                                          : event.target.value,
-                                                      )
-                                                    }
-                                                  >
-                                                    {isColumnNullable(columnDefinition) ? (
-                                                      <option value="__null__"></option>
-                                                    ) : null}
-                                                    <option value="true">true</option>
-                                                    <option value="false">false</option>
-                                                  </select>
-                                                ) : type === "integer" ? (
-                                                  <input
-                                                    type="number"
-                                                    step={1}
-                                                    inputMode="numeric"
-                                                    className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
-                                                    value={inputValue}
-                                                    onChange={(event) =>
-                                                      handleRowEditorFieldChange(
-                                                        columnName,
-                                                        event.target.value,
-                                                      )
-                                                    }
-                                                  />
-                                                ) : type === "timestamp" && !timestampFallback ? (
-                                                  <input
-                                                    type="datetime-local"
-                                                    className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
-                                                    value={timestampValue}
-                                                    onChange={(event) =>
-                                                      handleRowEditorFieldChange(
-                                                        columnName,
-                                                        event.target.value,
-                                                      )
-                                                    }
-                                                  />
-                                                ) : (
-                                                  <input
-                                                    className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
-                                                    value={inputValue}
-                                                    onChange={(event) =>
-                                                      handleRowEditorFieldChange(
-                                                        columnName,
-                                                        event.target.value,
-                                                      )
-                                                    }
-                                                  />
-                                                )}
-                                                {error ? (
-                                                  <div className="text-[11px] text-rose-600">{error}</div>
-                                                ) : null}
-                                              </div>
-                                            );
-                                          },
-                                        )}
-                                      </div>
-                                    </ScrollArea>
-                                  ) : (
-                                    <div className="flex h-full items-center justify-center p-4 text-sm text-slate-500">
-                                      Select a row to edit details.
-                                    </div>
-                                  )}
-                                </div>
+                        <Collapsible
+                          open={openDataSourceSection === "postgres"}
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              return;
+                            }
+                            setOpenDataSourceSection("postgres");
+                          }}
+                          className="overflow-hidden rounded-md border bg-white"
+                        >
+                          <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                              PostgreSQL ({filteredPostgresTableNames.length})
+                            </span>
+                            {openDataSourceSection === "postgres" ? (
+                              <ChevronDown className="h-4 w-4 text-slate-500" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-slate-500" />
+                            )}
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="border-t bg-slate-50/60 px-2 py-2">
+                            {filteredPostgresTableNames.length > 0 ? (
+                              <div className="space-y-1">
+                                {filteredPostgresTableNames.map((tableName) => (
+                                  <button
+                                    type="button"
+                                    key={tableName}
+                                    className={cn(
+                                      "w-full rounded-md px-3 py-2 text-left text-sm",
+                                      currentDataTable === tableName
+                                        ? "bg-background text-foreground shadow"
+                                        : "hover:bg-slate-100",
+                                    )}
+                                    onClick={() => handleSelectDataTable(tableName)}
+                                  >
+                                    {tableName}
+                                  </button>
+                                ))}
                               </div>
                             ) : (
-                              <div className="flex h-full min-h-0 flex-col">
-                                <div className="border-b p-2">
-                                  <Tabs
-                                    value={postgresStructureTab}
-                                    onValueChange={(value) =>
-                                      setPostgresStructureTab(value as PostgresStructureTab)
-                                    }
+                              <div className="px-2 py-1 text-xs text-slate-500">
+                                No PostgreSQL tables match the filter.
+                              </div>
+                            )}
+                          </CollapsibleContent>
+                        </Collapsible>
+
+                        <Collapsible
+                          open={openDataSourceSection === "kv"}
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              return;
+                            }
+                            setOpenDataSourceSection("kv");
+                          }}
+                          className="overflow-hidden rounded-md border bg-white"
+                        >
+                          <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                              KV ({filteredKvTableNames.length})
+                            </span>
+                            {openDataSourceSection === "kv" ? (
+                              <ChevronDown className="h-4 w-4 text-slate-500" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-slate-500" />
+                            )}
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="border-t bg-slate-50/60 px-2 py-2">
+                            {filteredKvTableNames.length > 0 ? (
+                              <div className="space-y-1">
+                                {filteredKvTableNames.map((tableName) => (
+                                  <button
+                                    type="button"
+                                    key={tableName}
+                                    className={cn(
+                                      "w-full rounded-md px-3 py-2 text-left text-sm",
+                                      currentDataTable === tableName
+                                        ? "bg-background text-foreground shadow"
+                                        : "hover:bg-slate-100",
+                                    )}
+                                    onClick={() => handleSelectDataTable(tableName)}
                                   >
-                                    <TabsList className="gap-1">
-                                      <TabsTrigger value="table">Table</TabsTrigger>
-                                      <TabsTrigger value="diagram">Diagram</TabsTrigger>
-                                      <TabsTrigger value="ddl">DDL</TabsTrigger>
-                                    </TabsList>
-                                  </Tabs>
-                                </div>
-                                <div className="min-h-0 flex-1 overflow-hidden p-2">
-                                  {postgresStructureTab === "table" ? (
-                                    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-white">
-                                      <ScrollArea className="min-h-0 flex-1">
-                                        <Table>
-                                          <TableHeader>
-                                            <TableRow>
-                                              <TableHead>Column</TableHead>
-                                              <TableHead>Logical</TableHead>
-                                              <TableHead>Physical Type</TableHead>
-                                              <TableHead>Enum Values</TableHead>
-                                              <TableHead>Nullable</TableHead>
-                                              <TableHead>References</TableHead>
-                                              <TableHead className="w-12 text-right"></TableHead>
-                                            </TableRow>
-                                          </TableHeader>
-                                          <TableBody>
-                                            {currentStructureRows.map((column, rowIndex) => (
-                                              <TableRow key={`${column.name}:${rowIndex}`}>
-                                                <TableCell>
+                                    {tableName}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="px-2 py-1 text-xs text-slate-500">
+                                No KV tables match the filter.
+                              </div>
+                            )}
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </div>
+                    </ScrollArea>
+                  </div>
+
+                  <div className="min-h-0 overflow-hidden rounded-md border bg-white">
+                    {currentDataTable && currentDataTableDefinition ? (
+                      <div className="flex h-full min-h-0 flex-col">
+                        <div className="min-h-0 flex-1 overflow-hidden">
+                          {postgresWorkspaceMode === "data" || !selectedTableSupportsStructure ? (
+                            <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_340px]">
+                              <div className="min-h-0 overflow-hidden border-r">
+                                <DataGrid
+                                  table={currentDataTableDefinition}
+                                  rows={currentDataRows}
+                                  onRowsChange={(nextRows) =>
+                                    handleSetTableRows(currentDataTable, nextRows)
+                                  }
+                                  selectedRowIndex={selectedDataRowIndex}
+                                  onSelectRow={setSelectedDataRowIndex}
+                                  editable={false}
+                                  scrollAreaClassName="h-full rounded-none border-0 bg-white"
+                                />
+                              </div>
+                              <div className="min-h-0 overflow-hidden border-l bg-slate-50">
+                                {selectedDataRow ? (
+                                  <ScrollArea className="h-full p-3">
+                                    <div className="space-y-3 pr-2">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="space-y-1">
+                                          <div className="text-sm font-semibold text-slate-900">
+                                            {currentDataTable} row{" "}
+                                            {selectedDataRowIndex != null
+                                              ? selectedDataRowIndex + 1
+                                              : "?"}
+                                          </div>
+                                          <p className="text-xs text-slate-500">
+                                            Edit all fields in one place.
+                                          </p>
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={handleDeleteSelectedDataRow}
+                                        >
+                                          Delete
+                                        </Button>
+                                      </div>
+                                      {Object.entries(currentDataTableDefinition.columns).map(
+                                        ([columnName, columnDefinition]) => {
+                                          const type = readColumnType(columnDefinition);
+                                          const enumValues =
+                                            readColumnEnumValues(columnDefinition) ?? [];
+                                          const foreignKey =
+                                            typeof columnDefinition === "string"
+                                              ? undefined
+                                              : columnDefinition.foreignKey;
+                                          const foreignKeyChoices = foreignKey
+                                            ? uniqueNonNullValues(
+                                                editableRowsByTable[foreignKey.table] ?? [],
+                                                foreignKey.column,
+                                              )
+                                            : [];
+                                          const inputValue =
+                                            rowEditorDrafts[columnName] ??
+                                            formatCellValue(selectedDataRow[columnName]);
+                                          const error = rowEditorErrors[columnName];
+                                          const timestampValue = toDateTimeLocalValue(inputValue);
+                                          const timestampFallback =
+                                            type === "timestamp" &&
+                                            inputValue.length > 0 &&
+                                            timestampValue.length === 0;
+                                          return (
+                                            <div
+                                              key={columnName}
+                                              className="space-y-1 rounded-md border bg-white p-2"
+                                            >
+                                              <div className="flex items-center justify-between gap-2">
+                                                <label className="truncate text-xs font-medium text-slate-700">
+                                                  {columnName}
+                                                </label>
+                                                <span className="text-[11px] text-slate-500">
+                                                  {type}
+                                                  {isColumnNullable(columnDefinition)
+                                                    ? " | nullable"
+                                                    : ""}
+                                                </span>
+                                              </div>
+                                              {foreignKey ? (
+                                                <select
+                                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+                                                  value={
+                                                    inputValue.length === 0
+                                                      ? "__null__"
+                                                      : inputValue
+                                                  }
+                                                  onChange={(event) =>
+                                                    handleRowEditorFieldChange(
+                                                      columnName,
+                                                      event.target.value === "__null__"
+                                                        ? ""
+                                                        : event.target.value,
+                                                    )
+                                                  }
+                                                >
+                                                  {isColumnNullable(columnDefinition) ? (
+                                                    <option value="__null__"></option>
+                                                  ) : null}
+                                                  {inputValue.length > 0 &&
+                                                  !foreignKeyChoices.includes(inputValue) ? (
+                                                    <option value={inputValue}>{inputValue}</option>
+                                                  ) : null}
+                                                  {foreignKeyChoices.map((value) => (
+                                                    <option key={value} value={value}>
+                                                      {value}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                              ) : enumValues.length > 0 ? (
+                                                <select
+                                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+                                                  value={
+                                                    inputValue.length === 0
+                                                      ? "__null__"
+                                                      : inputValue
+                                                  }
+                                                  onChange={(event) =>
+                                                    handleRowEditorFieldChange(
+                                                      columnName,
+                                                      event.target.value === "__null__"
+                                                        ? ""
+                                                        : event.target.value,
+                                                    )
+                                                  }
+                                                >
+                                                  {isColumnNullable(columnDefinition) ? (
+                                                    <option value="__null__"></option>
+                                                  ) : null}
+                                                  {enumValues.map((value) => (
+                                                    <option key={value} value={value}>
+                                                      {value}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                              ) : type === "boolean" ? (
+                                                <select
+                                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+                                                  value={
+                                                    inputValue.length === 0
+                                                      ? "__null__"
+                                                      : inputValue === "true"
+                                                        ? "true"
+                                                        : "false"
+                                                  }
+                                                  onChange={(event) =>
+                                                    handleRowEditorFieldChange(
+                                                      columnName,
+                                                      event.target.value === "__null__"
+                                                        ? ""
+                                                        : event.target.value,
+                                                    )
+                                                  }
+                                                >
+                                                  {isColumnNullable(columnDefinition) ? (
+                                                    <option value="__null__"></option>
+                                                  ) : null}
+                                                  <option value="true">true</option>
+                                                  <option value="false">false</option>
+                                                </select>
+                                              ) : type === "integer" ? (
+                                                <input
+                                                  type="number"
+                                                  step={1}
+                                                  inputMode="numeric"
+                                                  className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
+                                                  value={inputValue}
+                                                  onChange={(event) =>
+                                                    handleRowEditorFieldChange(
+                                                      columnName,
+                                                      event.target.value,
+                                                    )
+                                                  }
+                                                />
+                                              ) : type === "timestamp" && !timestampFallback ? (
+                                                <input
+                                                  type="datetime-local"
+                                                  className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
+                                                  value={timestampValue}
+                                                  onChange={(event) =>
+                                                    handleRowEditorFieldChange(
+                                                      columnName,
+                                                      event.target.value,
+                                                    )
+                                                  }
+                                                />
+                                              ) : (
+                                                <input
+                                                  className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
+                                                  value={inputValue}
+                                                  onChange={(event) =>
+                                                    handleRowEditorFieldChange(
+                                                      columnName,
+                                                      event.target.value,
+                                                    )
+                                                  }
+                                                />
+                                              )}
+                                              {error ? (
+                                                <div className="text-[11px] text-rose-600">
+                                                  {error}
+                                                </div>
+                                              ) : null}
+                                            </div>
+                                          );
+                                        },
+                                      )}
+                                    </div>
+                                  </ScrollArea>
+                                ) : (
+                                  <div className="flex h-full items-center justify-center p-4 text-sm text-slate-500">
+                                    Select a row to edit details.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex h-full min-h-0 flex-col">
+                              <div className="border-b p-2">
+                                <Tabs
+                                  value={postgresStructureTab}
+                                  onValueChange={(value) =>
+                                    setPostgresStructureTab(value as PostgresStructureTab)
+                                  }
+                                >
+                                  <TabsList className="gap-1">
+                                    <TabsTrigger value="table">Table</TabsTrigger>
+                                    <TabsTrigger value="diagram">Diagram</TabsTrigger>
+                                    <TabsTrigger value="ddl">DDL</TabsTrigger>
+                                  </TabsList>
+                                </Tabs>
+                              </div>
+                              <div className="min-h-0 flex-1 overflow-hidden p-2">
+                                {postgresStructureTab === "table" ? (
+                                  <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-white">
+                                    <ScrollArea className="min-h-0 flex-1">
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead>Column</TableHead>
+                                            <TableHead>Logical</TableHead>
+                                            <TableHead>Physical Type</TableHead>
+                                            <TableHead>Enum Values</TableHead>
+                                            <TableHead>Nullable</TableHead>
+                                            <TableHead>References</TableHead>
+                                            <TableHead className="w-12 text-right"></TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {currentStructureRows.map((column, rowIndex) => (
+                                            <TableRow key={`${column.name}:${rowIndex}`}>
+                                              <TableCell>
+                                                <input
+                                                  className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
+                                                  value={column.name}
+                                                  onChange={(event) =>
+                                                    handleUpdateStructureColumn(
+                                                      currentDataTable,
+                                                      rowIndex,
+                                                      { name: event.target.value },
+                                                    )
+                                                  }
+                                                />
+                                              </TableCell>
+                                              <TableCell>
+                                                <select
+                                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+                                                  value={column.type}
+                                                  onChange={(event) =>
+                                                    handleUpdateStructureColumn(
+                                                      currentDataTable,
+                                                      rowIndex,
+                                                      { type: event.target.value as SqlScalarType },
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="text">text</option>
+                                                  <option value="integer">integer</option>
+                                                  <option value="real">real</option>
+                                                  <option value="blob">blob</option>
+                                                  <option value="boolean">boolean</option>
+                                                  <option value="timestamp">timestamp</option>
+                                                  <option value="date">date</option>
+                                                  <option value="datetime">datetime</option>
+                                                  <option value="json">json</option>
+                                                </select>
+                                              </TableCell>
+                                              <TableCell>
+                                                <input
+                                                  className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
+                                                  value={column.physicalType}
+                                                  onChange={(event) =>
+                                                    handleUpdateStructureColumn(
+                                                      currentDataTable,
+                                                      rowIndex,
+                                                      { physicalType: event.target.value },
+                                                    )
+                                                  }
+                                                />
+                                              </TableCell>
+                                              <TableCell>
+                                                <input
+                                                  className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
+                                                  value={column.enumValues.join(", ")}
+                                                  placeholder="draft, paid, shipped"
+                                                  onChange={(event) =>
+                                                    handleUpdateStructureColumn(
+                                                      currentDataTable,
+                                                      rowIndex,
+                                                      {
+                                                        enumValues: event.target.value
+                                                          .split(",")
+                                                          .map((value) => value.trim())
+                                                          .filter((value) => value.length > 0),
+                                                      },
+                                                    )
+                                                  }
+                                                />
+                                              </TableCell>
+                                              <TableCell>
+                                                <label className="inline-flex items-center gap-2 text-xs text-slate-700">
                                                   <input
-                                                    className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
-                                                    value={column.name}
+                                                    type="checkbox"
+                                                    checked={column.nullable}
                                                     onChange={(event) =>
                                                       handleUpdateStructureColumn(
                                                         currentDataTable,
                                                         rowIndex,
-                                                        { name: event.target.value },
+                                                        { nullable: event.target.checked },
                                                       )
                                                     }
                                                   />
-                                                </TableCell>
-                                                <TableCell>
+                                                  nullable
+                                                </label>
+                                              </TableCell>
+                                              <TableCell>
+                                                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
                                                   <select
                                                     className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
-                                                    value={column.type}
-                                                    onChange={(event) =>
+                                                    value={column.foreignTable}
+                                                    onChange={(event) => {
+                                                      const nextForeignTable = event.target.value;
+                                                      const referencedColumns =
+                                                        nextForeignTable.length > 0
+                                                          ? (
+                                                              downstreamStructureRowsByTable[
+                                                                nextForeignTable
+                                                              ] ?? []
+                                                            ).map((entry) => entry.name)
+                                                          : [];
+                                                      const nextForeignColumn =
+                                                        nextForeignTable.length > 0 &&
+                                                        referencedColumns.includes(
+                                                          column.foreignColumn,
+                                                        )
+                                                          ? column.foreignColumn
+                                                          : (referencedColumns[0] ?? "");
+
                                                       handleUpdateStructureColumn(
                                                         currentDataTable,
                                                         rowIndex,
-                                                        { type: event.target.value as SqlScalarType },
-                                                      )
-                                                    }
+                                                        {
+                                                          foreignTable: nextForeignTable,
+                                                          foreignColumn: nextForeignColumn,
+                                                        },
+                                                      );
+                                                    }}
                                                   >
-                                                    <option value="text">text</option>
-                                                    <option value="integer">integer</option>
-                                                    <option value="real">real</option>
-                                                    <option value="blob">blob</option>
-                                                    <option value="boolean">boolean</option>
-                                                    <option value="timestamp">timestamp</option>
-                                                    <option value="date">date</option>
-                                                    <option value="datetime">datetime</option>
-                                                    <option value="json">json</option>
+                                                    <option value="">none</option>
+                                                    {DOWNSTREAM_TABLE_NAMES.map((tableName) => (
+                                                      <option key={tableName} value={tableName}>
+                                                        {tableName}
+                                                      </option>
+                                                    ))}
                                                   </select>
-                                                </TableCell>
-                                                <TableCell>
-                                                  <input
-                                                    className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
-                                                    value={column.physicalType}
-                                                    onChange={(event) =>
-                                                      handleUpdateStructureColumn(
-                                                        currentDataTable,
-                                                        rowIndex,
-                                                        { physicalType: event.target.value },
-                                                      )
-                                                    }
-                                                  />
-                                                </TableCell>
-                                                <TableCell>
-                                                  <input
-                                                    className="h-8 w-full rounded-md border border-slate-200 px-2 font-mono text-xs"
-                                                    value={column.enumValues.join(", ")}
-                                                    placeholder="draft, paid, shipped"
+                                                  <select
+                                                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+                                                    value={column.foreignColumn}
+                                                    disabled={column.foreignTable.length === 0}
                                                     onChange={(event) =>
                                                       handleUpdateStructureColumn(
                                                         currentDataTable,
                                                         rowIndex,
                                                         {
-                                                          enumValues: event.target.value
-                                                            .split(",")
-                                                            .map((value) => value.trim())
-                                                            .filter((value) => value.length > 0),
+                                                          foreignColumn: event.target.value,
                                                         },
                                                       )
                                                     }
-                                                  />
-                                                </TableCell>
-                                                <TableCell>
-                                                  <label className="inline-flex items-center gap-2 text-xs text-slate-700">
-                                                    <input
-                                                      type="checkbox"
-                                                      checked={column.nullable}
-                                                      onChange={(event) =>
-                                                        handleUpdateStructureColumn(
-                                                          currentDataTable,
-                                                          rowIndex,
-                                                          { nullable: event.target.checked },
-                                                        )
-                                                      }
-                                                    />
-                                                    nullable
-                                                  </label>
-                                                </TableCell>
-                                                <TableCell>
-                                                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
-                                                    <select
-                                                      className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
-                                                      value={column.foreignTable}
-                                                      onChange={(event) => {
-                                                        const nextForeignTable = event.target.value;
-                                                        const referencedColumns =
-                                                          nextForeignTable.length > 0
-                                                            ? (
-                                                                downstreamStructureRowsByTable[
-                                                                  nextForeignTable
-                                                                ] ?? []
-                                                              ).map((entry) => entry.name)
-                                                            : [];
-                                                        const nextForeignColumn =
-                                                          nextForeignTable.length > 0 &&
-                                                          referencedColumns.includes(
-                                                            column.foreignColumn,
-                                                          )
-                                                            ? column.foreignColumn
-                                                            : (referencedColumns[0] ?? "");
-
-                                                        handleUpdateStructureColumn(
-                                                          currentDataTable,
-                                                          rowIndex,
-                                                          {
-                                                            foreignTable: nextForeignTable,
-                                                            foreignColumn: nextForeignColumn,
-                                                          },
-                                                        );
-                                                      }}
-                                                    >
-                                                      <option value="">none</option>
-                                                      {DOWNSTREAM_TABLE_NAMES.map((tableName) => (
-                                                        <option key={tableName} value={tableName}>
-                                                          {tableName}
-                                                        </option>
-                                                      ))}
-                                                    </select>
-                                                    <select
-                                                      className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
-                                                      value={column.foreignColumn}
-                                                      disabled={column.foreignTable.length === 0}
-                                                      onChange={(event) =>
-                                                        handleUpdateStructureColumn(
-                                                          currentDataTable,
-                                                          rowIndex,
-                                                          {
-                                                            foreignColumn: event.target.value,
-                                                          },
-                                                        )
-                                                      }
-                                                    >
-                                                      <option value="">
-                                                        {column.foreignTable.length === 0
-                                                          ? "column"
-                                                          : "select column"}
-                                                      </option>
-                                                      {(column.foreignTable.length > 0
-                                                        ? (
-                                                            downstreamStructureRowsByTable[
-                                                              column.foreignTable
-                                                            ] ?? []
-                                                          ).map((entry) => entry.name)
-                                                        : []
-                                                      ).map((columnName) => (
-                                                        <option key={columnName} value={columnName}>
-                                                          {columnName}
-                                                        </option>
-                                                      ))}
-                                                    </select>
-                                                  </div>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                  <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8"
-                                                    disabled={currentStructureRows.length <= 1}
-                                                    onClick={() =>
-                                                      handleDeleteStructureColumn(
-                                                        currentDataTable,
-                                                        rowIndex,
-                                                      )
-                                                    }
                                                   >
-                                                    <Trash2 className="h-4 w-4" />
-                                                  </Button>
-                                                </TableCell>
-                                              </TableRow>
-                                            ))}
-                                          </TableBody>
-                                        </Table>
-                                      </ScrollArea>
-                                      <div className="border-t bg-slate-50 px-3 py-2">
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => handleAddStructureColumn(currentDataTable)}
-                                        >
-                                          Add column
-                                        </Button>
-                                      </div>
+                                                    <option value="">
+                                                      {column.foreignTable.length === 0
+                                                        ? "column"
+                                                        : "select column"}
+                                                    </option>
+                                                    {(column.foreignTable.length > 0
+                                                      ? (
+                                                          downstreamStructureRowsByTable[
+                                                            column.foreignTable
+                                                          ] ?? []
+                                                        ).map((entry) => entry.name)
+                                                      : []
+                                                    ).map((columnName) => (
+                                                      <option key={columnName} value={columnName}>
+                                                        {columnName}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+                                              </TableCell>
+                                              <TableCell className="text-right">
+                                                <Button
+                                                  type="button"
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  className="h-8 w-8"
+                                                  disabled={currentStructureRows.length <= 1}
+                                                  onClick={() =>
+                                                    handleDeleteStructureColumn(
+                                                      currentDataTable,
+                                                      rowIndex,
+                                                    )
+                                                  }
+                                                >
+                                                  <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                              </TableCell>
+                                            </TableRow>
+                                          ))}
+                                        </TableBody>
+                                      </Table>
+                                    </ScrollArea>
+                                    <div className="border-t bg-slate-50 px-3 py-2">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleAddStructureColumn(currentDataTable)}
+                                      >
+                                        Add column
+                                      </Button>
                                     </div>
-                                  ) : postgresStructureTab === "diagram" ? (
-                                    <SchemaRelationsGraph
-                                      schema={downstreamStructureSchema}
-                                      selectedTableName={currentDataTable}
-                                      onSelectTable={(tableName) => setSelectedDataTable(tableName)}
-                                      isVisible={
-                                        activeTopTab === "data" &&
-                                        postgresWorkspaceMode === "structure" &&
-                                        postgresStructureTab === "diagram"
+                                  </div>
+                                ) : postgresStructureTab === "diagram" ? (
+                                  <SchemaRelationsGraph
+                                    schema={downstreamStructureSchema}
+                                    selectedTableName={currentDataTable}
+                                    onSelectTable={(tableName) => setSelectedDataTable(tableName)}
+                                    isVisible={
+                                      activeTopTab === "data" &&
+                                      postgresWorkspaceMode === "structure" &&
+                                      postgresStructureTab === "diagram"
+                                    }
+                                    heightClassName="h-full"
+                                  />
+                                ) : (
+                                  <div className="h-full overflow-hidden rounded-md border">
+                                    <Editor
+                                      path={DOWNSTREAM_DDL_MODEL_PATH}
+                                      language="sql"
+                                      value={
+                                        downstreamDdlText ||
+                                        "Unable to generate downstream schema DDL."
                                       }
-                                      heightClassName="h-full"
+                                      options={{
+                                        minimap: { enabled: false },
+                                        fontSize: 13,
+                                        scrollBeyondLastLine: false,
+                                        readOnly: true,
+                                        wordWrap: "off",
+                                        lineNumbers: "on",
+                                        ...MONACO_INDENT_OPTIONS,
+                                      }}
+                                      height="100%"
                                     />
-                                  ) : (
-                                    <div className="h-full overflow-hidden rounded-md border">
-                                      <Editor
-                                        path={DOWNSTREAM_DDL_MODEL_PATH}
-                                        language="sql"
-                                        value={
-                                          downstreamDdlText ||
-                                          "Unable to generate downstream schema DDL."
-                                        }
-                                        options={{
-                                          minimap: { enabled: false },
-                                          fontSize: 13,
-                                          scrollBeyondLastLine: false,
-                                          readOnly: true,
-                                          wordWrap: "off",
-                                          lineNumbers: "on",
-                                        }}
-                                        height="100%"
-                                      />
-                                    </div>
-                                  )}
-                                </div>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                          {currentTableIssues.length > 0 ? (
-                            <Alert variant="warning" className="m-2 mt-0">
-                              <AlertTitle>Data issues</AlertTitle>
-                              <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
-                                {currentTableIssues.join("\n")}
-                              </AlertDescription>
-                            </Alert>
-                          ) : null}
-                          <div className="flex items-center justify-between border-t bg-slate-50 px-3 py-2">
-                              <Tabs
-                                value={postgresWorkspaceMode}
-                                onValueChange={(value) =>
-                                  setPostgresWorkspaceMode(value as PostgresWorkspaceMode)
-                                }
-                              >
-                                <TabsList className="gap-1">
-                                  <TabsTrigger value="data">Data</TabsTrigger>
-                                  <TabsTrigger value="structure" disabled={!selectedTableSupportsStructure}>
-                                    Structure
-                                  </TabsTrigger>
-                                </TabsList>
-                              </Tabs>
-                            <div className="text-xs text-slate-500">
-                              {currentDataRows.length} row{currentDataRows.length === 1 ? "" : "s"}
                             </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={postgresWorkspaceMode !== "data" && selectedTableSupportsStructure}
-                              onClick={handleAddDataRow}
-                            >
-                              + Add row
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                          Select a table.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                    No downstream tables available.
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="schema" forceMount className="mt-0 h-full min-h-0">
-                <div className="hidden h-full min-h-0 flex-col gap-2 lg:flex">
-                  <div
-                    ref={schemaWorkspaceRef}
-                    className="min-h-0 flex-1 overflow-visible rounded-md border bg-white lg:grid"
-                    style={{ gridTemplateColumns: schemaSplitGridTemplate }}
-                  >
-                    <div className="flex h-full min-h-0 flex-col overflow-visible">
-                      <div className="shrink-0 border-b bg-slate-50 px-2 py-1">
-                        <Tabs
-                          value={activeSchemaSourceTab}
-                          onValueChange={(value) =>
-                            setActiveSchemaSourceTab(value as SchemaSourceTab)
-                          }
-                        >
-                          <TabsList className="gap-1">
-                            <TabsTrigger value="schema">schema.ts</TabsTrigger>
-                            <TabsTrigger value="context">context.ts</TabsTrigger>
-                            <TabsTrigger value="provider">db-provider.ts</TabsTrigger>
-                            <TabsTrigger value="kv_provider">kv-provider.ts</TabsTrigger>
-                            <TabsTrigger value="generated">generated-db.ts</TabsTrigger>
-                          </TabsList>
-                        </Tabs>
-                      </div>
-                      <div className="min-h-0 flex-1 overflow-visible">
-                        <Editor
-                          path={schemaEditorPath}
-                          language="typescript"
-                          onMount={handleMonacoMount}
-                          onChange={handleSchemaEditorChange}
-                          options={{
-                            minimap: { enabled: false },
-                            fontSize: 13,
-                            scrollBeyondLastLine: false,
-                            readOnly: schemaEditorReadOnly,
-                          }}
-                          height="100%"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex min-h-0 items-stretch justify-center">
-                      <button
-                        type="button"
-                        aria-label="Resize schema panels"
-                        className="group h-full w-2 cursor-col-resize bg-transparent"
-                        onPointerDown={startSchemaSplitDrag}
-                      >
-                        <span
-                          className={cn(
-                            "mx-auto block h-full w-px bg-slate-400 transition-colors group-hover:bg-slate-500",
-                            isSchemaSplitDragging ? "bg-slate-500" : null,
                           )}
-                        />
-                      </button>
-                    </div>
-
-                    <div className="min-h-0 overflow-hidden">
-                      {schemaParse.ok && schemaParse.schema ? (
-                        activeSchemaTab === "diagram" ? (
-                          <SchemaRelationsGraph
-                            schema={schemaParse.schema}
-                            selectedTableName={selectedSchemaTable}
-                            onSelectTable={handleSelectSchemaTable}
-                            onClearSelection={() => setSelectedSchemaTable(null)}
-                            isVisible={activeTopTab === "schema" && activeSchemaTab === "diagram"}
-                            heightClassName="h-full"
-                            embedded
-                          />
-                        ) : (
-                          <Editor
-                            path={SCHEMA_DDL_MODEL_PATH}
-                            language="sql"
-                            value={facadeDdlText || "Fix schema to generate DDL."}
-                            options={{
-                              minimap: { enabled: false },
-                              fontSize: 13,
-                              scrollBeyondLastLine: false,
-                              readOnly: true,
-                              wordWrap: "off",
-                              lineNumbers: "on",
-                            }}
-                            height="100%"
-                          />
-                        )
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                          Fix schema TypeScript to render relations.
                         </div>
-                      )}
-                    </div>
+                        {currentTableIssues.length > 0 ? (
+                          <Alert variant="warning" className="m-2 mt-0">
+                            <AlertTitle>Data issues</AlertTitle>
+                            <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
+                              {currentTableIssues.join("\n")}
+                            </AlertDescription>
+                          </Alert>
+                        ) : null}
+                        <div className="flex items-center justify-between border-t bg-slate-50 px-3 py-2">
+                          <Tabs
+                            value={postgresWorkspaceMode}
+                            onValueChange={(value) =>
+                              setPostgresWorkspaceMode(value as PostgresWorkspaceMode)
+                            }
+                          >
+                            <TabsList className="gap-1">
+                              <TabsTrigger value="data">Data</TabsTrigger>
+                              <TabsTrigger
+                                value="structure"
+                                disabled={!selectedTableSupportsStructure}
+                              >
+                                Structure
+                              </TabsTrigger>
+                            </TabsList>
+                          </Tabs>
+                          <div className="text-xs text-slate-500">
+                            {currentDataRows.length} row{currentDataRows.length === 1 ? "" : "s"}
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={
+                              postgresWorkspaceMode !== "data" && selectedTableSupportsStructure
+                            }
+                            onClick={handleAddDataRow}
+                          >
+                            + Add row
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                        Select a table.
+                      </div>
+                    )}
                   </div>
-                  {!schemaParse.ok ? (
-                    <Alert variant="warning">
-                      <AlertTitle>Schema issues</AlertTitle>
-                      <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
-                        {schemaParse.issues
-                          .map((issue) => `${issue.path}: ${issue.message}`)
-                          .join("\n")}
-                      </AlertDescription>
-                    </Alert>
-                  ) : null}
                 </div>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                  No downstream tables available.
+                </div>
+              )}
+            </TabsContent>
 
-                <div className="flex h-full min-h-0 flex-col gap-2 lg:hidden">
-                  <div className="min-h-0 flex-1 overflow-visible rounded-md border">
-                    <div className="flex h-full min-h-0 flex-col overflow-visible">
-                      <div className="shrink-0 border-b bg-slate-50 px-2 py-1">
-                        <Tabs
-                          value={activeSchemaSourceTab}
-                          onValueChange={(value) =>
-                            setActiveSchemaSourceTab(value as SchemaSourceTab)
-                          }
-                        >
-                          <TabsList className="gap-1">
-                            <TabsTrigger value="schema">schema.ts</TabsTrigger>
-                            <TabsTrigger value="context">context.ts</TabsTrigger>
-                            <TabsTrigger value="provider">db-provider.ts</TabsTrigger>
-                            <TabsTrigger value="kv_provider">kv-provider.ts</TabsTrigger>
-                            <TabsTrigger value="generated">generated-db.ts</TabsTrigger>
-                          </TabsList>
-                        </Tabs>
-                      </div>
-                      <div className="min-h-0 flex-1 overflow-visible">
-                        <Editor
-                          path={schemaEditorPath}
-                          language="typescript"
-                          onMount={handleMonacoMount}
-                          onChange={handleSchemaEditorChange}
-                          options={{
-                            minimap: { enabled: false },
-                            fontSize: 13,
-                            scrollBeyondLastLine: false,
-                            readOnly: schemaEditorReadOnly,
-                          }}
-                          height="100%"
-                        />
-                      </div>
+            <TabsContent value="schema" forceMount className="mt-0 h-full min-h-0">
+              <div className="hidden h-full min-h-0 flex-col gap-2 lg:flex">
+                <div
+                  ref={schemaWorkspaceRef}
+                  className="min-h-0 flex-1 overflow-visible rounded-md border bg-white lg:grid"
+                  style={{ gridTemplateColumns: schemaSplitGridTemplate }}
+                >
+                  <div className="flex h-full min-h-0 flex-col overflow-visible">
+                    <div className="shrink-0 border-b bg-slate-50 px-2 py-1">
+                      <Tabs
+                        value={activeSchemaSourceTab}
+                        onValueChange={(value) =>
+                          setActiveSchemaSourceTab(value as SchemaSourceTab)
+                        }
+                      >
+                        <TabsList className="gap-1">
+                          <TabsTrigger value="schema">schema.ts</TabsTrigger>
+                          <TabsTrigger value="context">context.ts</TabsTrigger>
+                          <TabsTrigger value="provider">db-provider.ts</TabsTrigger>
+                          <TabsTrigger value="kv_provider">kv-provider.ts</TabsTrigger>
+                          <TabsTrigger value="generated">generated-db.ts</TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-visible">
+                      <Editor
+                        path={schemaEditorPath}
+                        language="typescript"
+                        onMount={handleMonacoMount}
+                        onChange={handleSchemaEditorChange}
+                        options={{
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          scrollBeyondLastLine: false,
+                          readOnly: schemaEditorReadOnly,
+                          ...MONACO_INDENT_OPTIONS,
+                        }}
+                        height="100%"
+                      />
                     </div>
                   </div>
-                  {!schemaParse.ok ? (
-                    <Alert variant="warning">
-                      <AlertTitle>Schema issues</AlertTitle>
-                      <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
-                        {schemaParse.issues
-                          .map((issue) => `${issue.path}: ${issue.message}`)
-                          .join("\n")}
-                      </AlertDescription>
-                    </Alert>
-                  ) : null}
-                  <div className="min-h-0 flex-1 overflow-hidden">
+
+                  <div className="flex min-h-0 items-stretch justify-center">
+                    <button
+                      type="button"
+                      aria-label="Resize schema panels"
+                      className="group h-full w-2 cursor-col-resize bg-transparent"
+                      onPointerDown={startSchemaSplitDrag}
+                    >
+                      <span
+                        className={cn(
+                          "mx-auto block h-full w-px bg-slate-400 transition-colors group-hover:bg-slate-500",
+                          isSchemaSplitDragging ? "bg-slate-500" : null,
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="min-h-0 overflow-hidden">
                     {schemaParse.ok && schemaParse.schema ? (
                       activeSchemaTab === "diagram" ? (
                         <SchemaRelationsGraph
@@ -3236,237 +3210,333 @@ export function App(): React.JSX.Element {
                           onClearSelection={() => setSelectedSchemaTable(null)}
                           isVisible={activeTopTab === "schema" && activeSchemaTab === "diagram"}
                           heightClassName="h-full"
+                          embedded
                         />
                       ) : (
-                        <div className="h-full overflow-hidden rounded-md border">
-                          <Editor
-                            path={SCHEMA_DDL_MODEL_PATH}
-                            language="sql"
-                            value={facadeDdlText || "Fix schema to generate DDL."}
-                            options={{
-                              minimap: { enabled: false },
-                              fontSize: 13,
-                              scrollBeyondLastLine: false,
-                              readOnly: true,
-                              wordWrap: "off",
-                              lineNumbers: "on",
-                            }}
-                            height="100%"
-                          />
-                        </div>
+                        <Editor
+                          path={SCHEMA_DDL_MODEL_PATH}
+                          language="sql"
+                          value={facadeDdlText || "Fix schema to generate DDL."}
+                          options={{
+                            minimap: { enabled: false },
+                            fontSize: 13,
+                            scrollBeyondLastLine: false,
+                            readOnly: true,
+                            wordWrap: "off",
+                            lineNumbers: "on",
+                            ...MONACO_INDENT_OPTIONS,
+                          }}
+                          height="100%"
+                        />
                       )
                     ) : (
-                      <div className="flex h-full items-center justify-center rounded-md border border-dashed text-sm text-slate-500">
+                      <div className="flex h-full items-center justify-center text-sm text-slate-500">
                         Fix schema TypeScript to render relations.
                       </div>
                     )}
                   </div>
                 </div>
-              </TabsContent>
+                {!schemaParse.ok ? (
+                  <Alert variant="warning">
+                    <AlertTitle>Schema issues</AlertTitle>
+                    <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
+                      {schemaParse.issues
+                        .map((issue) => `${issue.path}: ${issue.message}`)
+                        .join("\n")}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+              </div>
 
-              <TabsContent value="query" forceMount className="mt-0 h-full min-h-0">
-                <div className="flex h-full min-h-0 flex-col gap-0">
-                  <div
-                    ref={queryWorkspaceRef}
-                    className="grid min-h-0 flex-1 overflow-hidden rounded-md border bg-white"
-                    style={{ gridTemplateRows: querySplitGridTemplate }}
-                  >
-                    <div className="min-h-0 overflow-hidden">
-                      {activeQueryTab === "result" ? (
-                        <div className="h-full min-h-0">
-                          {runtimeError ? (
-                            <Alert variant="destructive">
-                              <AlertTitle>Query rejected</AlertTitle>
-                              <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
-                                {runtimeError}
-                              </AlertDescription>
-                            </Alert>
-                          ) : resultRows ? (
-                            renderRows(resultRows, {
-                              heightClassName: "h-full",
-                              frameClassName: "h-full rounded-none border-0 bg-transparent",
-                            })
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                              No results yet.
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="relative h-full min-h-0">
-                          <PlanGraph
-                            steps={planSteps}
-                            scopes={planScopes}
-                            statesById={statesById}
-                            currentStepId={currentStepId}
-                            selectedStepId={selectedStepId}
-                            isVisible={activeTopTab === "query" && activeQueryTab === "explain"}
-                            onSelectStep={handleSelectStep}
-                            onClearSelection={handleCloseStepOverlay}
-                            heightClassName="h-full"
-                            containerClassName="rounded-none border-0 bg-transparent"
-                          />
-                          {selectedStep ? (
-                            <div className="pointer-events-none absolute inset-y-4 right-4 z-20 w-[430px] max-w-[48%]">
-                              <div className="pointer-events-auto flex h-full flex-col rounded-xl border border-sky-200 bg-white/95 shadow-2xl backdrop-blur-sm">
-                                <div className="flex items-start justify-between gap-2 border-b p-3">
-                                  <div className="min-w-0 space-y-2">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <Badge variant="secondary" className="font-mono text-[11px]">
-                                        {selectedStep.id}
-                                      </Badge>
-                                      <Badge variant="outline">{selectedStep.kind}</Badge>
-                                      <Badge variant="outline">{selectedStep.phase}</Badge>
-                                      {selectedStep.sqlOrigin ? (
-                                        <Badge variant="outline">{selectedStep.sqlOrigin}</Badge>
-                                      ) : null}
-                                    </div>
-                                    <p className="text-sm text-slate-700">{selectedStep.summary}</p>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 shrink-0"
-                                    onClick={handleCloseStepOverlay}
-                                  >
-                                    <X className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                                <div className="min-h-0 flex-1 p-3 pt-2">
-                                  <ScrollArea className="h-full pr-2">
-                                    <div className="space-y-3">
-                                      <div className="rounded-md border bg-slate-50 p-3">
-                                        <p className="text-xs text-slate-500">
-                                          Depends on: {selectedStep.dependsOn.join(", ") || "none"}
-                                        </p>
-                                      </div>
-
-                                      <StepSection title="Logical operation" defaultOpen>
-                                        <p className="text-xs text-slate-500">
-                                          The planner-level intent for this step and the columns it aims to produce.
-                                        </p>
-                                        <JsonBlock value={selectedStep.operation} />
-                                        {selectedStep.outputs && selectedStep.outputs.length > 0 ? (
-                                          <div className="text-xs text-slate-600">
-                                            Outputs: {selectedStep.outputs.join(", ")}
-                                          </div>
-                                        ) : null}
-                                      </StepSection>
-
-                                      <StepSection title="Request" defaultOpen>
-                                        <p className="text-xs text-slate-500">
-                                          The normalized input shape passed into this step at execution time.
-                                        </p>
-                                        <JsonBlock value={selectedStep.request ?? {}} />
-                                      </StepSection>
-
-                                      <StepSection title="Routing / Pushdown" defaultOpen>
-                                        <p className="text-xs text-slate-500">
-                                          How work is split between table methods and local engine processing.
-                                        </p>
-                                        <div className="text-xs text-slate-600">
-                                          Route used:{" "}
-                                          <span className="font-medium text-slate-900">
-                                            {selectedStepState?.routeUsed ?? "pending"}
-                                          </span>
-                                        </div>
-                                        <JsonBlock value={selectedStep.pushdown ?? {}} />
-                                        {selectedStepState?.notes &&
-                                        selectedStepState.notes.length > 0 ? (
-                                          <ul className="list-disc space-y-1 pl-5 text-xs text-slate-600">
-                                            {selectedStepState.notes.map((note: string) => (
-                                              <li key={note}>{note}</li>
-                                            ))}
-                                          </ul>
-                                        ) : null}
-                                      </StepSection>
-
-                                      <StepSection title="Runtime" defaultOpen>
-                                        <p className="text-xs text-slate-500">
-                                          Execution status and timing/row-count metrics for this step instance.
-                                        </p>
-                                        <div className="grid gap-1 text-xs text-slate-600">
-                                          <div>Status: {selectedStepState?.status ?? "ready"}</div>
-                                          <div>
-                                            Execution index:{" "}
-                                            {selectedStepState?.executionIndex != null
-                                              ? selectedStepState.executionIndex
-                                              : "pending"}
-                                          </div>
-                                          {selectedStepState?.durationMs != null ? (
-                                            <div>Duration: {selectedStepState.durationMs}ms</div>
-                                          ) : null}
-                                          {selectedStepState?.inputRowCount != null ? (
-                                            <div>
-                                              Input rows: {selectedStepState.inputRowCount}
-                                            </div>
-                                          ) : null}
-                                          {selectedStepState?.outputRowCount != null ? (
-                                            <div>
-                                              Output rows: {selectedStepState.outputRowCount}
-                                            </div>
-                                          ) : selectedStepState?.rowCount != null ? (
-                                            <div>Output rows: {selectedStepState.rowCount}</div>
-                                          ) : null}
-                                        </div>
-                                        {selectedStepState?.error ? (
-                                          <Alert variant="destructive">
-                                            <AlertTitle>Step error</AlertTitle>
-                                            <AlertDescription>
-                                              {selectedStepState.error}
-                                            </AlertDescription>
-                                          </Alert>
-                                        ) : null}
-                                      </StepSection>
-
-                                      {selectedStepState?.rows ? (
-                                        <StepSection title="Data preview" defaultOpen={false}>
-                                          <p className="text-xs text-slate-500">
-                                            Sample output rows emitted by this step after execution.
-                                          </p>
-                                          {renderRows(selectedStepState.rows, {
-                                            heightClassName: "h-[260px]",
-                                            expandNestedObjects: true,
-                                          })}
-                                        </StepSection>
-                                      ) : null}
-                                    </div>
-                                  </ScrollArea>
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="relative min-h-0 overflow-visible">
-                      <button
-                        type="button"
-                        aria-label="Resize query panels"
-                        className="group absolute inset-x-0 top-1/2 z-10 flex h-[10px] -translate-y-1/2 cursor-row-resize items-center bg-transparent"
-                        onPointerDown={startQuerySplitDrag}
+              <div className="flex h-full min-h-0 flex-col gap-2 lg:hidden">
+                <div className="min-h-0 flex-1 overflow-visible rounded-md border">
+                  <div className="flex h-full min-h-0 flex-col overflow-visible">
+                    <div className="shrink-0 border-b bg-slate-50 px-2 py-1">
+                      <Tabs
+                        value={activeSchemaSourceTab}
+                        onValueChange={(value) =>
+                          setActiveSchemaSourceTab(value as SchemaSourceTab)
+                        }
                       >
-                        <span
-                          className={cn(
-                            "mx-auto block h-px w-full bg-slate-400 transition-colors group-hover:bg-slate-500",
-                            isQuerySplitDragging ? "bg-slate-500" : null,
-                          )}
-                        />
-                      </button>
+                        <TabsList className="gap-1">
+                          <TabsTrigger value="schema">schema.ts</TabsTrigger>
+                          <TabsTrigger value="context">context.ts</TabsTrigger>
+                          <TabsTrigger value="provider">db-provider.ts</TabsTrigger>
+                          <TabsTrigger value="kv_provider">kv-provider.ts</TabsTrigger>
+                          <TabsTrigger value="generated">generated-db.ts</TabsTrigger>
+                        </TabsList>
+                      </Tabs>
                     </div>
-
-                    <div className="min-h-0 overflow-hidden">
-                      <ExecutedProviderOperationsPanel
-                        operations={executedOperations}
-                        onMonacoMount={handleMonacoMount}
-                        className="rounded-none border-0 bg-transparent"
+                    <div className="min-h-0 flex-1 overflow-visible">
+                      <Editor
+                        path={schemaEditorPath}
+                        language="typescript"
+                        onMount={handleMonacoMount}
+                        onChange={handleSchemaEditorChange}
+                        options={{
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          scrollBeyondLastLine: false,
+                          readOnly: schemaEditorReadOnly,
+                          ...MONACO_INDENT_OPTIONS,
+                        }}
+                        height="100%"
                       />
                     </div>
                   </div>
                 </div>
-              </TabsContent>
+                {!schemaParse.ok ? (
+                  <Alert variant="warning">
+                    <AlertTitle>Schema issues</AlertTitle>
+                    <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
+                      {schemaParse.issues
+                        .map((issue) => `${issue.path}: ${issue.message}`)
+                        .join("\n")}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  {schemaParse.ok && schemaParse.schema ? (
+                    activeSchemaTab === "diagram" ? (
+                      <SchemaRelationsGraph
+                        schema={schemaParse.schema}
+                        selectedTableName={selectedSchemaTable}
+                        onSelectTable={handleSelectSchemaTable}
+                        onClearSelection={() => setSelectedSchemaTable(null)}
+                        isVisible={activeTopTab === "schema" && activeSchemaTab === "diagram"}
+                        heightClassName="h-full"
+                      />
+                    ) : (
+                      <div className="h-full overflow-hidden rounded-md border">
+                        <Editor
+                          path={SCHEMA_DDL_MODEL_PATH}
+                          language="sql"
+                          value={facadeDdlText || "Fix schema to generate DDL."}
+                          options={{
+                            minimap: { enabled: false },
+                            fontSize: 13,
+                            scrollBeyondLastLine: false,
+                            readOnly: true,
+                            wordWrap: "off",
+                            lineNumbers: "on",
+                            ...MONACO_INDENT_OPTIONS,
+                          }}
+                          height="100%"
+                        />
+                      </div>
+                    )
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded-md border border-dashed text-sm text-slate-500">
+                      Fix schema TypeScript to render relations.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="query" forceMount className="mt-0 h-full min-h-0">
+              <div className="flex h-full min-h-0 flex-col gap-0">
+                <div
+                  ref={queryWorkspaceRef}
+                  className="grid min-h-0 flex-1 overflow-hidden rounded-md border bg-white"
+                  style={{ gridTemplateRows: querySplitGridTemplate }}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    {activeQueryTab === "result" ? (
+                      <div className="h-full min-h-0">
+                        {runtimeError ? (
+                          <Alert variant="destructive">
+                            <AlertTitle>Query rejected</AlertTitle>
+                            <AlertDescription className="whitespace-pre-wrap font-mono text-xs">
+                              {runtimeError}
+                            </AlertDescription>
+                          </Alert>
+                        ) : resultRows ? (
+                          renderRows(resultRows, {
+                            heightClassName: "h-full",
+                            frameClassName: "h-full rounded-none border-0 bg-transparent",
+                          })
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                            No results yet.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="relative h-full min-h-0">
+                        <PlanGraph
+                          steps={planSteps}
+                          scopes={planScopes}
+                          statesById={statesById}
+                          currentStepId={currentStepId}
+                          selectedStepId={selectedStepId}
+                          isVisible={activeTopTab === "query" && activeQueryTab === "explain"}
+                          onSelectStep={handleSelectStep}
+                          onClearSelection={handleCloseStepOverlay}
+                          heightClassName="h-full"
+                          containerClassName="rounded-none border-0 bg-transparent"
+                        />
+                        {selectedStep ? (
+                          <div className="pointer-events-none absolute inset-y-4 right-4 z-20 w-[430px] max-w-[48%]">
+                            <div className="pointer-events-auto flex h-full flex-col rounded-xl border border-sky-200 bg-white/95 shadow-2xl backdrop-blur-sm">
+                              <div className="flex items-start justify-between gap-2 border-b p-3">
+                                <div className="min-w-0 space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="secondary" className="font-mono text-[11px]">
+                                      {selectedStep.id}
+                                    </Badge>
+                                    <Badge variant="outline">{selectedStep.kind}</Badge>
+                                    <Badge variant="outline">{selectedStep.phase}</Badge>
+                                    {selectedStep.sqlOrigin ? (
+                                      <Badge variant="outline">{selectedStep.sqlOrigin}</Badge>
+                                    ) : null}
+                                  </div>
+                                  <p className="text-sm text-slate-700">{selectedStep.summary}</p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 shrink-0"
+                                  onClick={handleCloseStepOverlay}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              <div className="min-h-0 flex-1 p-3 pt-2">
+                                <ScrollArea className="h-full pr-2">
+                                  <div className="space-y-3">
+                                    <div className="rounded-md border bg-slate-50 p-3">
+                                      <p className="text-xs text-slate-500">
+                                        Depends on: {selectedStep.dependsOn.join(", ") || "none"}
+                                      </p>
+                                    </div>
+
+                                    <StepSection title="Logical operation" defaultOpen>
+                                      <p className="text-xs text-slate-500">
+                                        The planner-level intent for this step and the columns it
+                                        aims to produce.
+                                      </p>
+                                      <JsonBlock value={selectedStep.operation} />
+                                      {selectedStep.outputs && selectedStep.outputs.length > 0 ? (
+                                        <div className="text-xs text-slate-600">
+                                          Outputs: {selectedStep.outputs.join(", ")}
+                                        </div>
+                                      ) : null}
+                                    </StepSection>
+
+                                    <StepSection title="Request" defaultOpen>
+                                      <p className="text-xs text-slate-500">
+                                        The normalized input shape passed into this step at
+                                        execution time.
+                                      </p>
+                                      <JsonBlock value={selectedStep.request ?? {}} />
+                                    </StepSection>
+
+                                    <StepSection title="Routing / Pushdown" defaultOpen>
+                                      <p className="text-xs text-slate-500">
+                                        How work is split between table methods and local engine
+                                        processing.
+                                      </p>
+                                      <div className="text-xs text-slate-600">
+                                        Route used:{" "}
+                                        <span className="font-medium text-slate-900">
+                                          {selectedStepState?.routeUsed ?? "pending"}
+                                        </span>
+                                      </div>
+                                      <JsonBlock value={selectedStep.pushdown ?? {}} />
+                                      {selectedStepState?.notes &&
+                                      selectedStepState.notes.length > 0 ? (
+                                        <ul className="list-disc space-y-1 pl-5 text-xs text-slate-600">
+                                          {selectedStepState.notes.map((note: string) => (
+                                            <li key={note}>{note}</li>
+                                          ))}
+                                        </ul>
+                                      ) : null}
+                                    </StepSection>
+
+                                    <StepSection title="Runtime" defaultOpen>
+                                      <p className="text-xs text-slate-500">
+                                        Execution status and timing/row-count metrics for this step
+                                        instance.
+                                      </p>
+                                      <div className="grid gap-1 text-xs text-slate-600">
+                                        <div>Status: {selectedStepState?.status ?? "ready"}</div>
+                                        <div>
+                                          Execution index:{" "}
+                                          {selectedStepState?.executionIndex != null
+                                            ? selectedStepState.executionIndex
+                                            : "pending"}
+                                        </div>
+                                        {selectedStepState?.durationMs != null ? (
+                                          <div>Duration: {selectedStepState.durationMs}ms</div>
+                                        ) : null}
+                                        {selectedStepState?.inputRowCount != null ? (
+                                          <div>Input rows: {selectedStepState.inputRowCount}</div>
+                                        ) : null}
+                                        {selectedStepState?.outputRowCount != null ? (
+                                          <div>Output rows: {selectedStepState.outputRowCount}</div>
+                                        ) : selectedStepState?.rowCount != null ? (
+                                          <div>Output rows: {selectedStepState.rowCount}</div>
+                                        ) : null}
+                                      </div>
+                                      {selectedStepState?.error ? (
+                                        <Alert variant="destructive">
+                                          <AlertTitle>Step error</AlertTitle>
+                                          <AlertDescription>
+                                            {selectedStepState.error}
+                                          </AlertDescription>
+                                        </Alert>
+                                      ) : null}
+                                    </StepSection>
+
+                                    {selectedStepState?.rows ? (
+                                      <StepSection title="Data preview" defaultOpen={false}>
+                                        <p className="text-xs text-slate-500">
+                                          Sample output rows emitted by this step after execution.
+                                        </p>
+                                        {renderRows(selectedStepState.rows, {
+                                          heightClassName: "h-[260px]",
+                                          expandNestedObjects: true,
+                                        })}
+                                      </StepSection>
+                                    ) : null}
+                                  </div>
+                                </ScrollArea>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative min-h-0 overflow-visible">
+                    <button
+                      type="button"
+                      aria-label="Resize query panels"
+                      className="group absolute inset-x-0 top-1/2 z-10 flex h-[10px] -translate-y-1/2 cursor-row-resize items-center bg-transparent"
+                      onPointerDown={startQuerySplitDrag}
+                    >
+                      <span
+                        className={cn(
+                          "mx-auto block h-px w-full bg-slate-400 transition-colors group-hover:bg-slate-500",
+                          isQuerySplitDragging ? "bg-slate-500" : null,
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="min-h-0 overflow-hidden">
+                    <ExecutedProviderOperationsPanel
+                      operations={executedOperations}
+                      onMonacoMount={handleMonacoMount}
+                      className="rounded-none border-0 bg-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
           </div>
         </div>
       </Tabs>

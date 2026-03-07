@@ -75,7 +75,9 @@ function classifyStepExecution(
   }
 
   if (state?.routeUsed) {
-    if (["scan", "lookup", "aggregate", "provider_fragment", "lookup_join"].includes(state.routeUsed)) {
+    if (
+      ["scan", "lookup", "aggregate", "provider_fragment", "lookup_join"].includes(state.routeUsed)
+    ) {
       return "domain_call";
     }
     return "internal_op";
@@ -170,7 +172,9 @@ const StepNode = memo(function StepNode({ data }: NodeProps): React.JSX.Element 
       <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">
         {classLabel(stepClass)}
       </div>
-      <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">{stepData.step.phase}</div>
+      <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">
+        {stepData.step.phase}
+      </div>
       <div className="line-clamp-3 text-[12px] text-slate-700">{stepData.step.summary}</div>
     </div>
   );
@@ -289,7 +293,11 @@ function PlanGraphCanvas({
   }, [graphModel.nodes, isVisible, selectedStepId, setCenter]);
 
   if (steps.length === 0) {
-    return <div className="text-sm text-slate-500">Run or step a query to populate the execution plan.</div>;
+    return (
+      <div className="text-sm text-slate-500">
+        Run or step a query to populate the execution plan.
+      </div>
+    );
   }
 
   return (

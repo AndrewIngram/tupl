@@ -9,4 +9,3 @@ export function truncateReason(reason: string, maxLength = 96): string {
 
   return `${reason.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
-

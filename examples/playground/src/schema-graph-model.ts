@@ -1,10 +1,6 @@
 import dagre from "dagre";
 import { MarkerType, Position, type Edge, type Node } from "@xyflow/react";
-import type {
-  SchemaDefinition,
-  SqlScalarType,
-  TableColumnDefinition,
-} from "../../../src/index";
+import type { SchemaDefinition, SqlScalarType, TableColumnDefinition } from "../../../src/index";
 
 const NODE_WIDTH = 380;
 const HEADER_HEIGHT = 42;
@@ -122,7 +118,10 @@ function readTableForeignKeys(
     }
   }
 
-  const unique = new Map<string, { sourceColumn: string; targetTable: string; targetColumn: string }>();
+  const unique = new Map<
+    string,
+    { sourceColumn: string; targetTable: string; targetColumn: string }
+  >();
   for (const entry of out) {
     const key = `${entry.sourceColumn}->${entry.targetTable}.${entry.targetColumn}`;
     if (!unique.has(key)) {

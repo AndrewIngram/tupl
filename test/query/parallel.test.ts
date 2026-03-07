@@ -3,11 +3,11 @@ import { queryWithMethods } from "../support/methods-provider";
 import { createArrayTableMethods, scanArrayRows } from "../../src/array-methods";
 
 import {
-  defineSchema,
   defineTableMethods,
   type TableMethodsForSchema,
   type TableScanRequest,
 } from "../../src";
+import { buildStaticSchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -19,17 +19,15 @@ function sleep(ms: number): Promise<void> {
 
 describe("query/parallel", () => {
   it("runs set-operation branches in parallel", async () => {
-    const schema = defineSchema({
-      tables: {
-        a: {
-          columns: {
-            id: { type: "text", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      a: {
+        columns: {
+          id: { type: "text", nullable: false },
         },
-        b: {
-          columns: {
-            id: { type: "text", nullable: false },
-          },
+      },
+      b: {
+        columns: {
+          id: { type: "text", nullable: false },
         },
       },
     });
@@ -75,17 +73,15 @@ describe("query/parallel", () => {
   });
 
   it("runs independent CTEs in parallel", async () => {
-    const schema = defineSchema({
-      tables: {
-        a: {
-          columns: {
-            id: { type: "text", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      a: {
+        columns: {
+          id: { type: "text", nullable: false },
         },
-        b: {
-          columns: {
-            id: { type: "text", nullable: false },
-          },
+      },
+      b: {
+        columns: {
+          id: { type: "text", nullable: false },
         },
       },
     });
@@ -133,25 +129,23 @@ describe("query/parallel", () => {
   });
 
   it("runs eligible join scans concurrently and keeps deterministic results", async () => {
-    const schema = defineSchema({
-      tables: {
-        t1: {
-          columns: {
-            id: { type: "text", nullable: false },
-            key: { type: "text", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      t1: {
+        columns: {
+          id: { type: "text", nullable: false },
+          key: { type: "text", nullable: false },
         },
-        t2: {
-          columns: {
-            id: { type: "text", nullable: false },
-            key: { type: "text", nullable: false },
-          },
+      },
+      t2: {
+        columns: {
+          id: { type: "text", nullable: false },
+          key: { type: "text", nullable: false },
         },
-        t3: {
-          columns: {
-            id: { type: "text", nullable: false },
-            key: { type: "text", nullable: false },
-          },
+      },
+      t3: {
+        columns: {
+          id: { type: "text", nullable: false },
+          key: { type: "text", nullable: false },
         },
       },
     });

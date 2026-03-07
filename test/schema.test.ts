@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   asIso8601Timestamp,
   createDataEntityHandle,
-  defineSchema,
   defineTableMethods,
   getNormalizedTableBinding,
   mapProviderRowsToLogical,
@@ -11,25 +10,25 @@ import {
   resolveTableColumnDefinition,
   toSqlDDL,
 } from "../src";
+import { buildSchema, buildStaticSchema } from "./support/schema-builder";
 
-describe("defineSchema", () => {
+describe("createSchemaBuilder", () => {
   it("supports source-neutral physical entity lens mappings", () => {
     const ordersEntity = createDataEntityHandle({
       entity: "orders_raw",
       provider: "regional",
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        my_orders: table({
-          from: ordersEntity,
-          columns: {
-            id: { source: "id", type: "text", nullable: false },
-            total_cents: { source: "total_cents", type: "integer", nullable: false },
-          },
-        }),
-      },
-    }));
+    const schema = buildSchema((builder) => {
+      builder.table({
+        name: "my_orders",
+        from: ordersEntity,
+        columns: {
+          id: { source: "id", type: "text", nullable: false },
+          total_cents: { source: "total_cents", type: "integer", nullable: false },
+        },
+      });
+    });
 
     const binding = getNormalizedTableBinding(schema, "my_orders");
     expect(binding).toEqual({
@@ -53,34 +52,34 @@ describe("defineSchema", () => {
       provider: "regional",
     });
 
-    const schema = defineSchema(({ table, view }) => ({
-      tables: {
-        my_orders: table({
-          from: ordersEntity,
-          columns: {
-            id: { source: "id", type: "text", nullable: false },
-            total_cents: { source: "total_cents", type: "integer", nullable: false },
-          },
-        }),
-        my_order_stats: view(
-          ({ scan, aggregate, col, agg }) =>
-            aggregate({
-              from: scan("my_orders"),
-              groupBy: { order_id: col("my_orders.id") },
-              measures: {
-                spend: agg.sum(col("my_orders.total_cents")),
-                rows: agg.count(),
-              },
-            }),
-          {
-            columns: ({ col }) => ({
-              order_id: col.string("order_id", { nullable: false }),
-              spend: col.integer("spend"),
-            }),
-          },
-        ),
-      },
-    }));
+    const schema = buildSchema((builder) => {
+      builder.table({
+        name: "my_orders",
+        from: ordersEntity,
+        columns: {
+          id: { source: "id", type: "text", nullable: false },
+          total_cents: { source: "total_cents", type: "integer", nullable: false },
+        },
+      });
+      builder.view(
+        ({ scan, aggregate, col, agg }) =>
+          aggregate({
+            from: scan("my_orders"),
+            groupBy: { order_id: col("my_orders.id") },
+            measures: {
+              spend: agg.sum(col("my_orders.total_cents")),
+              rows: agg.count(),
+            },
+          }),
+        {
+          name: "my_order_stats",
+          columns: ({ col }) => ({
+            order_id: col.string("order_id", { nullable: false }),
+            spend: col.integer("spend"),
+          }),
+        },
+      );
+    });
 
     const binding = getNormalizedTableBinding(schema, "my_order_stats");
     expect(binding?.kind).toBe("view");
@@ -104,8 +103,9 @@ describe("defineSchema", () => {
       provider: "warehouse",
     });
 
-    const schema = defineSchema(({ table, view }) => {
-      const myOrders = table({
+    const schema = buildSchema((builder) => {
+      const myOrders = builder.table({
+        name: "myOrders",
         from: ordersEntity,
         columns: {
           id: { source: "id", type: "text", nullable: false },
@@ -114,7 +114,8 @@ describe("defineSchema", () => {
         },
       });
 
-      const vendorsForOrg = table({
+      const vendorsForOrg = builder.table({
+        name: "vendorsForOrg",
         from: vendorsEntity,
         columns: {
           id: { source: "id", type: "text", nullable: false },
@@ -122,36 +123,31 @@ describe("defineSchema", () => {
         },
       });
 
-      return {
-        tables: {
-          myOrders,
-          vendorsForOrg,
-          spendByVendor: view(
-            ({ scan, join, aggregate, col, expr, agg }) =>
-              aggregate({
-                from: join({
-                  left: scan(myOrders),
-                  right: scan(vendorsForOrg),
-                  on: expr.eq(col(myOrders, "vendorId"), col(vendorsForOrg, "id")),
-                }),
-                groupBy: {
-                  vendor_id: col(vendorsForOrg, "id"),
-                  vendor_name: col(vendorsForOrg, "name"),
-                },
-                measures: {
-                  spend: agg.sum(col(myOrders, "totalCents")),
-                },
-              }),
-            {
-              columns: ({ col }) => ({
-                vendor_id: col.string("vendor_id", { nullable: false }),
-                vendor_name: col.string("vendor_name", { nullable: false }),
-                spend: col.integer("spend"),
-              }),
+      builder.view(
+        ({ scan, join, aggregate, col, expr, agg }) =>
+          aggregate({
+            from: join({
+              left: scan(myOrders),
+              right: scan(vendorsForOrg),
+              on: expr.eq(col(myOrders, "vendorId"), col(vendorsForOrg, "id")),
+            }),
+            groupBy: {
+              vendor_id: col(vendorsForOrg, "id"),
+              vendor_name: col(vendorsForOrg, "name"),
             },
-          ),
+            measures: {
+              spend: agg.sum(col(myOrders, "totalCents")),
+            },
+          }),
+        {
+          name: "spendByVendor",
+          columns: ({ col }) => ({
+            vendor_id: col.string("vendor_id", { nullable: false }),
+            vendor_name: col.string("vendor_name", { nullable: false }),
+            spend: col.integer("spend"),
+          }),
         },
-      };
+      );
     });
 
     const binding = getNormalizedTableBinding(schema, "spendByVendor");
@@ -201,17 +197,16 @@ describe("defineSchema", () => {
       provider: "warehouse",
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        myOrders: table({
-          from: ordersEntity,
-          columns: {
-            id: { source: "id" },
-            status: { source: "status" },
-          },
-        }),
-      },
-    }));
+    const schema = buildSchema((builder) => {
+      builder.table({
+        name: "myOrders",
+        from: ordersEntity,
+        columns: {
+          id: { source: "id" },
+          status: { source: "status" },
+        },
+      });
+    });
 
     const binding = getNormalizedTableBinding(schema, "myOrders");
     expect(binding).toEqual({
@@ -241,18 +236,17 @@ describe("defineSchema", () => {
       },
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        myOrders: table(ordersEntity, {
-          columns: ({ col }) => ({
-            id: col.id("id"),
-            vendorId: col.string("vendorId"),
-            totalCents: col.integer("totalCents"),
-            createdAt: col.string("createdAt", { coerce: "isoTimestamp" }),
-          }),
+    const schema = buildSchema((builder) => {
+      builder.table(ordersEntity, {
+        name: "myOrders",
+        columns: ({ col }) => ({
+          id: col.id("id"),
+          vendorId: col.string("vendorId"),
+          totalCents: col.integer("totalCents"),
+          createdAt: col.string("createdAt", { coerce: "isoTimestamp" }),
         }),
-      },
-    }));
+      });
+    });
 
     const binding = getNormalizedTableBinding(schema, "myOrders");
     expect(binding).toEqual({
@@ -288,24 +282,23 @@ describe("defineSchema", () => {
       },
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        myOrders: table(ordersEntity, {
-          columns: ({ col, expr }) => ({
-            id: col.id("id"),
-            totalCents: col.integer("totalCents"),
-            totalDollars: col.real(
-              expr.divide(col("totalCents"), expr.literal(100)),
-              { nullable: false },
-            ),
-            isLargeOrder: col.boolean(
-              expr.gte(col("totalCents"), expr.literal(3000)),
-              { nullable: false },
-            ),
-          }),
+    const schema = buildSchema((builder) => {
+      builder.table(ordersEntity, {
+        name: "myOrders",
+        columns: ({ col, expr }) => ({
+          id: col.id("id"),
+          totalCents: col.integer("totalCents"),
+          totalDollars: col.real(
+            expr.divide(col("totalCents"), expr.literal(100)),
+            { nullable: false },
+          ),
+          isLargeOrder: col.boolean(
+            expr.gte(col("totalCents"), expr.literal(3000)),
+            { nullable: false },
+          ),
         }),
-      },
-    }));
+      });
+    });
 
     const binding = getNormalizedTableBinding(schema, "myOrders");
     expect(binding?.kind).toBe("physical");
@@ -363,15 +356,14 @@ describe("defineSchema", () => {
     });
 
     expect(() =>
-      defineSchema(({ table }) => ({
-        tables: {
-          myOrders: table(ordersEntity, {
-            columns: ({ col }) => ({
-              createdAt: col.string("createdAt"),
-            }),
+      buildSchema((builder) => {
+        builder.table(ordersEntity, {
+          name: "myOrders",
+          columns: ({ col }) => ({
+            createdAt: col.string("createdAt"),
           }),
-        },
-      }))
+        });
+      })
     ).toThrow(
       "Column orders_raw.created_at is exposed as timestamp, but the schema declared text. Add a coerce function or align the declared type.",
     );
@@ -387,16 +379,15 @@ describe("defineSchema", () => {
       },
     });
 
-    const schema = defineSchema(({ table }) => ({
-      tables: {
-        myOrders: table(ordersEntity, {
-          columns: ({ col }) => ({
-            totalCents: col.integer("totalCents", { coerce: (value) => Number(value) }),
-            payload: col.json("payload", { coerce: (value) => JSON.parse(String(value)) }),
-          }),
+    const schema = buildSchema((builder) => {
+      builder.table(ordersEntity, {
+        name: "myOrders",
+        columns: ({ col }) => ({
+          totalCents: col.integer("totalCents", { coerce: (value) => Number(value) }),
+          payload: col.json("payload", { coerce: (value) => JSON.parse(String(value)) }),
         }),
-      },
-    }));
+      });
+    });
 
     const binding = getNormalizedTableBinding(schema, "myOrders");
     expect(binding?.kind).toBe("physical");
@@ -429,49 +420,46 @@ describe("defineSchema", () => {
       },
     });
 
-    const schema = defineSchema(({ table, view }) => {
-      const myOrders = table(ordersEntity, {
+    const schema = buildSchema((builder) => {
+      const myOrders = builder.table(ordersEntity, {
+        name: "myOrders",
         columns: ({ col }) => ({
           vendorId: col.string("vendorId"),
           totalCents: col.integer("totalCents"),
         }),
       });
 
-      return {
-        tables: {
-          myOrders,
-          orderStats: view({
-            rel: ({ scan, aggregate, col, agg }) =>
-              aggregate({
-                from: scan(myOrders),
-                groupBy: {
-                  vendorId: col(myOrders, "vendorId"),
-                },
-                measures: {
-                  rowCount: agg.count(),
-                  distinctVendorCount: agg.countDistinct(col(myOrders, "vendorId")),
-                  totalSpend: agg.sum(col(myOrders, "totalCents")),
-                  totalSpendDistinct: agg.sumDistinct(col(myOrders, "totalCents")),
-                  avgSpend: agg.avg(col(myOrders, "totalCents")),
-                  avgSpendDistinct: agg.avgDistinct(col(myOrders, "totalCents")),
-                  minSpend: agg.min(col(myOrders, "totalCents")),
-                  maxSpend: agg.max(col(myOrders, "totalCents")),
-                },
-              }),
-            columns: ({ col }) => ({
-              vendorId: col.string("vendorId"),
-              rowCount: col.integer("rowCount"),
-              distinctVendorCount: col.integer("distinctVendorCount"),
-              totalSpend: col.integer("totalSpend"),
-              totalSpendDistinct: col.integer("totalSpendDistinct"),
-              avgSpend: col.real("avgSpend"),
-              avgSpendDistinct: col.real("avgSpendDistinct"),
-              minSpend: col.integer("minSpend"),
-              maxSpend: col.integer("maxSpend"),
-            }),
+      builder.view({
+        name: "orderStats",
+        rel: ({ scan, aggregate, col, agg }) =>
+          aggregate({
+            from: scan(myOrders),
+            groupBy: {
+              vendorId: col(myOrders, "vendorId"),
+            },
+            measures: {
+              rowCount: agg.count(),
+              distinctVendorCount: agg.countDistinct(col(myOrders, "vendorId")),
+              totalSpend: agg.sum(col(myOrders, "totalCents")),
+              totalSpendDistinct: agg.sumDistinct(col(myOrders, "totalCents")),
+              avgSpend: agg.avg(col(myOrders, "totalCents")),
+              avgSpendDistinct: agg.avgDistinct(col(myOrders, "totalCents")),
+              minSpend: agg.min(col(myOrders, "totalCents")),
+              maxSpend: agg.max(col(myOrders, "totalCents")),
+            },
           }),
-        },
-      };
+        columns: ({ col }) => ({
+          vendorId: col.string("vendorId"),
+          rowCount: col.integer("rowCount"),
+          distinctVendorCount: col.integer("distinctVendorCount"),
+          totalSpend: col.integer("totalSpend"),
+          totalSpendDistinct: col.integer("totalSpendDistinct"),
+          avgSpend: col.real("avgSpend"),
+          avgSpendDistinct: col.real("avgSpendDistinct"),
+          minSpend: col.integer("minSpend"),
+          maxSpend: col.integer("maxSpend"),
+        }),
+      });
     });
 
     const binding = getNormalizedTableBinding(schema, "orderStats");
@@ -493,27 +481,25 @@ describe("defineSchema", () => {
   });
 
   it("materializes enumFrom links and enforces strict enumMap coverage", () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "db",
-          columns: {
-            status: { type: "text", enum: ["pending", "paid", "shipped"] as const },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "db",
+        columns: {
+          status: { type: "text", enum: ["pending", "paid", "shipped"] as const },
         },
-        my_orders: {
-          provider: "db",
-          columns: {
-            status: {
-              type: "text",
-              enumFrom: "orders.status",
-              enumMap: {
-                pending: "open",
-                paid: "settled",
-                shipped: "settled",
-              },
-              enum: ["open", "settled"] as const,
+      },
+      my_orders: {
+        provider: "db",
+        columns: {
+          status: {
+            type: "text",
+            enumFrom: "orders.status",
+            enumMap: {
+              pending: "open",
+              paid: "settled",
+              shipped: "settled",
             },
+            enum: ["open", "settled"] as const,
           },
         },
       },
@@ -525,25 +511,23 @@ describe("defineSchema", () => {
   });
 
   it("rejects enumMap with unmapped upstream values by default", () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          provider: "db",
-          columns: {
-            status: { type: "text", enum: ["pending", "paid"] as const },
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        provider: "db",
+        columns: {
+          status: { type: "text", enum: ["pending", "paid"] as const },
         },
-        my_orders: {
-          provider: "db",
-          columns: {
-            status: {
-              type: "text",
-              enumFrom: "orders.status",
-              enumMap: {
-                pending: "open",
-              },
-              enum: ["open"] as const,
+      },
+      my_orders: {
+        provider: "db",
+        columns: {
+          status: {
+            type: "text",
+            enumFrom: "orders.status",
+            enumMap: {
+              pending: "open",
             },
+            enum: ["open"] as const,
           },
         },
       },
@@ -553,18 +537,16 @@ describe("defineSchema", () => {
   });
 
   it("generates DDL with metadata comments for timestamp/description fields", () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: { type: "text", nullable: false, description: "Order id" },
-            status: {
-              type: "text",
-              nullable: false,
-              enum: ["draft", "paid", "void"] as const,
-            },
-            created_at: "timestamp",
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: { type: "text", nullable: false, description: "Order id" },
+          status: {
+            type: "text",
+            nullable: false,
+            enum: ["draft", "paid", "void"] as const,
           },
+          created_at: "timestamp",
         },
       },
     });
@@ -578,23 +560,21 @@ describe("defineSchema", () => {
   });
 
   it("generates explicit CHECK constraints", () => {
-    const schema = defineSchema({
-      tables: {
-        invoices: {
-          columns: {
-            id: { type: "text", nullable: false },
-            amount_due: { type: "integer", nullable: false },
-          },
-          constraints: {
-            checks: [
-              {
-                name: "invoices_amount_due_allowed",
-                kind: "in",
-                column: "amount_due",
-                values: [0, 1000, 2000],
-              },
-            ],
-          },
+    const schema = buildStaticSchema({
+      invoices: {
+        columns: {
+          id: { type: "text", nullable: false },
+          amount_due: { type: "integer", nullable: false },
+        },
+        constraints: {
+          checks: [
+            {
+              name: "invoices_amount_due_allowed",
+              kind: "in",
+              column: "amount_due",
+              values: [0, 1000, 2000],
+            },
+          ],
         },
       },
     });
@@ -605,32 +585,30 @@ describe("defineSchema", () => {
   });
 
   it("supports field-level foreignKey declarations and emits FOREIGN KEY in DDL", () => {
-    const schema = defineSchema({
-      tables: {
-        users: {
-          columns: {
-            id: { type: "text", nullable: false },
-          },
-          constraints: {
-            primaryKey: { columns: ["id"] },
-          },
+    const schema = buildStaticSchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
         },
-        orders: {
-          columns: {
-            id: { type: "text", nullable: false },
-            user_id: {
-              type: "text",
-              nullable: false,
-              foreignKey: {
-                table: "users",
-                column: "id",
-                onDelete: "CASCADE",
-              },
+        constraints: {
+          primaryKey: { columns: ["id"] },
+        },
+      },
+      orders: {
+        columns: {
+          id: { type: "text", nullable: false },
+          user_id: {
+            type: "text",
+            nullable: false,
+            foreignKey: {
+              table: "users",
+              column: "id",
+              onDelete: "CASCADE",
             },
           },
-          constraints: {
-            primaryKey: { columns: ["id"] },
-          },
+        },
+        constraints: {
+          primaryKey: { columns: ["id"] },
         },
       },
     });
@@ -642,14 +620,12 @@ describe("defineSchema", () => {
   });
 
   it("supports field-level primaryKey/unique and emits constraints in DDL", () => {
-    const schema = defineSchema({
-      tables: {
-        products: {
-          columns: {
-            id: { type: "text", nullable: false, primaryKey: true },
-            sku: { type: "text", nullable: false, unique: true },
-            name: { type: "text", nullable: false },
-          },
+    const schema = buildStaticSchema({
+      products: {
+        columns: {
+          id: { type: "text", nullable: false, primaryKey: true },
+          sku: { type: "text", nullable: false, unique: true },
+          name: { type: "text", nullable: false },
         },
       },
     });
@@ -663,33 +639,29 @@ describe("defineSchema", () => {
 
   it("rejects invalid enum/check declarations", () => {
     expect(() =>
-      defineSchema({
-        tables: {
-          users: {
-            columns: {
-              status: { type: "integer", enum: ["active"] },
-            },
+      buildStaticSchema({
+        users: {
+          columns: {
+            status: { type: "integer", enum: ["active"] },
           },
         },
       }),
     ).toThrow("enum is only supported on text columns");
 
     expect(() =>
-      defineSchema({
-        tables: {
-          invoices: {
-            columns: {
-              amount_due: "integer",
-            },
-            constraints: {
-              checks: [
-                {
-                  kind: "in",
-                  column: "amount_due",
-                  values: ["not_a_number"],
-                },
-              ],
-            },
+      buildStaticSchema({
+        invoices: {
+          columns: {
+            amount_due: "integer",
+          },
+          constraints: {
+            checks: [
+              {
+                kind: "in",
+                column: "amount_due",
+                values: ["not_a_number"],
+              },
+            ],
           },
         },
       }),
@@ -698,24 +670,20 @@ describe("defineSchema", () => {
 
   it("rejects conflicting field-level key declarations", () => {
     expect(() =>
-      defineSchema({
-        tables: {
-          users: {
-            columns: {
-              id: { type: "text", nullable: false, primaryKey: true, unique: true } as any,
-            },
+      buildStaticSchema({
+        users: {
+          columns: {
+            id: { type: "text", nullable: false, primaryKey: true, unique: true } as any,
           },
         },
       }),
     ).toThrow("primaryKey and unique cannot both be true");
 
     expect(() =>
-      defineSchema({
-        tables: {
-          users: {
-            columns: {
-              id: { type: "text", primaryKey: true },
-            },
+      buildStaticSchema({
+        users: {
+          columns: {
+            id: { type: "text", primaryKey: true },
           },
         },
       }),
@@ -724,28 +692,24 @@ describe("defineSchema", () => {
 
   it("rejects multiple column-level primary keys; uses table-level for composite keys", () => {
     expect(() =>
-      defineSchema({
-        tables: {
-          memberships: {
-            columns: {
-              org_id: { type: "text", nullable: false, primaryKey: true },
-              user_id: { type: "text", nullable: false, primaryKey: true },
-            },
+      buildStaticSchema({
+        memberships: {
+          columns: {
+            org_id: { type: "text", nullable: false, primaryKey: true },
+            user_id: { type: "text", nullable: false, primaryKey: true },
           },
         },
       }),
     ).toThrow("Use table.constraints.primaryKey for composite keys");
 
-    const schema = defineSchema({
-      tables: {
-        memberships: {
-          columns: {
-            org_id: { type: "text", nullable: false },
-            user_id: { type: "text", nullable: false },
-          },
-          constraints: {
-            primaryKey: { columns: ["org_id", "user_id"] },
-          },
+    const schema = buildStaticSchema({
+      memberships: {
+        columns: {
+          org_id: { type: "text", nullable: false },
+          user_id: { type: "text", nullable: false },
+        },
+        constraints: {
+          primaryKey: { columns: ["org_id", "user_id"] },
         },
       },
     });
@@ -755,16 +719,14 @@ describe("defineSchema", () => {
 
   it("rejects constraints that reference unknown columns/tables or mismatched arity", () => {
     expect(() =>
-      defineSchema({
-        tables: {
-          users: {
-            columns: {
-              id: "text",
-            },
-            constraints: {
-              primaryKey: {
-                columns: ["missing_column"],
-              },
+      buildStaticSchema({
+        users: {
+          columns: {
+            id: "text",
+          },
+          constraints: {
+            primaryKey: {
+              columns: ["missing_column"],
             },
           },
         },
@@ -772,59 +734,55 @@ describe("defineSchema", () => {
     ).toThrow('column "missing_column" does not exist');
 
     expect(() =>
-      defineSchema({
-        tables: {
-          users: {
-            columns: {
-              id: "text",
-            },
+      buildStaticSchema({
+        users: {
+          columns: {
+            id: "text",
           },
-          projects: {
-            columns: {
-              id: "text",
-              owner_id: "text",
-            },
-            constraints: {
-              foreignKeys: [
-                {
-                  columns: ["owner_id"],
-                  references: {
-                    table: "missing_table",
-                    columns: ["id"],
-                  },
+        },
+        projects: {
+          columns: {
+            id: "text",
+            owner_id: "text",
+          },
+          constraints: {
+            foreignKeys: [
+              {
+                columns: ["owner_id"],
+                references: {
+                  table: "missing_table",
+                  columns: ["id"],
                 },
-              ],
-            },
+              },
+            ],
           },
         },
       }),
     ).toThrow('referenced table "missing_table" does not exist');
 
     expect(() =>
-      defineSchema({
-        tables: {
-          users: {
-            columns: {
-              id: "text",
-              email: "text",
-            },
+      buildStaticSchema({
+        users: {
+          columns: {
+            id: "text",
+            email: "text",
           },
-          projects: {
-            columns: {
-              id: "text",
-              owner_id: "text",
-            },
-            constraints: {
-              foreignKeys: [
-                {
-                  columns: ["id", "owner_id"],
-                  references: {
-                    table: "users",
-                    columns: ["id"],
-                  },
+        },
+        projects: {
+          columns: {
+            id: "text",
+            owner_id: "text",
+          },
+          constraints: {
+            foreignKeys: [
+              {
+                columns: ["id", "owner_id"],
+                references: {
+                  table: "users",
+                  columns: ["id"],
                 },
-              ],
-            },
+              },
+            ],
           },
         },
       }),
@@ -833,18 +791,16 @@ describe("defineSchema", () => {
 
   it("rejects field-level foreign keys with missing references", () => {
     expect(() =>
-      defineSchema({
-        tables: {
-          orders: {
-            columns: {
-              id: { type: "text", nullable: false },
-              user_id: {
-                type: "text",
-                nullable: false,
-                foreignKey: {
-                  table: "users",
-                  column: "",
-                },
+      buildStaticSchema({
+        orders: {
+          columns: {
+            id: { type: "text", nullable: false },
+            user_id: {
+              type: "text",
+              nullable: false,
+              foreignKey: {
+                table: "users",
+                column: "",
               },
             },
           },
@@ -853,23 +809,21 @@ describe("defineSchema", () => {
     ).toThrow("foreignKey.column cannot be empty");
 
     expect(() =>
-      defineSchema({
-        tables: {
-          users: {
-            columns: {
-              id: { type: "text", nullable: false },
-            },
+      buildStaticSchema({
+        users: {
+          columns: {
+            id: { type: "text", nullable: false },
           },
-          orders: {
-            columns: {
-              id: { type: "text", nullable: false },
-              user_id: {
-                type: "text",
-                nullable: false,
-                foreignKey: {
-                  table: "users",
-                  column: "missing",
-                },
+        },
+        orders: {
+          columns: {
+            id: { type: "text", nullable: false },
+            user_id: {
+              type: "text",
+              nullable: false,
+              foreignKey: {
+                table: "users",
+                column: "missing",
               },
             },
           },
@@ -879,15 +833,13 @@ describe("defineSchema", () => {
   });
 
   it("infers schema-typed request columns and enum values", () => {
-    const schema = defineSchema({
-      tables: {
-        orders: {
-          columns: {
-            id: "text",
-            org_id: "text",
-            status: { type: "text", enum: ["draft", "paid"] as const },
-            total_cents: "integer",
-          },
+    const schema = buildStaticSchema({
+      orders: {
+        columns: {
+          id: "text",
+          org_id: "text",
+          status: { type: "text", enum: ["draft", "paid"] as const },
+          total_cents: "integer",
         },
       },
     });

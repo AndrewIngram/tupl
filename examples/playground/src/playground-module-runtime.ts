@@ -60,10 +60,7 @@ function splitBareSpecifier(specifier: string): { packageName: string; subpath: 
   };
 }
 
-function resolveWorkspaceFile(
-  allFiles: Record<string, string>,
-  basePath: string,
-): string | null {
+function resolveWorkspaceFile(allFiles: Record<string, string>, basePath: string): string | null {
   const exact = normalizePath(basePath);
   const candidates = [
     exact,

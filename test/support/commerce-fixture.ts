@@ -1,31 +1,29 @@
-import { defineSchema } from "../../src";
+import { buildStaticSchema } from "./schema-builder";
 import type { RowsByTable } from "./query-harness";
 
-export const commerceSchema = defineSchema({
-  tables: {
-    orders: {
-      columns: {
-        id: { type: "text", nullable: false },
-        org_id: { type: "text", nullable: false },
-        user_id: { type: "text", nullable: false },
-        status: { type: "text", nullable: false },
-        total_cents: { type: "integer", nullable: false },
-        created_at: { type: "timestamp", nullable: false },
-      },
+export const commerceSchema = buildStaticSchema({
+  orders: {
+    columns: {
+      id: { type: "text", nullable: false },
+      org_id: { type: "text", nullable: false },
+      user_id: { type: "text", nullable: false },
+      status: { type: "text", nullable: false },
+      total_cents: { type: "integer", nullable: false },
+      created_at: { type: "timestamp", nullable: false },
     },
-    users: {
-      columns: {
-        id: { type: "text", nullable: false },
-        team_id: { type: "text", nullable: true },
-        email: { type: "text", nullable: true },
-      },
+  },
+  users: {
+    columns: {
+      id: { type: "text", nullable: false },
+      team_id: { type: "text", nullable: true },
+      email: { type: "text", nullable: true },
     },
-    teams: {
-      columns: {
-        id: { type: "text", nullable: false },
-        name: { type: "text", nullable: false },
-        tier: { type: "text", nullable: false },
-      },
+  },
+  teams: {
+    columns: {
+      id: { type: "text", nullable: false },
+      name: { type: "text", nullable: false },
+      tier: { type: "text", nullable: false },
     },
   },
 });

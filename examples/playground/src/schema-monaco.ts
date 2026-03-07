@@ -22,9 +22,7 @@ function inferLanguage(path: string): "typescript" | "javascript" {
   return "javascript";
 }
 
-export function configureSchemaTypescriptProject(
-  monaco: typeof Monaco,
-): void {
+export function configureSchemaTypescriptProject(monaco: typeof Monaco): void {
   monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
     target: monaco.languages.typescript.ScriptTarget.ES2020,
     module: monaco.languages.typescript.ModuleKind.ESNext,
@@ -60,10 +58,7 @@ export function configureSchemaTypescriptProject(
   }
 
   for (const [path, contents] of Object.entries(STATIC_WORKSPACE.declarationFiles)) {
-    monaco.languages.typescript.typescriptDefaults.addExtraLib(
-      contents,
-      `file://${path}`,
-    );
+    monaco.languages.typescript.typescriptDefaults.addExtraLib(contents, `file://${path}`);
   }
 
   workspaceLibrariesRegistered = true;

@@ -1,7 +1,4 @@
-import type {
-  SandboxRpcRequestMap,
-  SandboxRpcResponseMap,
-} from "./playground-sandbox";
+import type { SandboxRpcRequestMap, SandboxRpcResponseMap } from "./playground-sandbox";
 import {
   createSandboxSession,
   disposeSandboxSession,
@@ -11,14 +8,13 @@ import {
   validateSchemaInSandbox,
 } from "./playground-sandbox";
 
-type SandboxRpcRequest =
-  {
-    [K in keyof SandboxRpcRequestMap]: {
-      id: number;
-      kind: K;
-      payload: SandboxRpcRequestMap[K];
-    };
-  }[keyof SandboxRpcRequestMap];
+type SandboxRpcRequest = {
+  [K in keyof SandboxRpcRequestMap]: {
+    id: number;
+    kind: K;
+    payload: SandboxRpcRequestMap[K];
+  };
+}[keyof SandboxRpcRequestMap];
 
 type SandboxRpcResponse =
   | {
@@ -62,9 +58,10 @@ function getSandboxWorker(): Worker {
   };
 
   sandboxWorker.onerror = (event) => {
-    const error = event.error instanceof Error
-      ? event.error
-      : new Error(event.message || "Sandbox worker crashed.");
+    const error =
+      event.error instanceof Error
+        ? event.error
+        : new Error(event.message || "Sandbox worker crashed.");
     for (const request of pendingRequests.values()) {
       request.reject(error);
     }
@@ -81,7 +78,9 @@ async function requestSandboxInProcess<K extends keyof SandboxRpcRequestMap>(
   switch (kind) {
     case "validate_schema": {
       const input = payload as SandboxRpcRequestMap["validate_schema"];
-      return validateSchemaInSandbox(input.schemaCode, input.options) as Promise<SandboxRpcResponseMap[K]>;
+      return validateSchemaInSandbox(input.schemaCode, input.options) as Promise<
+        SandboxRpcResponseMap[K]
+      >;
     }
     case "create_session": {
       const input = payload as SandboxRpcRequestMap["create_session"];
@@ -99,9 +98,12 @@ async function requestSandboxInProcess<K extends keyof SandboxRpcRequestMap>(
     }
     case "replay_session": {
       const input = payload as SandboxRpcRequestMap["replay_session"];
-      return replaySandboxSession(input.compiled, input.context, input.eventCount, input.options) as Promise<
-        SandboxRpcResponseMap[K]
-      >;
+      return replaySandboxSession(
+        input.compiled,
+        input.context,
+        input.eventCount,
+        input.options,
+      ) as Promise<SandboxRpcResponseMap[K]>;
     }
     case "dispose_session": {
       const input = payload as SandboxRpcRequestMap["dispose_session"];
