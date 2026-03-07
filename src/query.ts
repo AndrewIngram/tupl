@@ -1,8 +1,16 @@
 import type { ConstraintValidationOptions } from "./constraints";
-import { Result, TaggedError, type Result as BetterResult } from "better-result";
+import { Result } from "better-result";
+import {
+  SqlqlDiagnosticError,
+  SqlqlGuardrailError,
+  SqlqlRuntimeError,
+  SqlqlTimeoutError,
+  type SqlqlError,
+  type SqlqlResult,
+} from "./errors";
 import {
   normalizeCapability,
-  validateProviderBindings,
+  validateProviderBindingsResult,
   type ProviderAdapter,
   type ProviderCapabilityReport,
   type ProviderFragment,
@@ -12,7 +20,11 @@ import {
 } from "./provider";
 import { countRelNodes, type RelNode } from "./rel";
 import { executeRelWithProviders } from "./executor";
-import { buildProviderFragmentForRel, expandRelViews, lowerSqlToRel } from "./planning";
+import {
+  buildProviderFragmentForRelResult,
+  expandRelViewsResult,
+  lowerSqlToRelResult,
+} from "./planning";
 import {
   defineSchema,
   getNormalizedTableBinding,
@@ -22,6 +34,7 @@ import {
 import type { QueryRow, SchemaDefinition, SchemaDslDefinition, SchemaDslHelpers } from "./schema";
 
 export type { QueryFallbackPolicy, SqlqlDiagnostic } from "./provider";
+export { SqlqlDiagnosticError } from "./errors";
 
 export interface QueryGuardrails {
   maxPlannerNodes: number;
@@ -258,50 +271,15 @@ function makeDiagnostic(
   };
 }
 
-export class SqlqlDiagnosticError extends TaggedError("SqlqlDiagnosticError")<{
-  diagnostics: SqlqlDiagnostic[];
-  message: string;
-}>() {}
+type QueryResult<T> = SqlqlResult<T>;
 
-class SqlqlGuardrailError extends TaggedError("SqlqlGuardrailError")<{
-  actual: number;
-  guardrail: keyof QueryGuardrails;
-  limit: number;
-  message: string;
-}>() {}
-
-class SqlqlTimeoutError extends TaggedError("SqlqlTimeoutError")<{
-  cause?: unknown;
-  message: string;
-  operation: string;
-  timeoutMs: number;
-}>() {}
-
-class SqlqlRuntimeError extends TaggedError("SqlqlRuntimeError")<{
-  cause?: unknown;
-  message: string;
-  operation: string;
-}>() {}
-
-type SqlqlQueryError =
-  | SqlqlDiagnosticError
-  | SqlqlGuardrailError
-  | SqlqlTimeoutError
-  | SqlqlRuntimeError;
-
-type QueryResult<T> = BetterResult<T, SqlqlQueryError>;
-
-function isSqlqlQueryError(error: unknown): error is SqlqlQueryError {
-  return (
-    error instanceof SqlqlDiagnosticError ||
-    error instanceof SqlqlGuardrailError ||
-    error instanceof SqlqlTimeoutError ||
-    error instanceof SqlqlRuntimeError
-  );
-}
-
-function toSqlqlRuntimeError(error: unknown, operation: string): SqlqlQueryError {
-  if (isSqlqlQueryError(error)) {
+function toSqlqlRuntimeError(error: unknown, operation: string): SqlqlError {
+  if (
+    SqlqlDiagnosticError.is(error) ||
+    SqlqlGuardrailError.is(error) ||
+    SqlqlTimeoutError.is(error) ||
+    SqlqlRuntimeError.is(error)
+  ) {
     return error;
   }
 
@@ -456,72 +434,96 @@ function buildCapabilityDiagnostics<TContext>(
 async function resolveProviderCapabilityForRel<TContext>(
   input: QueryInput<TContext>,
   rel: RelNode,
-): Promise<QueryCapabilityResolution<TContext>> {
-  const fragment = buildProviderFragmentForRel(rel, input.schema, input.context);
+): Promise<QueryResult<QueryCapabilityResolution<TContext>>> {
+  const fragmentResult = buildProviderFragmentForRelResult(rel, input.schema, input.context);
+  if (Result.isError(fragmentResult)) {
+    return fragmentResult;
+  }
+
+  const fragment = fragmentResult.value;
   if (!fragment) {
-    return {
+    return Result.ok({
       fragment: null,
       provider: null,
       report: null,
       diagnostics: [],
-    };
+    });
   }
 
   const provider = input.providers[fragment.provider] ?? null;
   if (!provider) {
-    return {
+    return Result.ok({
       fragment,
       provider: null,
       report: null,
       diagnostics: [],
-    };
+    });
   }
 
-  const report = normalizeCapability(await provider.canExecute(fragment, input.context));
-  return {
+  const capabilityResult = await tryQueryStepAsync("resolve provider capability", () =>
+    Promise.resolve(provider.canExecute(fragment, input.context))
+  );
+  if (Result.isError(capabilityResult)) {
+    return capabilityResult;
+  }
+
+  const report = normalizeCapability(capabilityResult.value);
+  return Result.ok({
     fragment,
     provider,
     report,
     diagnostics: buildCapabilityDiagnostics(provider, fragment, report, input.fallbackPolicy),
-  };
+  });
 }
 
 function resolveSyncProviderCapabilityForRel<TContext>(
   input: QueryInput<TContext>,
   rel: RelNode,
-): QueryCapabilityResolution<TContext> | null {
-  const fragment = buildProviderFragmentForRel(rel, input.schema, input.context);
+): QueryResult<QueryCapabilityResolution<TContext> | null> {
+  const fragmentResult = buildProviderFragmentForRelResult(rel, input.schema, input.context);
+  if (Result.isError(fragmentResult)) {
+    return fragmentResult;
+  }
+
+  const fragment = fragmentResult.value;
   if (!fragment) {
-    return {
+    return Result.ok({
       fragment: null,
       provider: null,
       report: null,
       diagnostics: [],
-    };
+    });
   }
 
   const provider = input.providers[fragment.provider] ?? null;
   if (!provider) {
-    return {
+    return Result.ok({
       fragment,
       provider: null,
       report: null,
       diagnostics: [],
-    };
+    });
   }
 
-  const capability = provider.canExecute(fragment, input.context);
+  const capabilityResult = tryQueryStep("resolve provider capability", () =>
+    provider.canExecute(fragment, input.context)
+  );
+  if (Result.isError(capabilityResult)) {
+    return capabilityResult;
+  }
+
+  const capability = capabilityResult.value;
   if (isPromiseLike(capability)) {
-    return null;
+    return Result.ok(null);
   }
 
   const report = normalizeCapability(capability);
-  return {
+  return Result.ok({
     fragment,
     provider,
     report,
     diagnostics: buildCapabilityDiagnostics(provider, fragment, report, input.fallbackPolicy),
-  };
+  });
 }
 
 function maybeRejectFallback<TContext>(
@@ -562,6 +564,16 @@ function maybeRejectFallback<TContext>(
   }
 }
 
+function maybeRejectFallbackResult<TContext>(
+  input: QueryInput<TContext>,
+  resolution: QueryCapabilityResolution<TContext>,
+): QueryResult<QueryCapabilityResolution<TContext>> {
+  return tryQueryStep("apply fallback policy", () => {
+    maybeRejectFallback(input, resolution);
+    return resolution;
+  });
+}
+
 function hasSqlNode(node: RelNode): boolean {
   switch (node.kind) {
     case "sql":
@@ -595,7 +607,7 @@ async function maybeExecuteWholeQueryFragment<TContext>(
   input: QueryInput<TContext>,
   rel: RelNode,
 ): Promise<QueryRow[] | null> {
-  const resolution = await resolveProviderCapabilityForRel(input, rel);
+  const resolution = unwrapQueryResult(await resolveProviderCapabilityForRel(input, rel));
   if (!resolution.fragment || !resolution.provider || !resolution.report) {
     return null;
   }
@@ -629,7 +641,7 @@ function enforcePlannerNodeLimitResult(
 
 function setFailedStepState(
   state: QueryStepState,
-  error: SqlqlQueryError,
+  error: SqlqlError,
   endedAt: number,
 ): QueryStepState {
   return {
@@ -1391,25 +1403,35 @@ function tryCreateSyncProviderFragmentSession<TContext>(
   input: QuerySessionInput<TContext>,
   guardrails: QueryGuardrails,
   rel: RelNode,
-): QuerySession | null {
-  const resolution = resolveSyncProviderCapabilityForRel(input, rel);
+): QueryResult<QuerySession | null> {
+  const resolutionResult = resolveSyncProviderCapabilityForRel(input, rel);
+  if (Result.isError(resolutionResult)) {
+    return resolutionResult;
+  }
+
+  const resolution = resolutionResult.value;
   if (!resolution || !resolution.fragment || !resolution.provider || !resolution.report) {
-    return null;
+    return Result.ok(null);
   }
 
   if (!resolution.report.supported) {
-    maybeRejectFallback(input, resolution);
-    return null;
+    const fallbackResult = maybeRejectFallbackResult(input, resolution);
+    if (Result.isError(fallbackResult)) {
+      return fallbackResult;
+    }
+    return Result.ok(null);
   }
 
-  return createProviderFragmentSession(
-    input,
-    guardrails,
-    resolution.provider,
-    resolution.fragment.provider,
-    resolution.fragment,
-    rel,
-    resolution.diagnostics,
+  return Result.ok(
+    createProviderFragmentSession(
+      input,
+      guardrails,
+      resolution.provider,
+      resolution.fragment.provider,
+      resolution.fragment,
+      rel,
+      resolution.diagnostics,
+    ),
   );
 }
 
@@ -1418,14 +1440,11 @@ function tryCreateSyncProviderFragmentSessionResult<TContext>(
   guardrails: QueryGuardrails,
   rel: RelNode,
 ): QueryResult<QuerySession | null> {
-  return tryQueryStep("create provider fragment session", () =>
-    tryCreateSyncProviderFragmentSession(input, guardrails, rel)
-  );
+  return tryCreateSyncProviderFragmentSession(input, guardrails, rel);
 }
 
 function normalizeRuntimeSchema<TContext>(input: QueryInput<TContext>): QueryInput<TContext> {
   const schema = resolveSchemaLinkedEnums(input.schema);
-  validateProviderBindings(schema, input.providers);
   return {
     ...input,
     schema,
@@ -1433,18 +1452,11 @@ function normalizeRuntimeSchema<TContext>(input: QueryInput<TContext>): QueryInp
 }
 
 function normalizeRuntimeSchemaResult<TContext>(input: QueryInput<TContext>): QueryResult<QueryInput<TContext>> {
-  return tryQueryStep("normalize runtime schema", () => normalizeRuntimeSchema(input));
-}
-
-function lowerSqlToRelResult<TContext>(input: QueryInput<TContext>): QueryResult<ReturnType<typeof lowerSqlToRel>> {
-  return tryQueryStep("lower SQL to relational plan", () => lowerSqlToRel(input.sql, input.schema));
-}
-
-function expandRelViewsResult<TContext>(
-  rel: RelNode,
-  input: QueryInput<TContext>,
-): QueryResult<RelNode> {
-  return tryQueryStep("expand relational views", () => expandRelViews(rel, input.schema, input.context));
+  return Result.gen(function* () {
+    const normalizedInput = yield* tryQueryStep("normalize runtime schema", () => normalizeRuntimeSchema(input));
+    yield* validateProviderBindingsResult(normalizedInput.schema, normalizedInput.providers);
+    return Result.ok(normalizedInput);
+  });
 }
 
 function assertNoSqlNodesWithoutProviderFragmentResult(rel: RelNode): QueryResult<RelNode> {
@@ -1457,106 +1469,100 @@ function assertNoSqlNodesWithoutProviderFragmentResult(rel: RelNode): QueryResul
   return Result.ok(rel);
 }
 
+function resolveSyncProviderCapabilityForRelResult<TContext>(
+  input: QueryInput<TContext>,
+  rel: RelNode,
+): QueryResult<QueryCapabilityResolution<TContext> | null> {
+  return Result.gen(function* () {
+    const resolution = yield* resolveSyncProviderCapabilityForRel(input, rel);
+    if (resolution) {
+      yield* maybeRejectFallbackResult(input, resolution);
+    }
+    return Result.ok(resolution);
+  });
+}
+
+function createQuerySessionResult<TContext>(input: QuerySessionInput<TContext>): QueryResult<QuerySession> {
+  return Result.gen(function* () {
+    const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
+    const guardrails = resolveGuardrails(input.queryGuardrails);
+    const lowered = yield* lowerSqlToRelResult(resolvedInput.sql, resolvedInput.schema);
+    const plannerNodeCount = countRelNodes(lowered.rel);
+
+    yield* enforcePlannerNodeLimitResult(plannerNodeCount, guardrails);
+
+    const providerSession = yield* tryCreateSyncProviderFragmentSessionResult(
+      resolvedInput,
+      guardrails,
+      lowered.rel,
+    );
+    if (providerSession) {
+      return Result.ok(providerSession);
+    }
+
+    const capabilityResolution = yield* resolveSyncProviderCapabilityForRelResult(resolvedInput, lowered.rel);
+    const expandedRel = yield* expandRelViewsResult(lowered.rel, resolvedInput.schema, resolvedInput.context);
+    const executableRel = yield* assertNoSqlNodesWithoutProviderFragmentResult(expandedRel);
+
+    return Result.ok(
+      createRelExecutionSession(
+        resolvedInput,
+        guardrails,
+        executableRel,
+        capabilityResolution?.diagnostics ?? [],
+      ),
+    );
+  });
+}
+
 function createQuerySessionInternal<TContext>(input: QuerySessionInput<TContext>): QuerySession {
-  const resolvedInputResult = normalizeRuntimeSchemaResult(input);
-  const resolvedInput = unwrapQueryResult(resolvedInputResult);
-  const guardrails = resolveGuardrails(input.queryGuardrails);
-  const lowered = unwrapQueryResult(lowerSqlToRelResult(resolvedInput));
-
-  const plannerNodeCount = countRelNodes(lowered.rel);
-  unwrapQueryResult(enforcePlannerNodeLimitResult(plannerNodeCount, guardrails));
-
-  const providerSession = unwrapQueryResult(tryCreateSyncProviderFragmentSessionResult(
-    resolvedInput,
-    guardrails,
-    lowered.rel,
-  ));
-  if (providerSession) {
-    return providerSession;
-  }
-
-  const capabilityResolution = unwrapQueryResult(
-    tryQueryStep("resolve provider capability", () =>
-      resolveSyncProviderCapabilityForRel(resolvedInput, lowered.rel)
-    ),
-  );
-  if (capabilityResolution) {
-    maybeRejectFallback(resolvedInput, capabilityResolution);
-  }
-  const expandedRel = unwrapQueryResult(expandRelViewsResult(lowered.rel, resolvedInput));
-  unwrapQueryResult(assertNoSqlNodesWithoutProviderFragmentResult(expandedRel));
-  return createRelExecutionSession(
-    resolvedInput,
-    guardrails,
-    expandedRel,
-    capabilityResolution?.diagnostics ?? [],
-  );
+  return unwrapQueryResult(createQuerySessionResult(input));
 }
 
 async function queryInternalResult<TContext>(input: QueryInput<TContext>): Promise<QueryResult<QueryRow[]>> {
-  const resolvedInputResult = normalizeRuntimeSchemaResult(input);
-  if (Result.isError(resolvedInputResult)) {
-    return resolvedInputResult;
-  }
-  const resolvedInput = resolvedInputResult.value;
-  const guardrails = resolveGuardrails(input.queryGuardrails);
-  const loweredResult = lowerSqlToRelResult(resolvedInput);
-  if (Result.isError(loweredResult)) {
-    return loweredResult;
-  }
-  const lowered = loweredResult.value;
-  const plannerNodeCount = countRelNodes(lowered.rel);
+  return Result.gen(async function* () {
+    const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
+    const guardrails = resolveGuardrails(input.queryGuardrails);
+    const lowered = yield* lowerSqlToRelResult(resolvedInput.sql, resolvedInput.schema);
+    const plannerNodeCount = countRelNodes(lowered.rel);
 
-  const plannerNodeLimitResult = enforcePlannerNodeLimitResult(plannerNodeCount, guardrails);
-  if (Result.isError(plannerNodeLimitResult)) {
-    return plannerNodeLimitResult;
-  }
+    yield* enforcePlannerNodeLimitResult(plannerNodeCount, guardrails);
 
-  const remoteRowsResult = await withTimeoutResult(
-    "execute whole provider fragment",
-    () => maybeExecuteWholeQueryFragment(resolvedInput, lowered.rel),
-    guardrails.timeoutMs,
-  );
-  if (Result.isError(remoteRowsResult)) {
-    return remoteRowsResult;
-  }
-  const remoteRows = remoteRowsResult.value;
+    const remoteRows = yield* Result.await(
+      withTimeoutResult(
+        "execute whole provider fragment",
+        () => maybeExecuteWholeQueryFragment(resolvedInput, lowered.rel),
+        guardrails.timeoutMs,
+      ),
+    );
 
-  if (remoteRows) {
-    return enforceExecutionRowLimitResult(remoteRows, guardrails);
-  }
+    if (remoteRows) {
+      return enforceExecutionRowLimitResult(remoteRows, guardrails);
+    }
 
-  const expandedRelResult = expandRelViewsResult(lowered.rel, resolvedInput);
-  if (Result.isError(expandedRelResult)) {
-    return expandedRelResult;
-  }
+    const expandedRel = yield* expandRelViewsResult(lowered.rel, resolvedInput.schema, resolvedInput.context);
+    const executableRel = yield* assertNoSqlNodesWithoutProviderFragmentResult(expandedRel);
+    const rows = yield* Result.await(
+      withTimeoutResult(
+        "execute relational query",
+        () =>
+          executeRelWithProviders(
+            executableRel,
+            resolvedInput.schema,
+            resolvedInput.providers,
+            resolvedInput.context,
+            {
+              maxExecutionRows: guardrails.maxExecutionRows,
+              maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
+              maxLookupBatches: guardrails.maxLookupBatches,
+            },
+          ),
+        guardrails.timeoutMs,
+      ),
+    );
 
-  const executableRelResult = assertNoSqlNodesWithoutProviderFragmentResult(expandedRelResult.value);
-  if (Result.isError(executableRelResult)) {
-    return executableRelResult;
-  }
-
-  const rowsResult = await withTimeoutResult(
-    "execute relational query",
-    () =>
-      executeRelWithProviders(
-      executableRelResult.value,
-      resolvedInput.schema,
-      resolvedInput.providers,
-      resolvedInput.context,
-      {
-        maxExecutionRows: guardrails.maxExecutionRows,
-        maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
-        maxLookupBatches: guardrails.maxLookupBatches,
-      },
-    ),
-    guardrails.timeoutMs,
-  );
-  if (Result.isError(rowsResult)) {
-    return rowsResult;
-  }
-
-  return enforceExecutionRowLimitResult(rowsResult.value, guardrails);
+    return enforceExecutionRowLimitResult(rows, guardrails);
+  });
 }
 
 async function queryInternal<TContext>(input: QueryInput<TContext>): Promise<QueryRow[]> {
@@ -1571,23 +1577,25 @@ export interface ExplainResult {
 }
 
 function explainInternal<TContext>(input: QueryInput<TContext>): ExplainResult {
-  const resolvedInput = unwrapQueryResult(normalizeRuntimeSchemaResult(input));
-  const guardrails = resolveGuardrails(input.queryGuardrails);
-  const lowered = unwrapQueryResult(lowerSqlToRelResult(resolvedInput));
-  const capabilityResolution = unwrapQueryResult(
-    tryQueryStep("resolve provider capability", () =>
-      resolveSyncProviderCapabilityForRel(resolvedInput, lowered.rel)
-    ),
-  );
+  return unwrapQueryResult(explainInternalResult(input));
+}
 
-  return {
-    rel: lowered.rel,
-    plannerNodeCount: countRelNodes(lowered.rel),
-    guardrails,
-    ...(capabilityResolution?.diagnostics.length
-      ? { diagnostics: capabilityResolution.diagnostics }
-      : {}),
-  };
+function explainInternalResult<TContext>(input: QueryInput<TContext>): QueryResult<ExplainResult> {
+  return Result.gen(function* () {
+    const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
+    const guardrails = resolveGuardrails(input.queryGuardrails);
+    const lowered = yield* lowerSqlToRelResult(resolvedInput.sql, resolvedInput.schema);
+    const capabilityResolution = yield* resolveSyncProviderCapabilityForRelResult(resolvedInput, lowered.rel);
+
+    return Result.ok({
+      rel: lowered.rel,
+      plannerNodeCount: countRelNodes(lowered.rel),
+      guardrails,
+      ...(capabilityResolution?.diagnostics.length
+        ? { diagnostics: capabilityResolution.diagnostics }
+        : {}),
+    });
+  });
 }
 
 function collectExecutableProviders<TContext>(schema: SchemaDefinition): ProvidersMap<TContext> {

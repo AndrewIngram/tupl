@@ -1,6 +1,7 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import { parseSqliteSelectAst } from "../../src/sqlite-parser/parser";
+import { parseSqliteSelectAst, parseSqliteSelectAstResult } from "../../src/sqlite-parser/parser";
 
 describe("sqlite-parser", () => {
   it("parses boolean precedence as OR over AND", () => {
@@ -113,5 +114,19 @@ describe("sqlite-parser", () => {
     expect(() => parseSqliteSelectAst("SELECT id FROM orders; SELECT id FROM users")).toThrow(
       "Only a single SQL statement is supported.",
     );
+  });
+
+  it("returns tagged parse errors from the result API", () => {
+    const result = parseSqliteSelectAstResult("UPDATE orders SET status = 'refunded'");
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected parse result to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlParseError",
+      name: "SqlqlParseError",
+      message: "Only SELECT statements are currently supported.",
+    });
   });
 });

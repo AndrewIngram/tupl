@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,6 +10,7 @@ import {
   type ScanFilterClause,
   type TableScanRequest,
 } from "../../src";
+import { validateProviderBindingsResult } from "../../src/provider";
 import { createExecutableSchemaFromProviders } from "../support/executable-schema";
 
 function sleep(ms: number): Promise<void> {
@@ -998,6 +1000,33 @@ describe("query/provider runtime", () => {
       _tag: "SqlqlTimeoutError",
       name: "SqlqlTimeoutError",
       message: "Query timed out after 5ms.",
+    });
+  });
+
+  it("returns tagged provider binding errors from the result API", () => {
+    const schema = defineSchema({
+      tables: {
+        users: {
+          provider: "warehouse",
+          columns: {
+            id: "text",
+          },
+        },
+      },
+    });
+
+    const result = validateProviderBindingsResult(schema, {});
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected provider binding validation to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "SqlqlProviderBindingError",
+      name: "SqlqlProviderBindingError",
+      message: "Table users is bound to provider warehouse, but no such provider is registered.",
+      provider: "warehouse",
+      table: "users",
     });
   });
 

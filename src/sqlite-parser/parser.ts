@@ -1,3 +1,5 @@
+import { Result } from "better-result";
+
 import type {
   AggregateFunctionAst,
   CteAst,
@@ -12,6 +14,7 @@ import type {
   WindowOverAst,
   WindowSpecificationAst,
 } from "./ast";
+import { SqlqlParseError, type SqlqlResult } from "../errors";
 import { tokenizeSql, type Token } from "./lexer";
 
 type BinaryOperatorSpec =
@@ -45,6 +48,26 @@ type BinaryOperatorSpec =
     };
 
 export function parseSqliteSelectAst(sql: string): SelectAst {
+  const result = parseSqliteSelectAstResult(sql);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+  return result.value;
+}
+
+export function parseSqliteSelectAstResult(sql: string): SqlqlResult<SelectAst> {
+  return Result.try({
+    try: () => parseSqliteSelectAstOrThrow(sql),
+    catch: (error) =>
+      new SqlqlParseError({
+        sql,
+        message: error instanceof Error ? error.message : String(error),
+        cause: error,
+      }),
+  });
+}
+
+function parseSqliteSelectAstOrThrow(sql: string): SelectAst {
   const parser = new SqliteSelectParser(sql);
   const ast = parser.parseStatement();
   parser.consumeStatementTerminator();
