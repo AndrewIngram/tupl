@@ -19,7 +19,7 @@ describe("defineSchema", () => {
       provider: "regional",
     });
 
-    const schema = defineSchema(({ table, col }) => ({
+    const schema = defineSchema(({ table }) => ({
       tables: {
         my_orders: table({
           from: ordersEntity,

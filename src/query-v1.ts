@@ -3,7 +3,6 @@ import {
   normalizeCapability,
   validateProviderBindings,
   type ProviderAdapter,
-  type ProviderCapabilityAtom,
   type ProviderCompiledPlan,
   type ProviderCapabilityReport,
   type ProviderFragment,
@@ -238,8 +237,8 @@ function resolveFallbackPolicy(
 ): Required<QueryFallbackPolicy> {
   return {
     ...DEFAULT_QUERY_FALLBACK_POLICY,
-    ...(providerPolicy ?? {}),
-    ...(queryPolicy ?? {}),
+    ...providerPolicy,
+    ...queryPolicy,
   };
 }
 
