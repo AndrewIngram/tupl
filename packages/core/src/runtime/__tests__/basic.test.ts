@@ -99,6 +99,49 @@ describe("query/basic", () => {
     );
   });
 
+  it("supports ORDER BY ordinals for columns and computed select expressions", async () => {
+    const schema = buildEntitySchema({
+      items: {
+        columns: {
+          id: { type: "text", nullable: false },
+          category: { type: "text", nullable: true },
+        },
+      },
+    });
+
+    const rowsByTable = {
+      items: [
+        { id: "item_1", category: "hardware" },
+        { id: "item_2", category: "services" },
+        { id: "item_3", category: "software" },
+      ],
+    };
+
+    await withQueryHarness(
+      {
+        schema,
+        rowsByTable,
+      },
+      async (harness) => {
+        const { actual, expected } = await harness.runAgainstBoth(
+          `
+            SELECT id, SUBSTR(category, 1, 1) AS initial
+            FROM items
+            ORDER BY 2 DESC, 1 ASC
+          `,
+          EMPTY_CONTEXT,
+        );
+
+        expect(actual).toEqual(expected);
+        expect(actual).toEqual([
+          { id: "item_2", initial: "s" },
+          { id: "item_3", initial: "s" },
+          { id: "item_1", initial: "h" },
+        ]);
+      },
+    );
+  });
+
   it("returns empty result sets for empty tables", async () => {
     const schema = buildEntitySchema({
       events: {

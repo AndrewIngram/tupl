@@ -19,6 +19,7 @@ import {
   type RelExpr,
   type RelJoinNode,
   type RelNode,
+  type RelProjectExprMapping,
   type RelProjectNode,
   type RelScanNode,
   type RelWindowFunction,
@@ -67,10 +68,7 @@ interface ParsedJoin {
 
 interface SelectColumnProjection {
   kind: "column";
-  source: {
-    alias: string;
-    column: string;
-  };
+  source: RelColumnRef;
   output: string;
 }
 
@@ -84,11 +82,12 @@ interface SelectExprProjection {
   kind: "expr";
   output: string;
   expr: RelExpr;
+  source?: RelColumnRef;
 }
 
 type SelectProjection = SelectColumnProjection | SelectWindowProjection | SelectExprProjection;
 
-interface ParsedOrderTerm {
+interface ResolvedOrderTerm {
   source: {
     alias?: string;
     column: string;
@@ -96,20 +95,57 @@ interface ParsedOrderTerm {
   direction: "asc" | "desc";
 }
 
-interface ParsedAggregateProjection {
-  kind: "group" | "metric";
+interface ParsedAggregateGroupProjection {
+  kind: "group";
   output: string;
-  source?: {
-    alias: string;
-    column: string;
-  };
-  metric?: {
+  source?: RelColumnRef;
+  expr?: RelExpr;
+}
+
+interface ParsedAggregateMetricProjection {
+  kind: "metric";
+  output: string;
+  metric: {
     fn: "count" | "sum" | "avg" | "min" | "max";
     as: string;
     column?: RelColumnRef;
     distinct?: boolean;
   };
 }
+
+type ParsedAggregateProjection = ParsedAggregateGroupProjection | ParsedAggregateMetricProjection;
+
+interface ParsedGroupByRefTerm {
+  kind: "ref";
+  ref: RelColumnRef;
+}
+
+interface ParsedGroupByOrdinalTerm {
+  kind: "ordinal";
+  position: number;
+}
+
+type ParsedGroupByTerm = ParsedGroupByRefTerm | ParsedGroupByOrdinalTerm;
+
+interface ParsedOrderByRefTerm {
+  kind: "ref";
+  source: ResolvedOrderTerm["source"];
+  direction: "asc" | "desc";
+}
+
+interface ParsedOrderByOutputTerm {
+  kind: "output";
+  output: string;
+  direction: "asc" | "desc";
+}
+
+interface ParsedOrderByOrdinalTerm {
+  kind: "ordinal";
+  position: number;
+  direction: "asc" | "desc";
+}
+
+type ParsedOrderByTerm = ParsedOrderByRefTerm | ParsedOrderByOutputTerm | ParsedOrderByOrdinalTerm;
 
 interface LiteralFilter {
   alias: string;
@@ -198,7 +234,7 @@ function toRelLiteralValue(value: unknown): string | number | boolean | null {
 function toParsedOrderSource(
   ref: RelColumnRef | null | undefined,
   fallbackColumn: string,
-): ParsedOrderTerm["source"] {
+): ResolvedOrderTerm["source"] {
   if (!ref) {
     return {
       column: fallbackColumn,
@@ -287,6 +323,7 @@ function getPushableWhereAliases(rootAlias: string, joins: ParsedJoin[]): Set<st
 
 let physicalStepIdCounter = 0;
 let relIdCounter = 0;
+let syntheticColumnCounter = 0;
 
 type ViewAliasColumnMap = Record<string, RelColumnRef>;
 
@@ -303,6 +340,11 @@ function nextPhysicalStepId(prefix: string): string {
 function nextRelId(prefix: string): string {
   relIdCounter += 1;
   return `${prefix}_${relIdCounter}`;
+}
+
+function nextSyntheticColumnName(prefix: string): string {
+  syntheticColumnCounter += 1;
+  return `__${prefix}_${syntheticColumnCounter}`;
 }
 
 function toTuplPlanningError(error: unknown, operation: string) {
@@ -2623,13 +2665,9 @@ function tryLowerSimpleSelect(
   }
   validateEnumLiteralFilters(whereFilters.literals, bindings, schema);
 
-  const groupBy = parseGroupBy(ast.groupby, bindings, aliasToBinding);
-  if (groupBy == null) {
-    return null;
-  }
-
   const distinctMode = ast.distinct === "DISTINCT";
-  const aggregateMode = groupBy.length > 0 || hasAggregateProjection(ast.columns) || distinctMode;
+  const aggregateMode =
+    getGroupByColumns(ast.groupby).length > 0 || hasAggregateProjection(ast.columns) || distinctMode;
 
   const projections = aggregateMode
     ? null
@@ -2646,7 +2684,7 @@ function tryLowerSimpleSelect(
   }
 
   const aggregateProjections = aggregateMode
-    ? parseAggregateProjections(ast.columns, bindings, aliasToBinding)
+    ? parseAggregateProjections(ast.columns, bindings, aliasToBinding, schema, cteNames)
     : null;
   if (aggregateMode && aggregateProjections == null) {
     return null;
@@ -2654,10 +2692,17 @@ function tryLowerSimpleSelect(
 
   const safeAggregateProjections = aggregateMode ? (aggregateProjections ?? []) : [];
   const safeProjections = aggregateMode ? [] : (projections ?? []);
+  const groupByTerms = aggregateMode ? parseGroupBy(ast.groupby, bindings, aliasToBinding) : [];
+  if (aggregateMode && groupByTerms == null) {
+    return null;
+  }
   const windowFunctions = safeProjections
     .filter((projection): projection is SelectWindowProjection => projection.kind === "window")
     .map((projection) => projection.function);
-  let effectiveGroupBy = groupBy;
+  const aggregateGroupByResolution = aggregateMode
+    ? resolveAggregateGroupBy(groupByTerms ?? [], safeAggregateProjections)
+    : { groupBy: [], materializations: [] };
+  let effectiveGroupBy = aggregateGroupByResolution.groupBy;
 
   if (distinctMode && effectiveGroupBy.length === 0) {
     const distinctGroupBy: RelColumnRef[] = [];
@@ -2666,10 +2711,7 @@ function tryLowerSimpleSelect(
         // Defer DISTINCT+aggregate/function cases to the generic fallback path.
         return null;
       }
-      distinctGroupBy.push({
-        alias: projection.source.alias,
-        column: projection.source.column,
-      });
+      distinctGroupBy.push(projection.source);
     }
 
     if (distinctGroupBy.length === 0) {
@@ -2686,13 +2728,7 @@ function tryLowerSimpleSelect(
   }
 
   const aggregateMetrics = safeAggregateProjections
-    .filter(
-      (
-        projection,
-      ): projection is ParsedAggregateProjection & {
-        metric: NonNullable<ParsedAggregateProjection["metric"]>;
-      } => projection.kind === "metric" && !!projection.metric,
-    )
+    .filter((projection): projection is ParsedAggregateMetricProjection => projection.kind === "metric")
     .map((projection) => projection.metric);
 
   const aggregateMetricAliases = new Map<string, string>(
@@ -2708,45 +2744,21 @@ function tryLowerSimpleSelect(
   }
   const allAggregateMetrics = [...aggregateMetrics, ...hiddenHavingMetrics];
 
-  const outputAliases = new Map<string, RelColumnRef | null>();
-  if (aggregateMode) {
-    for (const projection of safeAggregateProjections) {
-      outputAliases.set(
-        projection.output,
-        projection.kind === "group" && projection.source
-          ? {
-              column: projection.source.column,
-            }
-          : {
-              column: projection.metric!.as,
-            },
-      );
-    }
-  } else {
-    for (const projection of safeProjections) {
-      switch (projection.kind) {
-        case "column":
-          outputAliases.set(projection.output, {
-            alias: projection.source.alias,
-            column: projection.source.column,
-          });
-          break;
-        case "expr":
-          outputAliases.set(projection.output, null);
-          break;
-        case "window":
-          outputAliases.set(projection.output, {
-            column: projection.function.as,
-          });
-          break;
-      }
-    }
-  }
-
-  const orderBy = parseOrderBy(ast.orderby, bindings, aliasToBinding, outputAliases);
-  if (orderBy == null) {
+  const orderByTerms = parseOrderBy(
+    ast.orderby,
+    bindings,
+    aliasToBinding,
+    new Set((aggregateMode ? safeAggregateProjections : safeProjections).map((projection) => projection.output)),
+  );
+  if (orderByTerms == null) {
     return null;
   }
+  const { orderBy, materializations: orderByMaterializations } = aggregateMode
+    ? {
+        orderBy: resolveAggregateOrderBy(orderByTerms, safeAggregateProjections),
+        materializations: [] as RelProjectExprMapping[],
+      }
+    : resolveNonAggregateOrderBy(orderByTerms, safeProjections);
 
   const rootBinding = bindings[0];
   if (!rootBinding) {
@@ -2772,8 +2784,19 @@ function tryLowerSimpleSelect(
 
   if (aggregateMode) {
     for (const projection of safeAggregateProjections) {
-      if (projection.kind === "group" && projection.source) {
+      if (projection.kind !== "group") {
+        continue;
+      }
+
+      if (projection.source?.alias) {
         columnsByAlias.get(projection.source.alias)?.add(projection.source.column);
+      }
+      if (projection.expr) {
+        for (const ref of collectRelExprRefs(projection.expr)) {
+          if (ref.alias) {
+            columnsByAlias.get(ref.alias)?.add(ref.column);
+          }
+        }
       }
     }
 
@@ -2795,7 +2818,9 @@ function tryLowerSimpleSelect(
   } else {
     for (const projection of safeProjections) {
       if (projection.kind === "column") {
-        columnsByAlias.get(projection.source.alias)?.add(projection.source.column);
+        if (projection.source.alias) {
+          columnsByAlias.get(projection.source.alias)?.add(projection.source.column);
+        }
         continue;
       }
       if (projection.kind === "expr") {
@@ -2977,6 +3002,10 @@ function tryLowerSimpleSelect(
     };
   }
 
+  if (aggregateMode && aggregateGroupByResolution.materializations.length > 0) {
+    current = appendProjectExpressions(current, aggregateGroupByResolution.materializations);
+  }
+
   if (aggregateMode) {
     current = {
       id: nextRelId("aggregate"),
@@ -3016,6 +3045,10 @@ function tryLowerSimpleSelect(
       functions: windowFunctions,
       output: [...current.output, ...windowFunctions.map((fn) => ({ name: fn.as }))],
     };
+  }
+
+  if (!aggregateMode && orderByMaterializations.length > 0) {
+    current = appendProjectExpressions(current, orderByMaterializations);
   }
 
   if (orderBy.length > 0) {
@@ -3066,16 +3099,22 @@ function tryLowerSimpleSelect(
                 },
                 output: projection.output,
               }
-            : {
+            : projection.kind === "metric"
+              ? {
                 kind: "column" as const,
                 source: {
-                  column: projection.metric!.as,
+                  column: projection.metric.as,
                 },
                 output: projection.output,
-              },
+              }
+              : {
+                  kind: "expr" as const,
+                  expr: projection.expr!,
+                  output: projection.output,
+                },
         )
       : safeProjections.map((projection) => ({
-          ...(projection.kind === "expr"
+          ...(projection.kind === "expr" && !projection.source
             ? {
                 kind: "expr" as const,
                 expr: projection.expr,
@@ -3085,9 +3124,13 @@ function tryLowerSimpleSelect(
                 source:
                   projection.kind === "column"
                     ? {
-                        alias: projection.source.alias,
+                        ...(projection.source.alias ? { alias: projection.source.alias } : {}),
                         column: projection.source.column,
                       }
+                    : projection.kind === "expr"
+                      ? {
+                          column: projection.source!.column,
+                        }
                     : {
                         column: projection.function.as,
                       },
@@ -3828,28 +3871,56 @@ function hasAggregateProjection(rawColumns: unknown): boolean {
   });
 }
 
-function parseGroupBy(
-  rawGroupBy: unknown,
-  bindings: Binding[],
-  aliasToBinding: Map<string, Binding>,
-): RelColumnRef[] | null {
+function getGroupByColumns(rawGroupBy: unknown): unknown[] {
   if (!rawGroupBy || typeof rawGroupBy !== "object") {
     return [];
   }
 
   const groupBy = rawGroupBy as { columns?: unknown };
-  const columns = Array.isArray(groupBy.columns) ? groupBy.columns : [];
-  const refs: RelColumnRef[] = [];
+  return Array.isArray(groupBy.columns) ? groupBy.columns : [];
+}
 
-  for (const entry of columns) {
+function parsePositiveOrdinalLiteral(raw: unknown, clause: "GROUP BY" | "ORDER BY"): number | undefined {
+  const expr = raw as { type?: unknown; value?: unknown };
+  if (expr?.type !== "number") {
+    return undefined;
+  }
+
+  if (typeof expr.value !== "number" || !Number.isInteger(expr.value) || expr.value <= 0) {
+    throw new Error(`${clause} ordinal must be a positive integer.`);
+  }
+
+  return expr.value;
+}
+
+function parseGroupBy(
+  rawGroupBy: unknown,
+  bindings: Binding[],
+  aliasToBinding: Map<string, Binding>,
+): ParsedGroupByTerm[] | null {
+  const refs: ParsedGroupByTerm[] = [];
+
+  for (const entry of getGroupByColumns(rawGroupBy)) {
+    const ordinal = parsePositiveOrdinalLiteral(entry, "GROUP BY");
+    if (ordinal != null) {
+      refs.push({
+        kind: "ordinal",
+        position: ordinal,
+      });
+      continue;
+    }
+
     const resolved = resolveColumnRef(entry, bindings, aliasToBinding);
     if (!resolved) {
       return null;
     }
 
     refs.push({
-      alias: resolved.alias,
-      column: resolved.column,
+      kind: "ref",
+      ref: {
+        alias: resolved.alias,
+        column: resolved.column,
+      },
     });
   }
 
@@ -3860,6 +3931,8 @@ function parseAggregateProjections(
   rawColumns: unknown,
   bindings: Binding[],
   aliasToBinding: Map<string, Binding>,
+  schema: SchemaDefinition,
+  cteNames: Set<string>,
 ): ParsedAggregateProjection[] | null {
   if (rawColumns === "*") {
     return null;
@@ -3884,26 +3957,43 @@ function parseAggregateProjections(
         return null;
       }
 
-      out.push({
-        kind: "metric",
-        output,
-        metric,
-      });
+    out.push({
+      kind: "metric",
+      output,
+      metric,
+    });
       continue;
     }
 
     const column = resolveColumnRef(entry.expr, bindings, aliasToBinding);
-    if (!column) {
+    const output = typeof entry.as === "string" && entry.as.length > 0 ? entry.as : column?.column ?? "expr";
+    if (column) {
+      out.push({
+        kind: "group",
+        source: {
+          alias: column.alias,
+          column: column.column,
+        },
+        output,
+      });
+      continue;
+    }
+
+    const expr = lowerSqlAstToRelExpr(
+      entry.expr,
+      bindings,
+      aliasToBinding,
+      schema,
+      cteNames,
+    );
+    if (!expr) {
       return null;
     }
 
     out.push({
       kind: "group",
-      source: {
-        alias: column.alias,
-        column: column.column,
-      },
-      output: typeof entry.as === "string" && entry.as.length > 0 ? entry.as : column.column,
+      expr,
+      output,
     });
   }
 
@@ -3915,7 +4005,7 @@ function parseAggregateMetric(
   output: string,
   bindings: Binding[],
   aliasToBinding: Map<string, Binding>,
-): ParsedAggregateProjection["metric"] | null {
+): ParsedAggregateMetricProjection["metric"] | null {
   const expr = raw as {
     type?: unknown;
     name?: unknown;
@@ -4288,11 +4378,15 @@ function validateAggregateProjectionGroupBy(
   const groupBySet = new Set(groupBy.map((ref) => `${ref.alias ?? ""}.${ref.column}`));
 
   for (const projection of projections) {
-    if (projection.kind !== "group" || !projection.source) {
+    if (projection.kind !== "group") {
       continue;
     }
 
-    const key = `${projection.source.alias}.${projection.source.column}`;
+    if (!projection.source) {
+      return false;
+    }
+
+    const key = `${projection.source.alias ?? ""}.${projection.source.column}`;
     if (!groupBySet.has(key)) {
       return false;
     }
@@ -4305,16 +4399,27 @@ function parseOrderBy(
   rawOrderBy: unknown,
   bindings: Binding[],
   aliasToBinding: Map<string, Binding>,
-  outputAliases: Map<string, RelColumnRef | null> = new Map<string, RelColumnRef | null>(),
-): ParsedOrderTerm[] | null {
+  outputs: Set<string>,
+): ParsedOrderByTerm[] | null {
   const orderBy = Array.isArray(rawOrderBy) ? (rawOrderBy as OrderByTermAst[]) : [];
-  const out: ParsedOrderTerm[] = [];
+  const out: ParsedOrderByTerm[] = [];
 
   for (const term of orderBy) {
-    const rawRef = toRawColumnRef(term.expr);
-    if (rawRef && !rawRef.table && outputAliases.has(rawRef.column)) {
+    const ordinal = parsePositiveOrdinalLiteral(term.expr, "ORDER BY");
+    if (ordinal != null) {
       out.push({
-        source: toParsedOrderSource(outputAliases.get(rawRef.column), rawRef.column),
+        kind: "ordinal",
+        position: ordinal,
+        direction: term.type === "DESC" ? "desc" : "asc",
+      });
+      continue;
+    }
+
+    const rawRef = toRawColumnRef(term.expr);
+    if (rawRef && !rawRef.table && outputs.has(rawRef.column)) {
+      out.push({
+        kind: "output",
+        output: rawRef.column,
         direction: term.type === "DESC" ? "desc" : "asc",
       });
       continue;
@@ -4322,15 +4427,7 @@ function parseOrderBy(
 
     const resolved = resolveColumnRef(term.expr, bindings, aliasToBinding);
     if (!resolved) {
-      if (!rawRef || rawRef.table || !outputAliases.has(rawRef.column)) {
-        return null;
-      }
-
-      out.push({
-        source: toParsedOrderSource(outputAliases.get(rawRef.column), rawRef.column),
-        direction: term.type === "DESC" ? "desc" : "asc",
-      });
-      continue;
+      return null;
     }
 
     if (!resolved.alias) {
@@ -4338,6 +4435,7 @@ function parseOrderBy(
     }
 
     out.push({
+      kind: "ref",
       source: {
         alias: resolved.alias,
         column: resolved.column,
@@ -4347,6 +4445,225 @@ function parseOrderBy(
   }
 
   return out;
+}
+
+function materializeSelectExprProjection(
+  projection: SelectExprProjection,
+  prefix: string,
+): RelProjectExprMapping | null {
+  if (projection.source) {
+    return null;
+  }
+
+  const column = nextSyntheticColumnName(prefix);
+  projection.source = { column };
+  return {
+    kind: "expr",
+    expr: projection.expr,
+    output: column,
+  };
+}
+
+function materializeAggregateGroupProjection(
+  projection: ParsedAggregateGroupProjection,
+  prefix: string,
+): RelProjectExprMapping | null {
+  if (projection.source || !projection.expr) {
+    return null;
+  }
+
+  const column = nextSyntheticColumnName(prefix);
+  projection.source = { column };
+  return {
+    kind: "expr",
+    expr: projection.expr,
+    output: column,
+  };
+}
+
+function resolveAggregateGroupBy(
+  groupByTerms: ParsedGroupByTerm[],
+  projections: ParsedAggregateProjection[],
+): {
+  groupBy: RelColumnRef[];
+  materializations: RelProjectExprMapping[];
+} {
+  const groupBy: RelColumnRef[] = [];
+  const materializations: RelProjectExprMapping[] = [];
+
+  for (const term of groupByTerms) {
+    if (term.kind === "ref") {
+      groupBy.push(term.ref);
+      continue;
+    }
+
+    const projection = projections[term.position - 1];
+    if (!projection) {
+      throw new Error(`GROUP BY ordinal ${term.position} is out of range.`);
+    }
+    if (projection.kind === "metric") {
+      throw new Error(`GROUP BY ordinal ${term.position} cannot reference an aggregate output.`);
+    }
+
+    const materialization = materializeAggregateGroupProjection(projection, "group_by");
+    if (materialization) {
+      materializations.push(materialization);
+    }
+    if (!projection.source) {
+      throw new Error(`GROUP BY ordinal ${term.position} could not be resolved.`);
+    }
+
+    groupBy.push(projection.source);
+  }
+
+  return {
+    groupBy,
+    materializations,
+  };
+}
+
+function resolveNonAggregateOrderBy(
+  orderByTerms: ParsedOrderByTerm[],
+  projections: SelectProjection[],
+): {
+  orderBy: ResolvedOrderTerm[];
+  materializations: RelProjectExprMapping[];
+} {
+  const projectionsByOutput = new Map(projections.map((projection) => [projection.output, projection] as const));
+  const materializations: RelProjectExprMapping[] = [];
+  const orderBy: ResolvedOrderTerm[] = [];
+
+  const resolveProjectionSource = (projection: SelectProjection, ordinal?: number): ResolvedOrderTerm["source"] => {
+    if (projection.kind === "column") {
+      return toParsedOrderSource(projection.source, projection.output);
+    }
+    if (projection.kind === "window") {
+      return { column: projection.function.as };
+    }
+
+    const materialization = materializeSelectExprProjection(projection, "order_by");
+    if (materialization) {
+      materializations.push(materialization);
+    }
+    if (!projection.source) {
+      throw new Error(
+        ordinal != null
+          ? `ORDER BY ordinal ${ordinal} could not be resolved.`
+          : `ORDER BY expression "${projection.output}" could not be resolved.`,
+      );
+    }
+    return { column: projection.source.column };
+  };
+
+  for (const term of orderByTerms) {
+    if (term.kind === "ref") {
+      orderBy.push({
+        source: term.source,
+        direction: term.direction,
+      });
+      continue;
+    }
+
+    const projection =
+      term.kind === "ordinal"
+        ? projections[term.position - 1]
+        : projectionsByOutput.get(term.output);
+    if (!projection) {
+      if (term.kind === "ordinal") {
+        throw new Error(`ORDER BY ordinal ${term.position} is out of range.`);
+      }
+      throw new Error(`Unknown ORDER BY output "${term.output}".`);
+    }
+
+    orderBy.push({
+      source: resolveProjectionSource(projection, term.kind === "ordinal" ? term.position : undefined),
+      direction: term.direction,
+    });
+  }
+
+  return {
+    orderBy,
+    materializations,
+  };
+}
+
+function resolveAggregateOrderBy(
+  orderByTerms: ParsedOrderByTerm[],
+  projections: ParsedAggregateProjection[],
+): ResolvedOrderTerm[] {
+  const projectionsByOutput = new Map(projections.map((projection) => [projection.output, projection] as const));
+  const groupOutputsBySource = new Map<string, string>();
+
+  for (const projection of projections) {
+    if (projection.kind !== "group" || !projection.source) {
+      continue;
+    }
+    groupOutputsBySource.set(`${projection.source.alias ?? ""}.${projection.source.column}`, projection.source.column);
+  }
+
+  const resolveProjectionSource = (
+    projection: ParsedAggregateProjection,
+    ordinal?: number,
+  ): ResolvedOrderTerm["source"] => {
+    if (projection.kind === "metric") {
+      return { column: projection.metric.as };
+    }
+    if (!projection.source) {
+      throw new Error(
+        ordinal != null
+          ? `ORDER BY ordinal ${ordinal} could not be resolved.`
+          : `ORDER BY expression "${projection.output}" could not be resolved.`,
+      );
+    }
+    return { column: projection.source.column };
+  };
+
+  return orderByTerms.map((term) => {
+    if (term.kind === "ref") {
+      const key = `${term.source.alias ?? ""}.${term.source.column}`;
+      return {
+        source: { column: groupOutputsBySource.get(key) ?? term.source.column },
+        direction: term.direction,
+      };
+    }
+
+    const projection =
+      term.kind === "ordinal"
+        ? projections[term.position - 1]
+        : projectionsByOutput.get(term.output);
+    if (!projection) {
+      if (term.kind === "ordinal") {
+        throw new Error(`ORDER BY ordinal ${term.position} is out of range.`);
+      }
+      throw new Error(`Unknown ORDER BY output "${term.output}".`);
+    }
+
+    return {
+      source: resolveProjectionSource(projection, term.kind === "ordinal" ? term.position : undefined),
+      direction: term.direction,
+    };
+  });
+}
+
+function appendProjectExpressions(
+  input: RelNode,
+  mappings: RelProjectExprMapping[],
+): RelProjectNode {
+  return {
+    id: nextRelId("project"),
+    kind: "project",
+    convention: "local",
+    input,
+    columns: [
+      ...input.output.map((column) => ({
+        kind: "column" as const,
+        source: parseRelColumnRef(column.name),
+        output: column.name,
+      })),
+      ...mappings,
+    ],
+    output: [...input.output, ...mappings.map((mapping) => ({ name: mapping.output }))],
+  };
 }
 
 function parseWhereFilters(

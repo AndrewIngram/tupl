@@ -76,6 +76,49 @@ describe("query/planner-hooks", () => {
     expect(remoteRequests[0]?.limit).toBeUndefined();
   });
 
+  it("supports simple ORDER BY ordinals in planner-hooked scan queries", async () => {
+    const schema = buildEntitySchema({
+      orders: {
+        columns: {
+          id: "text",
+          created_at: "text",
+        },
+      },
+    });
+
+    const rows = [
+      { id: "o1", created_at: "2026-02-01" },
+      { id: "o2", created_at: "2026-02-03" },
+      { id: "o3", created_at: "2026-02-02" },
+    ];
+
+    const remoteRequests: TableScanRequest[] = [];
+    const methods = defineTableMethods(schema, {
+      orders: {
+        ...createArrayTableMethods(rows),
+        async scan(request) {
+          remoteRequests.push(request);
+          return scanArrayRows(rows, request);
+        },
+      },
+    });
+
+    const result = await queryWithMethods({
+      schema,
+      methods,
+      context: EMPTY_CONTEXT,
+      sql: `
+        SELECT id, created_at
+        FROM orders
+        ORDER BY 2 DESC
+        LIMIT 1
+      `,
+    });
+
+    expect(result).toEqual([{ id: "o2", created_at: "2026-02-03" }]);
+    expect(remoteRequests).toHaveLength(1);
+  });
+
   it("allows planScan residuals by default", async () => {
     const schema = buildEntitySchema({
       orders: {
