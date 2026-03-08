@@ -19,9 +19,10 @@ Implemented:
 - `FULL JOIN ... ON a = b`
 - `WHERE` with boolean predicate trees (`AND`, `OR`, `NOT`)
 - Operators: `=`, `!=`, `<>`, `>`, `>=`, `<`, `<=`, `IN`, `NOT IN`, `BETWEEN`, `LIKE`, `NOT LIKE`, `IS NULL`, `IS NOT NULL`, `IS DISTINCT FROM`, `IS NOT DISTINCT FROM`
-- `ORDER BY` column refs
+- `ORDER BY` column refs and ordinals
 - `LIMIT`, `OFFSET`
 - `GROUP BY` + aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
+- `GROUP BY` ordinals (including computed select-list expressions via local fallback)
 - `COUNT(DISTINCT col)`
 - `HAVING` with aggregate expressions
 - `SELECT DISTINCT`

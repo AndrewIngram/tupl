@@ -35,16 +35,17 @@ describe("query/aggregates", () => {
       },
       async (harness) => {
         const routeSql = `
-          SELECT o.user_id, COUNT(*) AS order_count, SUM(o.total_cents) AS total_cents
+          SELECT o.user_id, COUNT(*) AS order_count
           FROM orders o
           WHERE o.org_id = 'org_1'
-          GROUP BY o.user_id
-          ORDER BY total_cents DESC
+          GROUP BY 1
+          ORDER BY 2 DESC
         `;
 
         const route = await harness.runAgainstBoth(routeSql, EMPTY_CONTEXT);
         expect(route.actual).toEqual(route.expected);
         expect(aggregateCalls).toHaveLength(1);
+        expect(aggregateCalls[0]?.groupBy).toEqual(["user_id"]);
 
         const fallbackSql = `
           SELECT u.team_id, COUNT(*) AS order_count
@@ -57,6 +58,59 @@ describe("query/aggregates", () => {
 
         const fallback = await harness.runAgainstBoth(fallbackSql, EMPTY_CONTEXT);
         expect(fallback.actual).toEqual(fallback.expected);
+      },
+    );
+  });
+
+  it("falls back locally for GROUP BY ordinals on computed expressions", async () => {
+    const schema = buildEntitySchema({
+      users: {
+        columns: {
+          id: { type: "text", nullable: false },
+        },
+      },
+    });
+
+    const rowsByTable = {
+      users: [{ id: "alice" }, { id: "adam" }, { id: "beth" }],
+    };
+
+    const aggregateCalls: TableAggregateRequest[] = [];
+    const methods = defineTableMethods(schema, {
+      users: {
+        ...createArrayTableMethods(rowsByTable.users),
+        async aggregate(request) {
+          aggregateCalls.push(request);
+          return aggregateArrayRows(rowsByTable.users, request);
+        },
+      },
+    });
+
+    await withQueryHarness(
+      {
+        schema,
+        rowsByTable,
+        providers: {
+          memory: createMethodsProvider(schema, methods),
+        },
+      },
+      async (harness) => {
+        const { actual, expected } = await harness.runAgainstBoth(
+          `
+            SELECT SUBSTR(id, 1, 1) AS initial, COUNT(*) AS user_count
+            FROM users
+            GROUP BY 1
+            ORDER BY 2 DESC, 1 ASC
+          `,
+          EMPTY_CONTEXT,
+        );
+
+        expect(actual).toEqual(expected);
+        expect(actual).toEqual([
+          { initial: "a", user_count: 2 },
+          { initial: "b", user_count: 1 },
+        ]);
+        expect(aggregateCalls).toHaveLength(0);
       },
     );
   });

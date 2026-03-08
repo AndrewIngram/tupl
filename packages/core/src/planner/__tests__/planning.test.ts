@@ -595,4 +595,128 @@ describe("query/planning", () => {
     expect(lowered.rel.input.input.functions[0]?.fn).toBe("dense_rank");
     expect(lowered.rel.input.input.functions[0]?.as).toBe("spend_rank");
   });
+
+  it("materializes computed select expressions for ORDER BY ordinals", () => {
+    const schema = buildEntitySchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+        },
+      },
+    });
+
+    const lowered = lowerSqlToRel(
+      `
+        SELECT id, SUBSTR(id, 1, 1) AS initial
+        FROM users
+        ORDER BY 2 ASC, 1 DESC
+      `,
+      schema,
+    );
+
+    expect(lowered.rel.kind).toBe("project");
+    if (lowered.rel.kind !== "project") {
+      throw new Error("Expected project root.");
+    }
+    expect(lowered.rel.columns[1]).toMatchObject({
+      kind: "column",
+      output: "initial",
+      source: {
+        column: expect.stringMatching(/^__order_by_/),
+      },
+    });
+
+    const sort = lowered.rel.input;
+    expect(sort.kind).toBe("sort");
+    if (sort.kind !== "sort") {
+      throw new Error("Expected sort node.");
+    }
+    expect(sort.orderBy[0]?.source).toMatchObject({
+      column: expect.stringMatching(/^__order_by_/),
+    });
+    expect(sort.orderBy[1]?.source).toEqual({ alias: "users", column: "id" });
+    expect(sort.input.kind).toBe("project");
+  });
+
+  it("materializes computed select expressions for GROUP BY ordinals", () => {
+    const schema = buildEntitySchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+        },
+      },
+    });
+
+    const lowered = lowerSqlToRel(
+      `
+        SELECT SUBSTR(id, 1, 1) AS initial, COUNT(*) AS user_count
+        FROM users
+        GROUP BY 1
+        ORDER BY 2 DESC
+      `,
+      schema,
+    );
+
+    expect(lowered.rel.kind).toBe("project");
+    if (lowered.rel.kind !== "project") {
+      throw new Error("Expected project root.");
+    }
+    expect(lowered.rel.columns[0]).toMatchObject({
+      kind: "column",
+      output: "initial",
+      source: {
+        column: expect.stringMatching(/^__group_by_/),
+      },
+    });
+
+    const sort = lowered.rel.input;
+    expect(sort.kind).toBe("sort");
+    if (sort.kind !== "sort") {
+      throw new Error("Expected sort node.");
+    }
+    expect(sort.orderBy[0]?.source).toEqual({ column: "user_count" });
+
+    const aggregate = sort.input;
+    expect(aggregate.kind).toBe("aggregate");
+    if (aggregate.kind !== "aggregate") {
+      throw new Error("Expected aggregate node.");
+    }
+    expect(aggregate.groupBy[0]?.column).toMatch(/^__group_by_/);
+    expect(aggregate.input.kind).toBe("project");
+  });
+
+  it("rejects invalid ordinal references in ORDER BY and GROUP BY", () => {
+    const schema = buildEntitySchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+        },
+      },
+    });
+
+    expect(() =>
+      lowerSqlToRel(
+        `
+          SELECT id, COUNT(*) AS user_count
+          FROM users
+          GROUP BY 2
+        `,
+        schema,
+      ),
+    ).toThrow("GROUP BY ordinal 2 cannot reference an aggregate output.");
+
+    expect(() =>
+      lowerSqlToRel(
+        `
+          SELECT id
+          FROM users
+          ORDER BY 0
+        `,
+        schema,
+      ),
+    ).toThrow("ORDER BY ordinal must be a positive integer.");
+  });
 });
