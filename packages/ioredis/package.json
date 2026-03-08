@@ -1,6 +1,6 @@
 {
   "name": "@sqlql/ioredis",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "ioredis-backed lookup adapter helpers for sqlql",
   "license": "MIT",
   "type": "module",
