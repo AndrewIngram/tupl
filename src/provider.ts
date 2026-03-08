@@ -1,6 +1,6 @@
 import { Result, type Result as BetterResult } from "better-result";
 
-import { SqlqlProviderBindingError, type SqlqlResult } from "./errors";
+import { SqlqlProviderBindingError } from "./errors";
 import { getNormalizedTableBinding } from "./schema";
 import type {
   PhysicalDialect,
@@ -388,7 +388,7 @@ export function unwrapProviderOperationResult<T, E>(outcome: ProviderOperationRe
   return outcome.value;
 }
 
-export function inferRouteFamilyForFragment(fragment: ProviderFragment): ProviderRouteFamily {
+export function inferRouteFamilyForFragment(fragment: ProviderFragment) {
   switch (fragment.kind) {
     case "scan":
       return "scan";
@@ -653,7 +653,7 @@ export function resolveTableProvider(schema: SchemaDefinition, table: string): s
 export function resolveTableProviderResult(
   schema: SchemaDefinition,
   table: string,
-): SqlqlResult<string> {
+) {
   const normalized = getNormalizedTableBinding(schema, table);
   if (normalized?.kind === "physical" && normalized.provider) {
     return Result.ok(normalized.provider);
@@ -703,7 +703,7 @@ export function validateProviderBindings<TContext>(
 export function validateProviderBindingsResult<TContext>(
   schema: SchemaDefinition,
   providers: ProvidersMap<TContext>,
-): SqlqlResult<void> {
+) {
   for (const tableName of Object.keys(schema.tables)) {
     const normalized = getNormalizedTableBinding(schema, tableName);
     if (normalized?.kind === "view") {

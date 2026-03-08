@@ -7,8 +7,7 @@ import {
 import {
   SqlqlExecutionError,
   SqlqlGuardrailError,
-  type SqlqlError,
-  type SqlqlResult,
+  SqlqlPlanningError,
 } from "./errors";
 import {
   getDataEntityAdapter,
@@ -64,7 +63,7 @@ interface RelExecutionContext<TContext> {
   subqueryResults: Map<string, unknown>;
 }
 
-function toSqlqlExecutionError(error: unknown, operation: string): SqlqlError {
+function toSqlqlExecutionError(error: unknown, operation: string) {
   if (SqlqlExecutionError.is(error) || SqlqlGuardrailError.is(error)) {
     return error;
   }
@@ -76,40 +75,21 @@ function toSqlqlExecutionError(error: unknown, operation: string): SqlqlError {
   });
 }
 
-function unwrapExecutionResult<T, E>(result: BetterResult<T, E>): T {
-  if (Result.isError(result)) {
-    throw result.error;
-  }
-  return result.value;
-}
-
-function tryExecutionStep<T>(operation: string, fn: () => T): SqlqlResult<T> {
+function tryExecutionStep<T>(operation: string, fn: () => T) {
   return Result.try({
     try: () => fn() as Awaited<T>,
     catch: (error) => toSqlqlExecutionError(error, operation),
-  }) as SqlqlResult<T>;
+  });
 }
 
 async function tryExecutionStepAsync<T>(
   operation: string,
   fn: () => Promise<T>,
-): Promise<SqlqlResult<T>> {
+) {
   return Result.tryPromise({
     try: fn,
     catch: (error) => toSqlqlExecutionError(error, operation),
   });
-}
-
-export async function executeRelWithProviders<TContext>(
-  rel: RelNode,
-  schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
-  context: TContext,
-  guardrails: RelExecutionGuardrails,
-): Promise<QueryRow[]> {
-  return unwrapExecutionResult(
-    await executeRelWithProvidersResult(rel, schema, providers, context, guardrails),
-  );
 }
 
 export async function executeRelWithProvidersResult<TContext>(
@@ -121,7 +101,9 @@ export async function executeRelWithProvidersResult<TContext>(
   options: {
     constraintValidation?: ConstraintValidationOptions;
   } = {},
-): Promise<SqlqlResult<QueryRow[]>> {
+): Promise<
+  BetterResult<QueryRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const executionContext: RelExecutionContext<TContext> = {
     schema,
     providers,
@@ -161,7 +143,7 @@ export async function executeRelWithProvidersResult<TContext>(
 async function executeRelNodeResult<TContext>(
   node: RelNode,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<QueryRow[]>> {
+) {
   const remoteRowsResult = await tryExecuteRemoteSubtreeResult(node, context);
   if (Result.isError(remoteRowsResult)) {
     return remoteRowsResult;
@@ -204,7 +186,9 @@ async function executeRelNodeResult<TContext>(
 async function tryExecuteRemoteSubtreeResult<TContext>(
   node: RelNode,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<QueryRow[] | null>> {
+): Promise<
+  BetterResult<QueryRow[] | null, SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   if (node.kind === "sql") {
     return Result.ok(null);
   }
@@ -250,9 +234,7 @@ async function tryExecuteRemoteSubtreeResult<TContext>(
   }
 
   const compiledResult = await tryExecutionStepAsync("compile subtree provider fragment", () =>
-    Promise.resolve(provider.compile(fragment, context.context)).then(
-      unwrapProviderOperationResult,
-    ),
+    Promise.resolve(provider.compile(fragment, context.context)).then(unwrapProviderOperationResult),
   );
   if (Result.isError(compiledResult)) {
     return compiledResult;
@@ -362,7 +344,9 @@ function findNodeProviderAdapter<TContext>(
 async function executeScanResult<TContext>(
   scan: RelScanNode,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<InternalRow[]>> {
+): Promise<
+  BetterResult<InternalRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const normalizedBinding = getNormalizedTableBinding(context.schema, scan.table);
   if (normalizedBinding?.kind === "view") {
     const relResult = compileViewRelToExecutableResult(
@@ -482,9 +466,7 @@ async function executeScanResult<TContext>(
   }
 
   const compiledResult = await tryExecutionStepAsync("compile scan provider fragment", () =>
-    Promise.resolve(provider.compile(fragment, context.context)).then(
-      unwrapProviderOperationResult,
-    ),
+    Promise.resolve(provider.compile(fragment, context.context)).then(unwrapProviderOperationResult),
   );
   if (Result.isError(compiledResult)) {
     return compiledResult;
@@ -531,7 +513,9 @@ async function executeScanResult<TContext>(
 async function executeFilterResult<TContext>(
   filter: Extract<RelNode, { kind: "filter" }>,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<InternalRow[]>> {
+): Promise<
+  BetterResult<InternalRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const rowsResult = await executeRelNodeResult(filter.input, context);
   if (Result.isError(rowsResult)) {
     return rowsResult;
@@ -563,7 +547,9 @@ async function executeFilterResult<TContext>(
 async function executeJoinResult<TContext>(
   join: RelJoinNode,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<InternalRow[]>> {
+): Promise<
+  BetterResult<InternalRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const leftRowsResult = await executeRelNodeResult(join.left, context);
   if (Result.isError(leftRowsResult)) {
     return leftRowsResult;
@@ -599,7 +585,7 @@ async function maybeExecuteLookupJoinResult<TContext>(
   join: RelJoinNode,
   leftRows: InternalRow[],
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<InternalRow[] | null>> {
+) {
   if (join.joinType !== "inner" && join.joinType !== "left") {
     return Result.ok(null);
   }
@@ -777,7 +763,9 @@ function applyLocalHashJoin(
 async function executeWindowResult<TContext>(
   windowNode: Extract<RelNode, { kind: "window" }>,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<InternalRow[]>> {
+): Promise<
+  BetterResult<InternalRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const rowsResult = await executeRelNodeResult(windowNode.input, context);
   if (Result.isError(rowsResult)) {
     return rowsResult;
@@ -893,7 +881,9 @@ function compareWindowEntries(
 async function executeProjectResult<TContext>(
   project: RelProjectNode,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<QueryRow[]>> {
+): Promise<
+  BetterResult<QueryRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const rowsResult = await executeRelNodeResult(project.input, context);
   if (Result.isError(rowsResult)) {
     return rowsResult;
@@ -923,7 +913,9 @@ async function executeProjectResult<TContext>(
 async function executeAggregateResult<TContext>(
   aggregate: Extract<RelNode, { kind: "aggregate" }>,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<QueryRow[]>> {
+): Promise<
+  BetterResult<QueryRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const rowsResult = await executeRelNodeResult(aggregate.input, context);
   if (Result.isError(rowsResult)) {
     return rowsResult;
@@ -986,7 +978,9 @@ async function executeAggregateResult<TContext>(
 async function executeSortResult<TContext>(
   sort: Extract<RelNode, { kind: "sort" }>,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<InternalRow[]>> {
+): Promise<
+  BetterResult<InternalRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const rowsResult = await executeRelNodeResult(sort.input, context);
   if (Result.isError(rowsResult)) {
     return rowsResult;
@@ -1013,7 +1007,9 @@ async function executeSortResult<TContext>(
 async function executeLimitOffsetResult<TContext>(
   limitOffset: Extract<RelNode, { kind: "limit_offset" }>,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<QueryRow[]>> {
+): Promise<
+  BetterResult<QueryRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const rowsResult = await executeRelNodeResult(limitOffset.input, context);
   if (Result.isError(rowsResult)) {
     return rowsResult;
@@ -1035,7 +1031,9 @@ async function executeLimitOffsetResult<TContext>(
 async function executeSetOpResult<TContext>(
   setOp: Extract<RelNode, { kind: "set_op" }>,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<QueryRow[]>> {
+): Promise<
+  BetterResult<QueryRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const leftRowsResult = await executeRelNodeResult(setOp.left, context);
   if (Result.isError(leftRowsResult)) {
     return leftRowsResult;
@@ -1067,7 +1065,9 @@ async function executeSetOpResult<TContext>(
 async function executeWithResult<TContext>(
   withNode: Extract<RelNode, { kind: "with" }>,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<QueryRow[]>> {
+): Promise<
+  BetterResult<QueryRow[], SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const cteRows = new Map(context.cteRows);
   const nested: RelExecutionContext<TContext> = {
     ...context,
@@ -1089,7 +1089,7 @@ function compileViewRelToExecutableResult(
   viewName: string,
   definition: SchemaViewRelNode | unknown,
   schema: SchemaDefinition,
-): SqlqlResult<RelNode> {
+): BetterResult<RelNode, SqlqlExecutionError> {
   if (isRelNode(definition)) {
     return Result.ok(definition);
   }
@@ -1176,7 +1176,7 @@ function rewriteViewBindingExprForExecution(
 function compileSchemaViewRelNodeResult(
   node: SchemaViewRelNode,
   schema: SchemaDefinition,
-): SqlqlResult<RelNode> {
+): BetterResult<RelNode, SqlqlExecutionError> {
   switch (node.kind) {
     case "scan": {
       const table =
@@ -1316,7 +1316,7 @@ function compileSchemaViewRelNodeResult(
   }
 }
 
-function resolveSchemaColRefResult(ref: { ref?: string }): SqlqlResult<string> {
+function resolveSchemaColRefResult(ref: { ref?: string }): BetterResult<string, SqlqlExecutionError> {
   if (!ref.ref) {
     return Result.err(
       new SqlqlExecutionError({
@@ -1510,7 +1510,7 @@ function evaluateRelExprResult(
   expr: RelExpr,
   row: InternalRow,
   subqueryResults: Map<string, unknown>,
-): SqlqlResult<unknown> {
+): BetterResult<unknown, SqlqlExecutionError> {
   switch (expr.kind) {
     case "literal":
       return Result.ok(expr.value);
@@ -1730,10 +1730,14 @@ function evaluateRelExprResult(
 async function prepareSubqueryResultsResult<TContext>(
   node: RelNode,
   context: RelExecutionContext<TContext>,
-): Promise<SqlqlResult<void>> {
+): Promise<
+  BetterResult<void, SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>
+> {
   const visited = new Set<string>();
 
-  const prepareExpr = async (expr: RelExpr): Promise<SqlqlResult<void>> => {
+  const prepareExpr = async (
+    expr: RelExpr,
+  ): Promise<BetterResult<void, SqlqlPlanningError | SqlqlExecutionError | SqlqlGuardrailError>> => {
     switch (expr.kind) {
       case "literal":
       case "column":
@@ -1844,7 +1848,7 @@ function testSqlLikePattern(value: string, pattern: string): boolean {
   return regex.test(value);
 }
 
-function castValueResult(value: unknown, target: unknown): SqlqlResult<unknown> {
+function castValueResult(value: unknown, target: unknown) {
   if (value == null) {
     return Result.ok(null);
   }
@@ -1878,7 +1882,7 @@ function evaluateAggregateMetricResult(
   values: unknown[],
   bucketSize: number,
   hasColumn: boolean,
-): SqlqlResult<unknown> {
+) {
   switch (fn) {
     case "count":
       return Result.ok(hasColumn ? values.filter((value) => value != null).length : bucketSize);
@@ -2017,7 +2021,7 @@ function toFiniteNumberResult(
     | "SUBSTR"
     | "ABS"
     | "ROUND",
-): SqlqlResult<number> {
+) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
     return Result.err(

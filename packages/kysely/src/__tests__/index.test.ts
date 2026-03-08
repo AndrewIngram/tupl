@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  unwrapProviderOperationResult,
   type ProviderFragment,
   type QueryRow,
   type RelNode,
@@ -329,10 +328,8 @@ describe("kysely adapter", () => {
       request: scanRequest,
     };
     const scanContext = { orgId: "org_1", db };
-    const scanPlan = unwrapProviderOperationResult(
-      await provider.compile(scanFragment, scanContext),
-    );
-    const scanRows = unwrapProviderOperationResult(await provider.execute(scanPlan, scanContext));
+    const scanPlan = (await provider.compile(scanFragment, scanContext)).unwrap();
+    const scanRows = (await provider.execute(scanPlan, scanContext)).unwrap();
     expect(scanRows).toEqual([{ id: "o1", user_id: "u1" }]);
 
     if (!provider.lookupMany) {
@@ -367,7 +364,7 @@ describe("kysely adapter", () => {
       },
     });
 
-    const plan = unwrapProviderOperationResult(
+    const plan = (
       await provider.compile(
         {
           kind: "scan",
@@ -379,11 +376,11 @@ describe("kysely adapter", () => {
           },
         },
         {},
-      ),
-    );
+      )
+    ).unwrap();
 
     await expect(
-      Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult),
+      Promise.resolve(provider.execute(plan, {})).then((result) => result.unwrap()),
     ).rejects.toThrow(
       "Kysely provider runtime binding did not resolve to a valid database instance.",
     );
@@ -439,8 +436,8 @@ describe("kysely adapter", () => {
     };
 
     expect(provider.canExecute(relFragment, {})).toBe(true);
-    const plan = unwrapProviderOperationResult(await provider.compile(relFragment, {}));
-    const rows = unwrapProviderOperationResult(await provider.execute(plan, {}));
+    const plan = (await provider.compile(relFragment, {})).unwrap();
+    const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([
       { id: "o2", email: "ada@example.com", total_cents: 3000 },

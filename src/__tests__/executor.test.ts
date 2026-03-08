@@ -2,7 +2,6 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import {
-  executeRelWithProviders,
   executeRelWithProvidersResult,
   type ProviderAdapter,
   type ProviderFragment,
@@ -572,7 +571,8 @@ describe("query/local executor", () => {
       output: [{ name: "org_id" }, { name: "order_count" }, { name: "gross_cents" }],
     };
 
-    const result = await executeRelWithProviders(
+    const result = (
+      await executeRelWithProvidersResult(
       rel,
       schema,
       providers,
@@ -582,7 +582,8 @@ describe("query/local executor", () => {
         maxLookupKeysPerBatch: 1000,
         maxLookupBatches: 10,
       },
-    );
+      )
+    ).unwrap();
 
     expect(result).toEqual([{ org_id: "org_1", order_count: 2, gross_cents: 3000 }]);
   });
@@ -670,7 +671,8 @@ describe("query/local executor", () => {
       output: [{ name: "id" }],
     };
 
-    const result = await executeRelWithProviders(
+    const result = (
+      await executeRelWithProvidersResult(
       rel,
       schema,
       providers,
@@ -680,7 +682,8 @@ describe("query/local executor", () => {
         maxLookupKeysPerBatch: 1000,
         maxLookupBatches: 10,
       },
-    );
+      )
+    ).unwrap();
 
     expect(result).toEqual([{ id: "a" }, { id: "b" }, { id: "c" }]);
   });
@@ -782,7 +785,8 @@ describe("query/local executor", () => {
       output: [{ name: "id" }, { name: "email" }],
     };
 
-    const result = await executeRelWithProviders(
+    const result = (
+      await executeRelWithProvidersResult(
       rel,
       schema,
       providers,
@@ -792,7 +796,8 @@ describe("query/local executor", () => {
         maxLookupKeysPerBatch: 1000,
         maxLookupBatches: 10,
       },
-    );
+      )
+    ).unwrap();
 
     expect(result).toEqual([
       { id: "u1", email: "a@example.com" },
@@ -883,7 +888,8 @@ describe("query/local executor", () => {
       output: [{ name: "id" }],
     };
 
-    const result = await executeRelWithProviders(
+    const result = (
+      await executeRelWithProvidersResult(
       rel,
       schema,
       providers,
@@ -893,7 +899,8 @@ describe("query/local executor", () => {
         maxLookupKeysPerBatch: 1000,
         maxLookupBatches: 10,
       },
-    );
+      )
+    ).unwrap();
 
     expect(result).toEqual([{ id: "o1" }, { id: "o3" }]);
   });
@@ -1002,7 +1009,8 @@ describe("query/local executor", () => {
       ],
     };
 
-    const result = await executeRelWithProviders(
+    const result = (
+      await executeRelWithProvidersResult(
       rel,
       schema,
       providers,
@@ -1012,7 +1020,8 @@ describe("query/local executor", () => {
         maxLookupKeysPerBatch: 1000,
         maxLookupBatches: 10,
       },
-    );
+      )
+    ).unwrap();
 
     expect(result).toContainEqual({ id: "a", team: "red", dense_rank: 1, rank: 1, row_number: 1 });
     expect(result).toContainEqual({ id: "b", team: "red", dense_rank: 2, rank: 2, row_number: 2 });

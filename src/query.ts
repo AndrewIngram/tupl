@@ -283,9 +283,7 @@ function makeDiagnostic(
   };
 }
 
-type QueryResult<T> = SqlqlResult<T>;
-
-function toSqlqlRuntimeError(error: unknown, operation: string): SqlqlError {
+function toSqlqlRuntimeError(error: unknown, operation: string) {
   if (
     SqlqlDiagnosticError.is(error) ||
     SqlqlExecutionError.is(error) ||
@@ -319,17 +317,17 @@ function unwrapQueryResult<T, E>(result: BetterResult<T, E>): T {
   throw result.error;
 }
 
-function tryQueryStep<T>(operation: string, fn: () => T): QueryResult<T> {
+function tryQueryStep<T>(operation: string, fn: () => T): BetterResult<T, SqlqlError> {
   return Result.try({
     try: () => fn() as Awaited<T>,
     catch: (error) => toSqlqlRuntimeError(error, operation),
-  }) as QueryResult<T>;
+  }) as BetterResult<T, SqlqlError>;
 }
 
 async function tryQueryStepAsync<T>(
   operation: string,
   fn: () => Promise<T>,
-): Promise<QueryResult<T>> {
+) {
   return Result.tryPromise({
     try: fn,
     catch: (error) => toSqlqlRuntimeError(error, operation),
@@ -339,7 +337,7 @@ async function tryQueryStepAsync<T>(
 function enforceExecutionRowLimitResult(
   rows: QueryRow[],
   guardrails: QueryGuardrails,
-): QueryResult<QueryRow[]> {
+) {
   if (rows.length > guardrails.maxExecutionRows) {
     return Result.err(
       new SqlqlGuardrailError({
@@ -362,7 +360,7 @@ async function withTimeoutResult<T>(
   operation: string,
   promiseFactory: () => Promise<T>,
   timeoutMs: number,
-): Promise<QueryResult<T>> {
+): Promise<BetterResult<T, SqlqlError>> {
   if (timeoutMs <= 0 || !Number.isFinite(timeoutMs)) {
     return tryQueryStepAsync(operation, promiseFactory);
   }
@@ -452,7 +450,7 @@ function buildCapabilityDiagnostics<TContext>(
 async function resolveProviderCapabilityForRel<TContext>(
   input: QueryInput<TContext>,
   rel: RelNode,
-): Promise<QueryResult<QueryCapabilityResolution<TContext>>> {
+): Promise<BetterResult<QueryCapabilityResolution<TContext>, SqlqlError>> {
   const fragmentResult = buildProviderFragmentForRelResult(rel, input.schema, input.context);
   if (Result.isError(fragmentResult)) {
     return fragmentResult;
@@ -497,7 +495,7 @@ async function resolveProviderCapabilityForRel<TContext>(
 function resolveSyncProviderCapabilityForRel<TContext>(
   input: QueryInput<TContext>,
   rel: RelNode,
-): QueryResult<QueryCapabilityResolution<TContext> | null> {
+): BetterResult<QueryCapabilityResolution<TContext> | null, SqlqlError> {
   const fragmentResult = buildProviderFragmentForRelResult(rel, input.schema, input.context);
   if (Result.isError(fragmentResult)) {
     return fragmentResult;
@@ -547,7 +545,7 @@ function resolveSyncProviderCapabilityForRel<TContext>(
 function maybeRejectFallbackResult<TContext>(
   input: QueryInput<TContext>,
   resolution: QueryCapabilityResolution<TContext>,
-): QueryResult<QueryCapabilityResolution<TContext>> {
+): BetterResult<QueryCapabilityResolution<TContext>, SqlqlDiagnosticError> {
   if (!resolution.provider || !resolution.report || resolution.report.supported) {
     return Result.ok(resolution);
   }
@@ -629,7 +627,7 @@ function hasSqlNode(node: RelNode): boolean {
 async function maybeExecuteWholeQueryFragmentResult<TContext>(
   input: QueryInput<TContext>,
   rel: RelNode,
-): Promise<QueryResult<QueryRow[] | null>> {
+): Promise<BetterResult<QueryRow[] | null, SqlqlError>> {
   const resolutionResult = await resolveProviderCapabilityForRel(input, rel);
   if (Result.isError(resolutionResult)) {
     return resolutionResult;
@@ -688,7 +686,7 @@ async function maybeExecuteWholeQueryFragmentResult<TContext>(
 function enforcePlannerNodeLimitResult(
   plannerNodeCount: number,
   guardrails: QueryGuardrails,
-): QueryResult<number> {
+) {
   if (plannerNodeCount > guardrails.maxPlannerNodes) {
     return Result.err(
       new SqlqlGuardrailError({
@@ -770,7 +768,7 @@ function createProviderFragmentSession<TContext>(
     ...(diagnostics.length > 0 ? { diagnostics } : {}),
   };
 
-  const runResult = async (): Promise<QueryResult<QueryRow[]>> => {
+  const runResult = async () => {
     if (executed) {
       return Result.ok(result ?? []);
     }
@@ -784,9 +782,7 @@ function createProviderFragmentSession<TContext>(
     };
 
     const compiledResult = await tryQueryStepAsync("compile provider fragment", async () =>
-      unwrapProviderOperationResult(
-        await Promise.resolve(provider.compile(fragment, input.context)),
-      ),
+      unwrapProviderOperationResult(await Promise.resolve(provider.compile(fragment, input.context))),
     );
     if (Result.isError(compiledResult)) {
       state = setFailedStepState(state, compiledResult.error, Date.now());
@@ -930,7 +926,7 @@ function createRelExecutionSession<TContext>(
   let emittedEvents: QueryStepEvent[] = [];
   let emittedIndex = 0;
 
-  const runResult = async (): Promise<QueryResult<QueryRow[]>> => {
+  const runResult = async () => {
     if (executed) {
       return Result.ok(result ?? []);
     }
@@ -994,7 +990,7 @@ function createRelExecutionSession<TContext>(
     result = limitedRowsResult.value;
     const completedRows = result;
 
-    const eventBuildResult = tryQueryStep("build session step events", () => {
+    const eventBuildResult = tryQueryStep("build session step events", (): QueryStepEvent[] => {
       const endedAt = Date.now();
       const duration = Math.max(endedAt - startedAt, 1);
       const stepCount = Math.max(executionOrder.length, 1);
@@ -1056,7 +1052,7 @@ function createRelExecutionSession<TContext>(
           states.set(rootStepId, setFailedStepState(rootState, eventBuildResult.error, endedAt));
         }
       }
-      return eventBuildResult;
+      return Result.err(eventBuildResult.error);
     }
 
     emittedEvents = eventBuildResult.value;
@@ -1703,7 +1699,7 @@ function tryCreateSyncProviderFragmentSession<TContext>(
   input: QuerySessionInput<TContext>,
   guardrails: QueryGuardrails,
   rel: RelNode,
-): QueryResult<QuerySession | null> {
+): BetterResult<QuerySession | null, SqlqlError> {
   const resolutionResult = resolveSyncProviderCapabilityForRel(input, rel);
   if (Result.isError(resolutionResult)) {
     return resolutionResult;
@@ -1745,7 +1741,7 @@ function normalizeRuntimeSchema<TContext>(input: QueryInput<TContext>): QueryInp
 
 function normalizeRuntimeSchemaResult<TContext>(
   input: QueryInput<TContext>,
-): QueryResult<QueryInput<TContext>> {
+): BetterResult<QueryInput<TContext>, SqlqlError> {
   return Result.gen(function* () {
     const normalizedInput = yield* tryQueryStep("normalize runtime schema", () =>
       normalizeRuntimeSchema(input),
@@ -1755,7 +1751,9 @@ function normalizeRuntimeSchemaResult<TContext>(
   });
 }
 
-function assertNoSqlNodesWithoutProviderFragmentResult(rel: RelNode): QueryResult<RelNode> {
+function assertNoSqlNodesWithoutProviderFragmentResult(
+  rel: RelNode,
+): BetterResult<RelNode, SqlqlRuntimeError> {
   if (hasSqlNode(rel)) {
     return Result.err(
       new SqlqlRuntimeError({
@@ -1772,7 +1770,7 @@ function assertNoSqlNodesWithoutProviderFragmentResult(rel: RelNode): QueryResul
 function resolveSyncProviderCapabilityForRelResult<TContext>(
   input: QueryInput<TContext>,
   rel: RelNode,
-): QueryResult<QueryCapabilityResolution<TContext> | null> {
+): BetterResult<QueryCapabilityResolution<TContext> | null, SqlqlError> {
   return Result.gen(function* () {
     const resolution = yield* resolveSyncProviderCapabilityForRel(input, rel);
     if (resolution) {
@@ -1784,7 +1782,7 @@ function resolveSyncProviderCapabilityForRelResult<TContext>(
 
 function createQuerySessionResult<TContext>(
   input: QuerySessionInput<TContext>,
-): QueryResult<QuerySession> {
+): BetterResult<QuerySession, SqlqlError> {
   const resolvedInputResult = normalizeRuntimeSchemaResult(input);
   if (Result.isError(resolvedInputResult)) {
     return resolvedInputResult;
@@ -1854,7 +1852,7 @@ function createQuerySessionInternal<TContext>(input: QuerySessionInput<TContext>
 
 async function queryInternalResult<TContext>(
   input: QueryInput<TContext>,
-): Promise<QueryResult<QueryRow[]>> {
+): Promise<BetterResult<QueryRow[], SqlqlError>> {
   return Result.gen(async function* () {
     const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
     const guardrails = resolveGuardrails(input.queryGuardrails);
@@ -1921,7 +1919,9 @@ function explainInternal<TContext>(input: QueryInput<TContext>): ExplainResult {
   return unwrapQueryResult(explainInternalResult(input));
 }
 
-function explainInternalResult<TContext>(input: QueryInput<TContext>): QueryResult<ExplainResult> {
+function explainInternalResult<TContext>(
+  input: QueryInput<TContext>,
+): BetterResult<ExplainResult, SqlqlError> {
   return Result.gen(function* () {
     const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
     const guardrails = resolveGuardrails(input.queryGuardrails);
@@ -1944,7 +1944,7 @@ function explainInternalResult<TContext>(input: QueryInput<TContext>): QueryResu
 
 function collectExecutableProvidersResult<TContext>(
   schema: SchemaDefinition,
-): QueryResult<ProvidersMap<TContext>> {
+): BetterResult<ProvidersMap<TContext>, SqlqlRuntimeError> {
   const providers: ProvidersMap<TContext> = {};
 
   for (const [tableName] of Object.entries(schema.tables)) {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  unwrapProviderOperationResult,
   type ProviderAdapter,
   type ProviderFragment,
   type QueryRow,
@@ -404,8 +403,8 @@ async function runRelFragment(
   const canExecute = await provider.canExecute(fragment, {});
   expect(typeof canExecute === "boolean" ? canExecute : canExecute.supported).toBe(true);
 
-  const compiled = unwrapProviderOperationResult(await provider.compile(fragment, {}));
-  return unwrapProviderOperationResult(await provider.execute(compiled, {}));
+  const compiled = (await provider.compile(fragment, {})).unwrap();
+  return (await provider.execute(compiled, {})).unwrap();
 }
 
 describe("provider conformance (rel fragments)", () => {

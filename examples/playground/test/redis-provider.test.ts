@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { unwrapProviderOperationResult } from "../../../src";
 import { createIoredisProvider } from "../../../packages/ioredis/src";
 import { SCENARIO_PRESETS } from "../src/examples";
 import { getPlaygroundRedisRuntime, reseedDownstreamDatabase } from "../src/pglite-runtime";
@@ -41,7 +40,7 @@ describe("playground/redis-provider", () => {
       },
     });
 
-    const rows = unwrapProviderOperationResult(
+    const rows = (
       await provider.lookupMany!(
         {
           table: "product_view_counts",
@@ -51,8 +50,8 @@ describe("playground/redis-provider", () => {
           where: [{ op: "gt", column: "view_count", value: 30 }],
         },
         { userId: "u_alex" },
-      ),
-    );
+      )
+    ).unwrap();
 
     expect(rows).toEqual([{ product_id: "p_router", view_count: 94 }]);
   });

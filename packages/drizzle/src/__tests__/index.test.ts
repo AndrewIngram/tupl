@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  unwrapProviderOperationResult,
   type ProviderFragment,
   type QueryRow,
   type RelNode,
@@ -267,7 +266,7 @@ describe("drizzle adapter", () => {
       }),
     );
     await expect(
-      Promise.resolve(provider.compile(relFragment, {})).then(unwrapProviderOperationResult),
+      Promise.resolve(provider.compile(relFragment, {})).then((result) => result.unwrap()),
     ).rejects.toThrow("Unsupported relational fragment for drizzle provider.");
   });
 
@@ -301,7 +300,7 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = unwrapProviderOperationResult(
+    const plan = (
       await provider.compile(
         {
           kind: "scan",
@@ -313,9 +312,9 @@ describe("drizzle adapter", () => {
           },
         },
         {},
-      ),
-    );
-    const rows = unwrapProviderOperationResult(await provider.execute(plan, {}));
+      )
+    ).unwrap();
+    const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([
       {
@@ -341,7 +340,7 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = unwrapProviderOperationResult(
+    const plan = (
       await provider.compile(
         {
           kind: "scan",
@@ -353,9 +352,9 @@ describe("drizzle adapter", () => {
           },
         },
         { db },
-      ),
-    );
-    const rows = unwrapProviderOperationResult(await provider.execute(plan, { db }));
+      )
+    ).unwrap();
+    const rows = (await provider.execute(plan, { db })).unwrap();
 
     expect(rows).toEqual([{ id: "u1" }]);
   });
@@ -375,7 +374,7 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = unwrapProviderOperationResult(
+    const plan = (
       await provider.compile(
         {
           kind: "scan",
@@ -387,11 +386,11 @@ describe("drizzle adapter", () => {
           },
         },
         {},
-      ),
-    );
+      )
+    ).unwrap();
 
     await expect(
-      Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult),
+      Promise.resolve(provider.execute(plan, {})).then((result) => result.unwrap()),
     ).rejects.toThrow(
       "Drizzle provider runtime binding did not resolve to a valid database instance.",
     );
@@ -409,7 +408,7 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = unwrapProviderOperationResult(
+    const plan = (
       await provider.compile(
         {
           kind: "scan",
@@ -421,11 +420,11 @@ describe("drizzle adapter", () => {
           },
         },
         {},
-      ),
-    );
+      )
+    ).unwrap();
 
     await expect(
-      Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult),
+      Promise.resolve(provider.execute(plan, {})).then((result) => result.unwrap()),
     ).rejects.toThrow(
       'Unable to derive columns for table "users". Provide an explicit columns map.',
     );
@@ -599,7 +598,7 @@ describe("drizzle adapter", () => {
           },
           {},
         ),
-      ).then(unwrapProviderOperationResult),
+      ).then((result) => result.unwrap()),
     ).rejects.toThrow("Unknown drizzle table config: missing");
   });
 
@@ -728,7 +727,7 @@ describe("drizzle adapter", () => {
     await expect(
       Promise.resolve(
         provider.compile({ kind: "rel", provider: "drizzle", rel }, { db: withoutWithDb }),
-      ).then(unwrapProviderOperationResult),
+      ).then((result) => result.unwrap()),
     ).rejects.toThrow(
       'Drizzle database instance does not support required APIs for "with" rel pushdown.',
     );
@@ -812,7 +811,7 @@ describe("drizzle adapter", () => {
       output: [],
     };
 
-    const plan = unwrapProviderOperationResult(
+    const plan = (
       await provider.compile(
         {
           kind: "rel",
@@ -820,9 +819,9 @@ describe("drizzle adapter", () => {
           rel,
         },
         {},
-      ),
-    );
-    const rows = unwrapProviderOperationResult(await provider.execute(plan, {}));
+      )
+    ).unwrap();
+    const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([
       { id: "o2", email: "ada@example.com", total_cents: 3000 },
@@ -937,7 +936,7 @@ describe("drizzle adapter", () => {
 
     expect(provider.canExecute({ kind: "rel", provider: "drizzle", rel }, {})).toBe(true);
 
-    const plan = unwrapProviderOperationResult(
+    const plan = (
       await provider.compile(
         {
           kind: "rel",
@@ -945,9 +944,9 @@ describe("drizzle adapter", () => {
           rel,
         },
         {},
-      ),
-    );
-    const rows = unwrapProviderOperationResult(await provider.execute(plan, {}));
+      )
+    ).unwrap();
+    const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([
       { id: "o1", total_cents: 25000, total_dollars: 250, is_large_order: false },
