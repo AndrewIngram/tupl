@@ -11,6 +11,15 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         "@": resolve(rootDir, "./src"),
+        tupl: resolve(rootDir, "../../src/index.ts"),
+        "@tupl/core": resolve(rootDir, "../../packages/core/src/index.ts"),
+        "@tupl/provider-drizzle": resolve(rootDir, "../../packages/provider-drizzle/src/index.ts"),
+        "@tupl/provider-ioredis": resolve(rootDir, "../../packages/provider-ioredis/src/index.ts"),
+        "@tupl/provider-objection": resolve(
+          rootDir,
+          "../../packages/provider-objection/src/index.ts",
+        ),
+        "@tupl/provider-kysely": resolve(rootDir, "../../packages/provider-kysely/src/index.ts"),
       },
     },
     worker: {
