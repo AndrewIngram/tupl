@@ -21,7 +21,7 @@ import type {
   ProviderFragment,
   QueryRow,
   TableScanRequest,
-} from "sqlql";
+} from "tupl";
 
 type DbContext = {
   tenantId: string;
@@ -188,7 +188,7 @@ import {
   createDataEntityHandle,
   createExecutableSchema,
   createSchemaBuilder,
-} from "sqlql";
+} from "tupl";
 
 const ordersEntity = createDataEntityHandle<"id" | "total_cents" | "created_at">({
   entity: "orders",
@@ -290,7 +290,7 @@ Start with `scan` support:
 
 For unsupported `rel` fragments, return an unsupported capability report from `canExecute`.
 
-That is enough to make a provider work because `sqlql` can fall back to local logical execution.
+That is enough to make a provider work because `tupl` can fall back to local logical execution.
 
 ## Real Build Order
 
@@ -425,7 +425,7 @@ Current structure:
 - `message`
 - `details`
 
-Use SQLSTATE-like classes as categories only. `sqlql` planner and fallback failures are not standard engine SQLSTATEs.
+Use SQLSTATE-like classes as categories only. `tupl` planner and fallback failures are not standard engine SQLSTATEs.
 
 Recommended failure details:
 

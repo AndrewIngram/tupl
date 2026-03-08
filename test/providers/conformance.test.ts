@@ -5,14 +5,14 @@ import {
   type ProviderFragment,
   type QueryRow,
   type RelNode,
-} from "../../src";
-import { createDrizzleProvider, type DrizzleQueryExecutor } from "../../packages/drizzle/src";
-import { createKyselyProvider } from "../../packages/kysely/src";
+} from "@tupl/core";
+import { createDrizzleProvider, type DrizzleQueryExecutor } from "../../packages/provider-drizzle/src";
+import { createKyselyProvider } from "../../packages/provider-kysely/src";
 import {
   createObjectionProvider,
   type KnexLike,
   type KnexLikeQueryBuilder,
-} from "../../packages/objection/src";
+} from "../../packages/provider-objection/src";
 
 function buildRel(): RelNode {
   return {

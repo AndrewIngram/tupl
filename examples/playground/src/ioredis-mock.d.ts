@@ -1,5 +1,5 @@
 declare module "ioredis-mock" {
-  import type { RedisLike, RedisPipelineLike } from "@sqlql/ioredis";
+  import type { RedisLike, RedisPipelineLike } from "@tupl/provider-ioredis";
 
   export default class RedisMock implements RedisLike {
     pipeline(): RedisPipelineLike;

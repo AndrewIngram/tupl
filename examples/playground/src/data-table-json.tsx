@@ -70,7 +70,7 @@ export function DataTableJsonEditor({
     <div className={cn("flex min-h-0 flex-col gap-3", className)}>
       <div className={cn("min-h-0 overflow-hidden rounded-md border", editorClassName)}>
         <Editor
-          path={`inmemory://sqlql/data-table-${tableName}.json`}
+          path={`inmemory://tupl/data-table-${tableName}.json`}
           language="json"
           value={text}
           onChange={(value) => handleChange(value ?? "")}

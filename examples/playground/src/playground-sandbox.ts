@@ -108,7 +108,7 @@ interface ProviderModuleExports<TContext> {
   redisProvider?: ProviderAdapter<TContext>;
 }
 
-interface SqlqlRuntimeModule {
+interface TuplRuntimeModule {
   lowerSqlToRel: typeof import("../../../src/index").lowerSqlToRel;
   planPhysicalQuery: typeof import("../../../src/index").planPhysicalQuery;
 }
@@ -122,7 +122,7 @@ interface PlaygroundRuntimeModule {
 }
 
 interface SandboxProviderRuntime<TContext> {
-  sqlqlModule: SqlqlRuntimeModule;
+  tuplModule: TuplRuntimeModule;
   executableSchema: ExecutableSchema<TContext, SchemaDefinition>;
   dbProvider: ProviderAdapter<TContext>;
   redisProvider: ProviderAdapter<TContext>;
@@ -269,9 +269,9 @@ function createProviderRuntime<TContext>(
   runtime.executeModule(PLAYGROUND_GENERATED_DB_FILE_PATH);
   const dbProviderModule = runtime.executeModule(PLAYGROUND_DB_PROVIDER_FILE_PATH);
   const redisProviderModule = runtime.executeModule(PLAYGROUND_REDIS_PROVIDER_FILE_PATH);
-  const sqlqlModule = runtime.executeModule(
-    `${workspace.rootPath}/node_modules/sqlql/index.ts`,
-  ) as unknown as SqlqlRuntimeModule;
+  const tuplModule = runtime.executeModule(
+    `${workspace.rootPath}/node_modules/tupl/index.ts`,
+  ) as unknown as TuplRuntimeModule;
   const playgroundRuntimeModule = externalModules["@playground/runtime"] as
     | PlaygroundRuntimeModule
     | undefined;
@@ -288,7 +288,7 @@ function createProviderRuntime<TContext>(
   }
 
   return {
-    sqlqlModule,
+    tuplModule,
     executableSchema: extractSchemaExport(schemaModule) as ExecutableSchema<
       TContext,
       SchemaDefinition
@@ -444,14 +444,14 @@ export async function createSandboxSession(
 
   const runtime = await getOrCreateProviderRuntime(compiled);
   const runtimeContext = toRuntimeContext(context, runtime);
-  const { sqlqlModule, executableSchema, dbProvider, redisProvider } = runtime;
+  const { tuplModule, executableSchema, dbProvider, redisProvider } = runtime;
 
   const providers = {
     [dbProvider.name]: dbProvider,
     [redisProvider.name]: redisProvider,
   };
-  const lowered = sqlqlModule.lowerSqlToRel(compiled.sql, executableSchema.schema);
-  const physicalPlan = await sqlqlModule.planPhysicalQuery(
+  const lowered = tuplModule.lowerSqlToRel(compiled.sql, executableSchema.schema);
+  const physicalPlan = await tuplModule.planPhysicalQuery(
     lowered.rel,
     executableSchema.schema,
     providers,

@@ -1,9 +1,9 @@
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { and, eq } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { createDrizzleProvider } from "@sqlql/drizzle";
-import { createSeededSqliteDatabase, type DemoContext } from "@sqlql/example-shared";
-import { createSchemaBuilder, createExecutableSchema } from "sqlql";
+import { createDrizzleProvider } from "@tupl/provider-drizzle";
+import { createSeededSqliteDatabase, type DemoContext } from "@tupl/example-shared";
+import { createSchemaBuilder, createExecutableSchema } from "tupl";
 
 const vendorsRawTable = sqliteTable("vendors_raw", {
   id: text("id").primaryKey().notNull(),
