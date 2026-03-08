@@ -267,7 +267,9 @@ export function validateRelAgainstSchema(node: RelNode, schema: SchemaDefinition
     entity?: SchemaDataEntityHandle<string>,
   ): void => {
     if (entity?.columns) {
-      const logicalColumn = column.includes(".") ? column.slice(column.lastIndexOf(".") + 1) : column;
+      const logicalColumn = column.includes(".")
+        ? column.slice(column.lastIndexOf(".") + 1)
+        : column;
       if (!(logicalColumn in entity.columns)) {
         throw new Error(`Unknown column in relational plan: ${tableName}.${logicalColumn}`);
       }

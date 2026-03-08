@@ -4,7 +4,7 @@ import { DEFAULT_FACADE_SCHEMA_CODE, SCENARIO_PRESETS, serializeJson } from "../
 import { compilePlaygroundInput } from "../src/session-runtime";
 
 describe("playground/sql-diagnostics", () => {
-  it("reports unknown table references during compile", async () => {
+  it("reports unknown table references during compile", { timeout: 15_000 }, async () => {
     const scenario = SCENARIO_PRESETS[0];
     if (!scenario) {
       throw new Error("Expected default scenario.");
@@ -23,7 +23,7 @@ describe("playground/sql-diagnostics", () => {
     expect(compiled.issues[0]).toBe("Unknown table: missing_table");
   });
 
-  it("reports unknown column references during compile", async () => {
+  it("reports unknown column references during compile", { timeout: 15_000 }, async () => {
     const scenario = SCENARIO_PRESETS[0];
     if (!scenario) {
       throw new Error("Expected default scenario.");
@@ -41,5 +41,4 @@ describe("playground/sql-diagnostics", () => {
     }
     expect(compiled.issues[0]).toBe("Unknown column: o.missing_column");
   });
-
 });

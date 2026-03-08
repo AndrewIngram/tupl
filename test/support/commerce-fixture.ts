@@ -1,7 +1,7 @@
-import { buildStaticSchema } from "./schema-builder";
+import { buildEntitySchema } from "./schema-builder";
 import type { RowsByTable } from "./query-harness";
 
-export const commerceSchema = buildStaticSchema({
+export const commerceSchema = buildEntitySchema({
   orders: {
     columns: {
       id: { type: "text", nullable: false },

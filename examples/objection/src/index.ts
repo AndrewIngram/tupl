@@ -1,9 +1,6 @@
 import { createObjectionProvider, type ObjectionProviderShape } from "@sqlql/objection";
 import { SQLITE_DDL, SQLITE_SEED, type DemoContext } from "@sqlql/example-shared";
-import {
-  createSchemaBuilder,
-  createExecutableSchema,
-} from "sqlql";
+import { createSchemaBuilder, createExecutableSchema } from "sqlql";
 import knexModule from "knex";
 
 const { knex: createKnex } = knexModule;
@@ -31,26 +28,23 @@ type DemoObjectionEntities = ObjectionProviderShape<
   DemoContext
 >;
 
-function getOrdersQueryBuilder(
-  knex: ReturnType<typeof createKnex>,
-  context: DemoContext,
-) {
+function getOrdersQueryBuilder(knex: ReturnType<typeof createKnex>, context: DemoContext) {
   return knex("orders_raw").where({
     org_id: context.orgId,
     user_id: context.userId,
   });
 }
 
-function getVendorsQueryBuilder(
-  knex: ReturnType<typeof createKnex>,
-  context: DemoContext,
-) {
+function getVendorsQueryBuilder(knex: ReturnType<typeof createKnex>, context: DemoContext) {
   return knex("vendors_raw").where({
     org_id: context.orgId,
   });
 }
 
-async function executeSqlBatch(knexInstance: ReturnType<typeof createKnex>, sqlText: string): Promise<void> {
+async function executeSqlBatch(
+  knexInstance: ReturnType<typeof createKnex>,
+  sqlText: string,
+): Promise<void> {
   const statements = sqlText
     .split(";")
     .map((statement) => statement.trim())
@@ -110,25 +104,23 @@ async function main(): Promise<void> {
   }
 
   const schemaBuilder = createSchemaBuilder<DemoContext>();
-  const myOrders = schemaBuilder.table(ordersEntity, {
-    name: "myOrders",
+  const myOrders = schemaBuilder.table("myOrders", ordersEntity, {
     columns: ({ col, expr }) => ({
       id: col.id("id"),
       vendorId: col.string("vendor_id"),
       totalCents: col.integer("total_cents"),
       createdAt: col.string("created_at"),
-      totalDollars: col.real(
-        expr.divide(col("totalCents"), expr.literal(100)),
-        { nullable: false },
-      ),
-      isLargeOrder: col.boolean(
-        expr.gte(col("totalCents"), expr.literal(3000)),
-        { nullable: false },
-      ),
+      totalDollars: col.real(expr.divide(col("totalCents"), expr.literal(100)), {
+        nullable: false,
+      }),
+      isLargeOrder: col.boolean(expr.gte(col("totalCents"), expr.literal(3000)), {
+        nullable: false,
+      }),
     }),
   });
 
   const myOrderFacts = schemaBuilder.view(
+    "myOrderFacts",
     ({ scan, join, col, expr }) =>
       join({
         left: scan(myOrders),
@@ -137,7 +129,6 @@ async function main(): Promise<void> {
         type: "inner",
       }),
     {
-      name: "myOrderFacts",
       columns: ({ col }) => ({
         orderId: col.id(myOrders, "id"),
         vendorId: col.string(myOrders, "vendorId", { nullable: false }),
@@ -149,6 +140,7 @@ async function main(): Promise<void> {
     },
   );
   schemaBuilder.view(
+    "myVendorSpend",
     ({ scan, aggregate, col, agg }) =>
       aggregate({
         from: scan(myOrderFacts),
@@ -162,7 +154,6 @@ async function main(): Promise<void> {
         },
       }),
     {
-      name: "myVendorSpend",
       columns: ({ col }) => ({
         vendorId: col.id("vendorId"),
         vendorName: col.string("vendorName"),

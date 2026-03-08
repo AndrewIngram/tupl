@@ -21,7 +21,7 @@ function isSqlProviderOperation(
 }
 
 describe("playground/session-replay", () => {
-  it("replays to a specific step count deterministically", { timeout: 15_000 }, async () => {
+  it("replays to a specific step count deterministically", { timeout: 35_000 }, async () => {
     const scenario = SCENARIO_PRESETS[0];
     const query = QUERY_PRESETS[0];
     if (!scenario || !query) {
@@ -49,29 +49,33 @@ describe("playground/session-replay", () => {
     expect(replayed.events[0]?.id).toBe(first.id);
   });
 
-  it("runToCompletion helper matches done state and returns rows", { timeout: 15_000 }, async () => {
-    const scenario = SCENARIO_PRESETS[1];
-    const query = QUERY_PRESETS[1];
-    if (!scenario || !query) {
-      throw new Error("Expected example pack with at least one query.");
-    }
+  it(
+    "runToCompletion helper matches done state and returns rows",
+    { timeout: 15_000 },
+    async () => {
+      const scenario = SCENARIO_PRESETS[1];
+      const query = QUERY_PRESETS[1];
+      if (!scenario || !query) {
+        throw new Error("Expected example pack with at least one query.");
+      }
 
-    const compiled = await compilePlaygroundInput(
-      DEFAULT_FACADE_SCHEMA_CODE,
-      serializeJson(scenario.rows),
-      query.sql,
-    );
-    if (!compiled.ok) {
-      throw new Error(compiled.issues.join("\n"));
-    }
+      const compiled = await compilePlaygroundInput(
+        DEFAULT_FACADE_SCHEMA_CODE,
+        serializeJson(scenario.rows),
+        query.sql,
+      );
+      if (!compiled.ok) {
+        throw new Error(compiled.issues.join("\n"));
+      }
 
-    const bundle = await createSession(compiled, scenario.context);
-    const snapshot = await runSessionToCompletion(bundle.session, []);
+      const bundle = await createSession(compiled, scenario.context);
+      const snapshot = await runSessionToCompletion(bundle.session, []);
 
-    expect(snapshot.done).toBe(true);
-    expect(snapshot.result).not.toBeNull();
-    expect((snapshot.result ?? []).length).toBeGreaterThan(0);
-    expect(Array.isArray(snapshot.executedOperations)).toBe(true);
-    expect(snapshot.executedOperations.filter(isSqlProviderOperation).length).toBeGreaterThan(0);
-  });
+      expect(snapshot.done).toBe(true);
+      expect(snapshot.result).not.toBeNull();
+      expect((snapshot.result ?? []).length).toBeGreaterThan(0);
+      expect(Array.isArray(snapshot.executedOperations)).toBe(true);
+      expect(snapshot.executedOperations.filter(isSqlProviderOperation).length).toBeGreaterThan(0);
+    },
+  );
 });

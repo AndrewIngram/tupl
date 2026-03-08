@@ -59,8 +59,7 @@ const dbProvider = createDrizzleProvider<QueryContext>({
   tables: {
     orders: {
       table: ordersRaw,
-      scope: (ctx) =>
-        and(eq(ordersRaw.org_id, ctx.orgId), eq(ordersRaw.user_id, ctx.userId)),
+      scope: (ctx) => and(eq(ordersRaw.org_id, ctx.orgId), eq(ordersRaw.user_id, ctx.userId)),
     },
     vendors: {
       table: vendorsRaw,
@@ -78,7 +77,7 @@ const dbProvider = createDrizzleProvider<QueryContext>({
 import { createExecutableSchema } from "sqlql";
 
 const executableSchema = createExecutableSchema<QueryContext>(({ table, view }) => {
-  const myOrders = table(dbProvider.entities.orders, {
+  const myOrders = table("myOrders", dbProvider.entities.orders, {
     columns: ({ col, expr }) => ({
       id: col.id("id"),
       vendorId: col.string("vendor_id"),
@@ -87,18 +86,17 @@ const executableSchema = createExecutableSchema<QueryContext>(({ table, view }) 
       }),
       totalCents: col.integer("total_cents"),
       createdAt: col.timestamp("created_at"),
-      totalDollars: col.real(
-        expr.divide(col("totalCents"), expr.literal(100)),
-        { nullable: false },
-      ),
-      isLargeOrder: col.boolean(
-        expr.gte(col("totalCents"), expr.literal(3000)),
-        { nullable: false },
-      ),
+      totalDollars: col.real(expr.divide(col("totalCents"), expr.literal(100)), {
+        nullable: false,
+      }),
+      isLargeOrder: col.boolean(expr.gte(col("totalCents"), expr.literal(3000)), {
+        nullable: false,
+      }),
     }),
   });
 
   const myOrderFacts = view(
+    "myOrderFacts",
     ({ scan, join, col, expr }) =>
       join({
         left: scan(myOrders),
@@ -119,6 +117,7 @@ const executableSchema = createExecutableSchema<QueryContext>(({ table, view }) 
   );
 
   const myVendorSpend = view(
+    "myVendorSpend",
     ({ scan, aggregate, col, agg }) =>
       aggregate({
         from: scan(myOrderFacts),
@@ -201,7 +200,7 @@ If your database handle is already static for the lifetime of the provider, you 
 
 ## Troubleshooting checklist
 
-- provider `tables` keys match the entities you bind in `table(provider.entities.someTable, ...)`
+- provider `tables` keys match the entities you bind in `table("logicalName", provider.entities.someTable, ...)`
 - scoped columns exist on physical tables
 - facade FK references target facade table/column names
 - any unsupported query shape is either pushed down partially or handled by fallback/local execution

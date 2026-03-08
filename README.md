@@ -50,24 +50,23 @@ const dbProvider = createDrizzleProvider<QueryContext>({
 });
 
 const executableSchema = createExecutableSchema<QueryContext>(({ table, view }) => {
-  const myOrders = table(dbProvider.entities.orders, {
+  const myOrders = table("myOrders", dbProvider.entities.orders, {
     columns: ({ col, expr }) => ({
       id: col.id("id"),
       vendorId: col.string("vendor_id"),
       totalCents: col.integer("total_cents"),
       createdAt: col.timestamp("created_at"),
-      totalDollars: col.real(
-        expr.divide(col("totalCents"), expr.literal(100)),
-        { nullable: false },
-      ),
-      isLargeOrder: col.boolean(
-        expr.gte(col("totalCents"), expr.literal(3000)),
-        { nullable: false },
-      ),
+      totalDollars: col.real(expr.divide(col("totalCents"), expr.literal(100)), {
+        nullable: false,
+      }),
+      isLargeOrder: col.boolean(expr.gte(col("totalCents"), expr.literal(3000)), {
+        nullable: false,
+      }),
     }),
   });
 
   const myOrderFacts = view(
+    "myOrderFacts",
     ({ scan, join, col, expr }) =>
       join({
         left: scan(myOrders),
@@ -92,6 +91,7 @@ const executableSchema = createExecutableSchema<QueryContext>(({ table, view }) 
       myOrders,
       myOrderFacts,
       myVendorSpend: view(
+        "myVendorSpend",
         ({ scan, aggregate, col, agg }) =>
           aggregate({
             from: scan(myOrderFacts),
@@ -163,7 +163,7 @@ const kvProvider = createKvProvider({
 
 const executableSchema = createExecutableSchema(({ table }) => ({
   tables: {
-    productViewCounts: table(kvProvider.entities.product_view_counts, {
+    productViewCounts: table("productViewCounts", kvProvider.entities.product_view_counts, {
       columns: ({ col }) => ({
         productId: col.string("product_id"),
         viewCount: col.integer("view_count"),
@@ -191,12 +191,12 @@ Execution behavior notes:
 
 ## Adapter support matrix
 
-| Adapter | scan/filter/sort/limit | lookupMany | single-query rel pushdown (core join/aggregate) | advanced rel pushdown (with/set-op/window) | local fallback when unsupported | explicit shape rejection |
-| --- | --- | --- | --- | --- | --- | --- |
-| `@sqlql/drizzle` | Yes | Yes | Yes | Partial | Yes | Yes |
-| `@sqlql/kysely` | Yes | Yes | Yes | Partial | Yes | Yes |
-| `@sqlql/objection` | Yes | Yes | Yes | Partial | Yes | Yes |
-| Custom non-relational | Custom | Custom | Custom | Custom | Yes | Yes |
+| Adapter               | scan/filter/sort/limit | lookupMany | single-query rel pushdown (core join/aggregate) | advanced rel pushdown (with/set-op/window) | local fallback when unsupported | explicit shape rejection |
+| --------------------- | ---------------------- | ---------- | ----------------------------------------------- | ------------------------------------------ | ------------------------------- | ------------------------ |
+| `@sqlql/drizzle`      | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
+| `@sqlql/kysely`       | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
+| `@sqlql/objection`    | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
+| Custom non-relational | Custom                 | Custom     | Custom                                          | Custom                                     | Yes                             | Yes                      |
 
 ## Guides
 

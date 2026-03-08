@@ -2,13 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createMethodsProvider } from "../support/methods-provider";
 import { aggregateArrayRows, createArrayTableMethods } from "../../src/array-methods";
 
-import {
-  defineTableMethods,
-  type TableAggregateRequest,
-} from "../../src";
+import { defineTableMethods, type TableAggregateRequest } from "../../src";
 import { commerceRows, commerceSchema } from "../support/commerce-fixture";
 import { withQueryHarness } from "../support/query-harness";
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -65,7 +62,7 @@ describe("query/aggregates", () => {
   });
 
   it("matches sqlite aggregate behavior on empty tables", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       entries: {
         columns: {
           id: { type: "text", nullable: false },
@@ -110,7 +107,7 @@ describe("query/aggregates", () => {
   });
 
   it("handles null grouping keys and null aggregate inputs", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       events: {
         columns: {
           id: { type: "text", nullable: false },

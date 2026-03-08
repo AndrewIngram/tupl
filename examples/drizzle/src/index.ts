@@ -3,10 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createDrizzleProvider } from "@sqlql/drizzle";
 import { createSeededSqliteDatabase, type DemoContext } from "@sqlql/example-shared";
-import {
-  createSchemaBuilder,
-  createExecutableSchema,
-} from "sqlql";
+import { createSchemaBuilder, createExecutableSchema } from "sqlql";
 
 const vendorsRawTable = sqliteTable("vendors_raw", {
   id: text("id").primaryKey().notNull(),
@@ -33,10 +30,7 @@ async function main(): Promise<void> {
     orders_raw: {
       table: ordersRawTable,
       scope: (context: RuntimeDemoContext) =>
-        and(
-          eq(ordersRawTable.orgId, context.orgId),
-          eq(ordersRawTable.userId, context.userId),
-        ),
+        and(eq(ordersRawTable.orgId, context.orgId), eq(ordersRawTable.userId, context.userId)),
     },
     vendors_raw: {
       table: vendorsRawTable,
@@ -51,25 +45,23 @@ async function main(): Promise<void> {
   });
 
   const schemaBuilder = createSchemaBuilder<RuntimeDemoContext>();
-  const myOrders = schemaBuilder.table(dbProvider.entities.orders_raw, {
-    name: "myOrders",
+  const myOrders = schemaBuilder.table("myOrders", dbProvider.entities.orders_raw, {
     columns: ({ col, expr }) => ({
       id: col.id("id"),
       vendorId: col.string("vendorId"),
       totalCents: col.integer("totalCents"),
       createdAt: col.string("createdAt"),
-      totalDollars: col.real(
-        expr.divide(col("totalCents"), expr.literal(100)),
-        { nullable: false },
-      ),
-      isLargeOrder: col.boolean(
-        expr.gte(col("totalCents"), expr.literal(3000)),
-        { nullable: false },
-      ),
+      totalDollars: col.real(expr.divide(col("totalCents"), expr.literal(100)), {
+        nullable: false,
+      }),
+      isLargeOrder: col.boolean(expr.gte(col("totalCents"), expr.literal(3000)), {
+        nullable: false,
+      }),
     }),
   });
 
   const myOrderFacts = schemaBuilder.view(
+    "myOrderFacts",
     ({ scan, join, col, expr }) =>
       join({
         left: scan(myOrders),
@@ -78,7 +70,6 @@ async function main(): Promise<void> {
         type: "inner",
       }),
     {
-      name: "myOrderFacts",
       columns: ({ col }) => ({
         orderId: col.id(myOrders, "id"),
         vendorId: col.string(myOrders, "vendorId", { nullable: false }),
@@ -90,6 +81,7 @@ async function main(): Promise<void> {
     },
   );
   schemaBuilder.view(
+    "myVendorSpend",
     ({ scan, aggregate, col, agg }) =>
       aggregate({
         from: scan(myOrderFacts),
@@ -103,7 +95,6 @@ async function main(): Promise<void> {
         },
       }),
     {
-      name: "myVendorSpend",
       columns: ({ col }) => ({
         vendorId: col.id("vendorId"),
         vendorName: col.string("vendorName"),

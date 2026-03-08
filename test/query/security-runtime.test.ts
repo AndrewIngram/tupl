@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { queryWithMethods } from "../support/methods-provider";
 import { createArrayTableMethods } from "../../src/array-methods";
 import { defineTableMethods } from "../../src";
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
 describe("query/security", () => {
   it("rejects selecting columns that are not declared in the schema facade", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: "text",
@@ -31,7 +31,7 @@ describe("query/security", () => {
   });
 
   it("rejects filtering on columns that are not declared in the schema facade", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: "text",
@@ -55,7 +55,7 @@ describe("query/security", () => {
   });
 
   it("rejects joining on undeclared columns", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",
@@ -86,7 +86,7 @@ describe("query/security", () => {
   });
 
   it("rejects sorting on columns that are not declared in the schema facade", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: "text",
@@ -96,7 +96,9 @@ describe("query/security", () => {
     });
 
     const methods = defineTableMethods(schema, {
-      users: createArrayTableMethods([{ id: "u1", email: "a@example.com", created_at: "2025-01-01" }]),
+      users: createArrayTableMethods([
+        { id: "u1", email: "a@example.com", created_at: "2025-01-01" },
+      ]),
     });
 
     await expect(
@@ -110,7 +112,7 @@ describe("query/security", () => {
   });
 
   it("allows querying declared facade columns", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: "text",

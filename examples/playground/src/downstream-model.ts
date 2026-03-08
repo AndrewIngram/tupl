@@ -1,5 +1,9 @@
 import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
-import { createSchemaBuilder, type SchemaDefinition } from "../../../src/index";
+import {
+  createDataEntityHandle,
+  createSchemaBuilder,
+  type SchemaDefinition,
+} from "../../../src/index";
 
 export const orgsTable = pgTable("orgs", {
   id: text("id").primaryKey().notNull(),
@@ -93,19 +97,17 @@ export const DOWNSTREAM_TABLES = {
 export const DOWNSTREAM_TABLE_NAMES = Object.keys(DOWNSTREAM_TABLES);
 
 const downstreamRowsSchemaBuilder = createSchemaBuilder<Record<string, never>>();
+const downstreamEntity = (name: string) =>
+  createDataEntityHandle({ entity: name, provider: "dbProvider" });
 
-downstreamRowsSchemaBuilder.table({
-  name: "orgs",
-  provider: "dbProvider",
+downstreamRowsSchemaBuilder.table("orgs", downstreamEntity("orgs"), {
   columns: {
     id: { type: "text", nullable: false },
     name: { type: "text", nullable: false },
   },
 });
 
-downstreamRowsSchemaBuilder.table({
-  name: "users",
-  provider: "dbProvider",
+downstreamRowsSchemaBuilder.table("users", downstreamEntity("users"), {
   columns: {
     id: { type: "text", nullable: false },
     org_id: {
@@ -127,9 +129,7 @@ downstreamRowsSchemaBuilder.table({
   },
 });
 
-downstreamRowsSchemaBuilder.table({
-  name: "vendors",
-  provider: "dbProvider",
+downstreamRowsSchemaBuilder.table("vendors", downstreamEntity("vendors"), {
   columns: {
     id: { type: "text", nullable: false },
     org_id: {
@@ -150,9 +150,7 @@ downstreamRowsSchemaBuilder.table({
   },
 });
 
-downstreamRowsSchemaBuilder.table({
-  name: "products",
-  provider: "dbProvider",
+downstreamRowsSchemaBuilder.table("products", downstreamEntity("products"), {
   columns: {
     id: { type: "text", nullable: false },
     org_id: {
@@ -175,9 +173,7 @@ downstreamRowsSchemaBuilder.table({
   },
 });
 
-downstreamRowsSchemaBuilder.table({
-  name: "orders",
-  provider: "dbProvider",
+downstreamRowsSchemaBuilder.table("orders", downstreamEntity("orders"), {
   columns: {
     id: { type: "text", nullable: false },
     org_id: {
@@ -215,9 +211,7 @@ downstreamRowsSchemaBuilder.table({
   },
 });
 
-downstreamRowsSchemaBuilder.table({
-  name: "order_items",
-  provider: "dbProvider",
+downstreamRowsSchemaBuilder.table("order_items", downstreamEntity("order_items"), {
   columns: {
     id: { type: "text", nullable: false },
     org_id: {
@@ -257,9 +251,7 @@ downstreamRowsSchemaBuilder.table({
   },
 });
 
-downstreamRowsSchemaBuilder.table({
-  name: "user_product_access",
-  provider: "dbProvider",
+downstreamRowsSchemaBuilder.table("user_product_access", downstreamEntity("user_product_access"), {
   columns: {
     id: { type: "text", nullable: false },
     user_id: {

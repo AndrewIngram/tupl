@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { unwrapProviderOperationResult, type ProviderFragment, type QueryRow, type RelNode } from "../../src";
+import {
+  unwrapProviderOperationResult,
+  type ProviderFragment,
+  type QueryRow,
+  type RelNode,
+} from "../../src";
 import {
   createDrizzleProvider,
   impossibleCondition,
@@ -254,15 +259,16 @@ describe("drizzle adapter", () => {
       provider: "warehouse",
       rel: sqlRel,
     };
-    expect(provider.canExecute(relFragment, {})).toEqual(expect.objectContaining({
-      supported: false,
-      routeFamily: "rel-core",
-      reason: "rel fragment must not contain sql nodes.",
-    }));
-    await expect(Promise.resolve(provider.compile(relFragment, {})).then(unwrapProviderOperationResult)).rejects.toThrow(
-      "Unsupported relational fragment for drizzle provider.",
+    expect(provider.canExecute(relFragment, {})).toEqual(
+      expect.objectContaining({
+        supported: false,
+        routeFamily: "rel-core",
+        reason: "rel fragment must not contain sql nodes.",
+      }),
     );
-
+    await expect(
+      Promise.resolve(provider.compile(relFragment, {})).then(unwrapProviderOperationResult),
+    ).rejects.toThrow("Unsupported relational fragment for drizzle provider.");
   });
 
   it("derives columns from the table object when columns are omitted", async () => {
@@ -322,14 +328,7 @@ describe("drizzle adapter", () => {
   it("supports context-resolved db bindings for scan execution", async () => {
     const usersTable = { name: "users_table" };
     const idColumn: TestColumn = { name: "id" };
-    const { db } = createRecordingDb(
-      new Map<object, TestRow[]>([
-        [
-          usersTable,
-          [{ id: "u1" }],
-        ],
-      ]),
-    );
+    const { db } = createRecordingDb(new Map<object, TestRow[]>([[usersTable, [{ id: "u1" }]]]));
 
     const provider = createDrizzleProvider<{ db: DrizzleQueryExecutor }>({
       dialect: "sqlite",
@@ -393,7 +392,9 @@ describe("drizzle adapter", () => {
 
     await expect(
       Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult),
-    ).rejects.toThrow("Drizzle provider runtime binding did not resolve to a valid database instance.");
+    ).rejects.toThrow(
+      "Drizzle provider runtime binding did not resolve to a valid database instance.",
+    );
   });
 
   it("throws when columns cannot be derived from table config", async () => {
@@ -423,7 +424,9 @@ describe("drizzle adapter", () => {
       ),
     );
 
-    await expect(Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult)).rejects.toThrow(
+    await expect(
+      Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult),
+    ).rejects.toThrow(
       'Unable to derive columns for table "users". Provide an explicit columns map.',
     );
   });
@@ -717,13 +720,18 @@ describe("drizzle adapter", () => {
       select: withCapableDb.select,
     } satisfies DrizzleQueryExecutor;
 
-    expect(await Promise.resolve(provider.canExecute({ kind: "rel", provider: "drizzle", rel }, { db: withCapableDb })))
-      .toBe(true);
-    await expect(
-      Promise.resolve(provider.compile({ kind: "rel", provider: "drizzle", rel }, { db: withoutWithDb })).then(
-        unwrapProviderOperationResult,
+    expect(
+      await Promise.resolve(
+        provider.canExecute({ kind: "rel", provider: "drizzle", rel }, { db: withCapableDb }),
       ),
-    ).rejects.toThrow('Drizzle database instance does not support required APIs for "with" rel pushdown.');
+    ).toBe(true);
+    await expect(
+      Promise.resolve(
+        provider.compile({ kind: "rel", provider: "drizzle", rel }, { db: withoutWithDb }),
+      ).then(unwrapProviderOperationResult),
+    ).rejects.toThrow(
+      'Drizzle database instance does not support required APIs for "with" rel pushdown.',
+    );
   });
 
   it("executes join rel fragments as a single downstream query when supported", async () => {

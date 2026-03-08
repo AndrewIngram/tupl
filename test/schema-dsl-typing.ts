@@ -54,8 +54,7 @@ const typedMetricsEntity = createDataEntityHandle<
 
 const schemaBuilder = createSchemaBuilder<Record<string, never>>();
 
-const myOrders = schemaBuilder.table(ordersEntity, {
-  name: "myOrders",
+const myOrders = schemaBuilder.table("myOrders", ordersEntity, {
   columns: () => ({
     id: { source: "id", type: "text", nullable: false },
     vendorId: { source: "vendor_id", type: "text" },
@@ -63,8 +62,7 @@ const myOrders = schemaBuilder.table(ordersEntity, {
   }),
 });
 
-const typedOrders = schemaBuilder.table(vendorsEntity, {
-  name: "typedOrders",
+const typedOrders = schemaBuilder.table("typedOrders", vendorsEntity, {
   columns: ({ col }) => ({
     id: col.id("id"),
     name: col.string("name"),
@@ -74,8 +72,7 @@ const typedOrders = schemaBuilder.table(vendorsEntity, {
 });
 void typedOrders;
 
-const typedMetrics = schemaBuilder.table(typedMetricsEntity, {
-  name: "typedMetrics",
+const typedMetrics = schemaBuilder.table("typedMetrics", typedMetricsEntity, {
   columns: ({ col }) => ({
     integerValue: col.integer("integerColumn"),
     realValue: col.real("realColumn"),
@@ -94,6 +91,7 @@ const typedMetrics = schemaBuilder.table(typedMetricsEntity, {
 void typedMetrics;
 
 schemaBuilder.view(
+  "spendByVendor",
   ({ scan, join, aggregate, col, expr, agg }) => {
     const entityScan = scan(vendorsEntity);
     void entityScan;
@@ -124,7 +122,6 @@ schemaBuilder.view(
     });
   },
   {
-    name: "spendByVendor",
     columns: ({ col }) => ({
       vendorId: col.string("vendorId"),
       spend: col.integer("spend"),

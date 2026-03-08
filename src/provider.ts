@@ -1,9 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
 
 import { SqlqlProviderBindingError, type SqlqlResult } from "./errors";
-import {
-  getNormalizedTableBinding,
-} from "./schema";
+import { getNormalizedTableBinding } from "./schema";
 import type {
   PhysicalDialect,
   QueryRow,
@@ -62,13 +60,7 @@ export type ProviderCapabilityAtom =
   | "expr.cast_basic";
 
 export type SqlqlDiagnosticSeverity = "error" | "warning" | "note";
-export type SqlqlDiagnosticClass =
-  | "0A000"
-  | "22000"
-  | "42000"
-  | "54000"
-  | "57000"
-  | "58000";
+export type SqlqlDiagnosticClass = "0A000" | "22000" | "42000" | "54000" | "57000" | "58000";
 
 export interface SqlqlDiagnostic {
   code: string;
@@ -129,7 +121,10 @@ export interface DataEntityColumnMetadata<TRead = unknown> {
 }
 
 export type DataEntityShapeColumn = SqlScalarType | Omit<DataEntityColumnMetadata, "source">;
-export type DataEntityShape<TColumns extends string = string> = Record<TColumns, DataEntityShapeColumn>;
+export type DataEntityShape<TColumns extends string = string> = Record<
+  TColumns,
+  DataEntityShapeColumn
+>;
 
 type DataEntityColumnMetadataRecord<TColumns extends string = string> = Partial<
   Record<TColumns, DataEntityColumnMetadata<any>>
@@ -285,7 +280,11 @@ export function normalizeDataEntityShape<
   TShape extends DataEntityShape<TColumns>,
 >(
   shape: TShape,
-): DataEntityColumnMap<TColumns, Record<TColumns, unknown>, InferDataEntityShapeMetadata<TColumns, TShape>> {
+): DataEntityColumnMap<
+  TColumns,
+  Record<TColumns, unknown>,
+  InferDataEntityShapeMetadata<TColumns, TShape>
+> {
   return Object.fromEntries(
     Object.entries(shape).map(([column, definition]) => [
       column,
@@ -344,7 +343,10 @@ export interface ProviderAdapter<TContext = unknown> {
   routeFamilies?: ProviderRouteFamily[];
   capabilityAtoms?: ProviderCapabilityAtom[];
   fallbackPolicy?: QueryFallbackPolicy;
-  canExecute(fragment: ProviderFragment, context: TContext): MaybePromise<boolean | ProviderCapabilityReport>;
+  canExecute(
+    fragment: ProviderFragment,
+    context: TContext,
+  ): MaybePromise<boolean | ProviderCapabilityReport>;
   compile(
     fragment: ProviderFragment,
     context: TContext,
@@ -396,7 +398,9 @@ export function inferRouteFamilyForFragment(fragment: ProviderFragment): Provide
   }
 }
 
-export function collectCapabilityAtomsForFragment(fragment: ProviderFragment): ProviderCapabilityAtom[] {
+export function collectCapabilityAtomsForFragment(
+  fragment: ProviderFragment,
+): ProviderCapabilityAtom[] {
   const atoms = new Set<ProviderCapabilityAtom>();
 
   switch (fragment.kind) {
@@ -670,7 +674,7 @@ export function validateProviderBindingsResult<TContext>(
     const providerNameResult = Result.try({
       try: () =>
         normalized?.kind === "physical"
-          ? normalized.provider ?? resolveTableProvider(schema, tableName)
+          ? (normalized.provider ?? resolveTableProvider(schema, tableName))
           : resolveTableProvider(schema, tableName),
       catch: (error) =>
         new SqlqlProviderBindingError({

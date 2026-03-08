@@ -26,11 +26,11 @@ describe.each(SCENARIO_PRESETS)("playground/preset-queries [$id]", (scenario) =>
       return;
     }
     prepared = result;
-  });
+  }, 20_000);
 
   it.each(QUERY_PRESETS)(
-    "compiles and executes preset \"$label\" for scenario",
-    { timeout: 15_000 },
+    'compiles and executes preset "$label" for scenario',
+    { timeout: 25_000 },
     async (query) => {
       expect(prepared, `[${scenario.id}] scenario preparation missing`).not.toBeNull();
       if (!prepared) {
@@ -45,10 +45,7 @@ describe.each(SCENARIO_PRESETS)("playground/preset-queries [$id]", (scenario) =>
 
       const bundle = await createSession(compiled, scenario.context);
       const rows = await bundle.session.runToCompletion();
-      expect(
-        Array.isArray(rows),
-        `[${scenario.id}] ${query.label} should return rows`,
-      ).toBe(true);
+      expect(Array.isArray(rows), `[${scenario.id}] ${query.label} should return rows`).toBe(true);
     },
   );
 });

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { withQueryHarness } from "../support/query-harness";
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
 describe("query/timestamps", () => {
   it("normalizes Date values to ISO strings for filtering and ordering", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       events: {
         columns: {
           id: { type: "text", nullable: false },
@@ -45,7 +45,7 @@ describe("query/timestamps", () => {
   });
 
   it("supports MIN/MAX aggregation on normalized timestamp values", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       events: {
         columns: {
           id: { type: "text", nullable: false },

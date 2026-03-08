@@ -322,17 +322,19 @@ function filterRows<TRow extends QueryRow, TColumn extends string>(
         break;
       }
       case "like":
-        out = out.filter((row) =>
-          typeof row[clause.column] === "string" &&
-          typeof clause.value === "string" &&
-          matchesLikePattern(row[clause.column] as string, clause.value),
+        out = out.filter(
+          (row) =>
+            typeof row[clause.column] === "string" &&
+            typeof clause.value === "string" &&
+            matchesLikePattern(row[clause.column] as string, clause.value),
         );
         break;
       case "not_like":
-        out = out.filter((row) =>
-          typeof row[clause.column] === "string" &&
-          typeof clause.value === "string" &&
-          !matchesLikePattern(row[clause.column] as string, clause.value),
+        out = out.filter(
+          (row) =>
+            typeof row[clause.column] === "string" &&
+            typeof clause.value === "string" &&
+            !matchesLikePattern(row[clause.column] as string, clause.value),
         );
         break;
       case "is_distinct_from":

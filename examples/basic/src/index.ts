@@ -173,10 +173,16 @@ function projectRow(row: QueryRow, select: string[]): QueryRow {
 }
 
 async function main(): Promise<void> {
-  const rawSchemaBuilder = createSchemaBuilder<Record<string, never>>();
-  rawSchemaBuilder.table({
-    name: "orders_raw",
+  const ordersRawEntity = createDataEntityHandle({
+    entity: "orders_raw",
     provider: "memory",
+  });
+  const vendorsRawEntity = createDataEntityHandle({
+    entity: "vendors_raw",
+    provider: "memory",
+  });
+  const rawSchemaBuilder = createSchemaBuilder<Record<string, never>>();
+  rawSchemaBuilder.table("orders_raw", ordersRawEntity, {
     columns: {
       id: "text",
       org_id: "text",
@@ -186,9 +192,7 @@ async function main(): Promise<void> {
       created_at: "timestamp",
     },
   });
-  rawSchemaBuilder.table({
-    name: "vendors_raw",
-    provider: "memory",
+  rawSchemaBuilder.table("vendors_raw", vendorsRawEntity, {
     columns: {
       id: "text",
       name: "text",
@@ -241,46 +245,44 @@ async function main(): Promise<void> {
 
   const memoryProvider = createMemoryProvider(rawSchema, tableData);
   const schemaBuilder = createSchemaBuilder<Record<string, never>>();
-  const myOrders = schemaBuilder.table(memoryProvider.entities!.orders_raw!, {
-    name: "myOrders",
-      columns: ({ col, expr }) => ({
-        id: col.id("id"),
-        vendorId: col.string("vendor_id"),
-        totalCents: col.integer("total_cents"),
-        createdAt: col.timestamp("created_at"),
-        totalDollars: col.real(
-          expr.divide(col("totalCents"), expr.literal(100)),
-          { nullable: false },
-        ),
-        isLargeOrder: col.boolean(
-          expr.gte(col("totalCents"), expr.literal(3000)),
-          { nullable: false },
-        ),
+  const myOrders = schemaBuilder.table("myOrders", memoryProvider.entities!.orders_raw!, {
+    columns: ({ col, expr }) => ({
+      id: col.id("id"),
+      vendorId: col.string("vendor_id"),
+      totalCents: col.integer("total_cents"),
+      createdAt: col.timestamp("created_at"),
+      totalDollars: col.real(expr.divide(col("totalCents"), expr.literal(100)), {
+        nullable: false,
       }),
+      isLargeOrder: col.boolean(expr.gte(col("totalCents"), expr.literal(3000)), {
+        nullable: false,
+      }),
+    }),
   });
 
   const myOrderFacts = schemaBuilder.view(
-      ({ scan, join, col, expr }) =>
-        join({
-          left: scan(myOrders),
-          right: scan(memoryProvider.entities!.vendors_raw!),
-          on: expr.eq(col(myOrders, "vendorId"), col(memoryProvider.entities!.vendors_raw!, "id")),
-          type: "inner",
-        }),
-      {
-        name: "myOrderFacts",
-        columns: ({ col }) => ({
-          orderId: col.id(myOrders, "id"),
-          vendorId: col.string(myOrders, "vendorId", { nullable: false }),
-          vendorName: col.string(memoryProvider.entities!.vendors_raw!, "name", { nullable: false }),
-          totalCents: col.integer(myOrders, "totalCents", { nullable: false }),
-          totalDollars: col.real(myOrders, "totalDollars", { nullable: false }),
-          isLargeOrder: col.boolean(myOrders, "isLargeOrder", { nullable: false }),
-        }),
-      },
+    "myOrderFacts",
+    ({ scan, join, col, expr }) =>
+      join({
+        left: scan(myOrders),
+        right: scan(memoryProvider.entities!.vendors_raw!),
+        on: expr.eq(col(myOrders, "vendorId"), col(memoryProvider.entities!.vendors_raw!, "id")),
+        type: "inner",
+      }),
+    {
+      columns: ({ col }) => ({
+        orderId: col.id(myOrders, "id"),
+        vendorId: col.string(myOrders, "vendorId", { nullable: false }),
+        vendorName: col.string(memoryProvider.entities!.vendors_raw!, "name", { nullable: false }),
+        totalCents: col.integer(myOrders, "totalCents", { nullable: false }),
+        totalDollars: col.real(myOrders, "totalDollars", { nullable: false }),
+        isLargeOrder: col.boolean(myOrders, "isLargeOrder", { nullable: false }),
+      }),
+    },
   );
 
   schemaBuilder.view(
+    "myVendorSpend",
     ({ scan, aggregate, col, agg }) =>
       aggregate({
         from: scan(myOrderFacts),
@@ -294,7 +296,6 @@ async function main(): Promise<void> {
         },
       }),
     {
-      name: "myVendorSpend",
       columns: ({ col }) => ({
         vendorId: col.id("vendorId"),
         vendorName: col.string("vendorName"),

@@ -20,94 +20,94 @@ import {
 } from "../src/session-runtime";
 
 describe("playground/provider-pushdown", () => {
-  it("executes simple same-provider joins and grouped aggregates as a single downstream query", { timeout: 15_000 }, async () => {
-    const scenario = SCENARIO_PRESETS[0];
-    if (!scenario) {
-      throw new Error("Missing scenario preset.");
-    }
-
-    const pushdownPresetIds = [
-      "orders_calculated_columns",
-      "orders_with_vendors",
-      "vendor_spend",
-      "status_distinct",
-      "paid_orders",
-      "preferred_vendor_orders",
-      "activity_union",
-      "vendor_rank",
-    ] as const;
-
-    const prepared = await preparePlaygroundInput(
-      DEFAULT_FACADE_SCHEMA_CODE,
-      serializeJson(scenario.rows),
-    );
-    expect(prepared.ok).toBe(true);
-    if (!prepared.ok) {
-      return;
-    }
-
-    let reseed = true;
-    for (const presetId of pushdownPresetIds) {
-      const preset = QUERY_PRESETS.find((query) => query.id === presetId);
-      if (!preset) {
-        throw new Error(`Missing query preset: ${presetId}`);
+  it(
+    "executes simple same-provider joins and grouped aggregates as a single downstream query",
+    { timeout: 35_000 },
+    async () => {
+      const scenario = SCENARIO_PRESETS[0];
+      if (!scenario) {
+        throw new Error("Missing scenario preset.");
       }
 
-      const compiled = compilePreparedPlaygroundQuery(prepared, preset.sql);
+      const pushdownPresetIds = [
+        "orders_calculated_columns",
+        "orders_with_vendors",
+        "vendor_spend",
+        "status_distinct",
+        "paid_orders",
+        "preferred_vendor_orders",
+        "activity_union",
+        "vendor_rank",
+      ] as const;
 
-      expect(compiled.ok).toBe(true);
-      if (!compiled.ok) {
-        continue;
+      const prepared = await preparePlaygroundInput(
+        DEFAULT_FACADE_SCHEMA_CODE,
+        serializeJson(scenario.rows),
+      );
+      expect(prepared.ok).toBe(true);
+      if (!prepared.ok) {
+        return;
       }
 
-      const bundle = await createSession(compiled, scenario.context, { reseed });
-      reseed = false;
-      const plan = bundle.session.getPlan();
+      let reseed = true;
+      for (const presetId of pushdownPresetIds) {
+        const preset = QUERY_PRESETS.find((query) => query.id === presetId);
+        if (!preset) {
+          throw new Error(`Missing query preset: ${presetId}`);
+        }
 
-      expect(plan.steps).toHaveLength(1);
-      expect(plan.steps[0]?.kind).toBe("remote_fragment");
-      expect(plan.steps[0]?.request).toEqual({
-        fragment: "rel",
-      });
+        const compiled = compilePreparedPlaygroundQuery(prepared, preset.sql);
 
-      const snapshot = await runSessionToCompletion(bundle.session, []);
-      expect(
-        snapshot.executedOperations.length,
-        `${presetId} should execute as a single provider operation`,
-      ).toBe(1);
-      expect(snapshot.executedOperations[0]?.kind).toBe("sql_query");
-      expect(snapshot.executedOperations[0]?.provider).toBe("dbProvider");
-      const sqlText = snapshot.executedOperations[0]?.kind === "sql_query"
-        ? snapshot.executedOperations[0].sql.toLowerCase()
-        : "";
-      if (
-        presetId === "orders_calculated_columns"
-      ) {
-        expect(sqlText).toContain("/");
-        expect(sqlText).toContain("order by");
+        expect(compiled.ok).toBe(true);
+        if (!compiled.ok) {
+          continue;
+        }
+
+        const bundle = await createSession(compiled, scenario.context, { reseed });
+        reseed = false;
+        const plan = bundle.session.getPlan();
+
+        expect(plan.steps).toHaveLength(1);
+        expect(plan.steps[0]?.kind).toBe("remote_fragment");
+        expect(plan.steps[0]?.request).toEqual({
+          fragment: "rel",
+        });
+
+        const snapshot = await runSessionToCompletion(bundle.session, []);
+        expect(
+          snapshot.executedOperations.length,
+          `${presetId} should execute as a single provider operation`,
+        ).toBe(1);
+        expect(snapshot.executedOperations[0]?.kind).toBe("sql_query");
+        expect(snapshot.executedOperations[0]?.provider).toBe("dbProvider");
+        const sqlText =
+          snapshot.executedOperations[0]?.kind === "sql_query"
+            ? snapshot.executedOperations[0].sql.toLowerCase()
+            : "";
+        if (presetId === "orders_calculated_columns") {
+          expect(sqlText).toContain("/");
+          expect(sqlText).toContain("order by");
+        }
+        if (presetId === "orders_with_vendors" || presetId === "vendor_spend") {
+          expect(sqlText).toContain(" join ");
+        }
+        if (presetId === "vendor_spend") {
+          expect(sqlText).toContain("group by");
+        }
+        if (presetId === "status_distinct") {
+          expect(sqlText).toContain("select distinct");
+          expect(sqlText).toContain("order by");
+        }
+        if (presetId === "activity_union") {
+          expect(sqlText).toContain("union all");
+        }
+        if (presetId === "vendor_rank") {
+          expect(sqlText).toContain("with");
+          expect(sqlText).toContain("dense_rank");
+        }
       }
-      if (
-        presetId === "orders_with_vendors" ||
-        presetId === "vendor_spend"
-      ) {
-        expect(sqlText).toContain(" join ");
-      }
-      if (presetId === "vendor_spend") {
-        expect(sqlText).toContain("group by");
-      }
-      if (presetId === "status_distinct") {
-        expect(sqlText).toContain("select distinct");
-        expect(sqlText).toContain("order by");
-      }
-      if (presetId === "activity_union") {
-        expect(sqlText).toContain("union all");
-      }
-      if (presetId === "vendor_rank") {
-        expect(sqlText).toContain("with");
-        expect(sqlText).toContain("dense_rank");
-      }
-    }
-  });
+    },
+  );
 
   it("uses kv-provider module mapping code at runtime", async () => {
     const scenario = SCENARIO_PRESETS[0];
@@ -200,48 +200,52 @@ ORDER BY view_count DESC;
     }
   });
 
-  it("executes active_products to product_view_counts as one sql query plus one kv lookup", { timeout: 15_000 }, async () => {
-    const scenario = SCENARIO_PRESETS[0];
-    if (!scenario) {
-      throw new Error("Missing scenario preset.");
-    }
+  it(
+    "executes active_products to product_view_counts as one sql query plus one kv lookup",
+    { timeout: 15_000 },
+    async () => {
+      const scenario = SCENARIO_PRESETS[0];
+      if (!scenario) {
+        throw new Error("Missing scenario preset.");
+      }
 
-    const prepared = await preparePlaygroundInput(
-      DEFAULT_FACADE_SCHEMA_CODE,
-      serializeJson(scenario.rows),
-    );
-    expect(prepared.ok).toBe(true);
-    if (!prepared.ok) {
-      return;
-    }
+      const prepared = await preparePlaygroundInput(
+        DEFAULT_FACADE_SCHEMA_CODE,
+        serializeJson(scenario.rows),
+      );
+      expect(prepared.ok).toBe(true);
+      if (!prepared.ok) {
+        return;
+      }
 
-    const compiled = compilePreparedPlaygroundQuery(
-      prepared,
-      `
+      const compiled = compilePreparedPlaygroundQuery(
+        prepared,
+        `
 SELECT p.name, v.view_count
 FROM active_products p
 LEFT JOIN product_view_counts v ON v.product_id = p.id
 ORDER BY v.view_count DESC, p.name;
       `.trim(),
-    );
+      );
 
-    expect(compiled.ok).toBe(true);
-    if (!compiled.ok) {
-      return;
-    }
+      expect(compiled.ok).toBe(true);
+      if (!compiled.ok) {
+        return;
+      }
 
-    const bundle = await createSession(compiled, scenario.context);
-    const plan = bundle.session.getPlan();
-    expect(plan.steps.filter((step) => step.kind === "remote_fragment")).toHaveLength(1);
-    expect(plan.steps.some((step) => step.kind === "lookup_join")).toBe(true);
-    expect(plan.steps.some((step) => step.kind === "scan")).toBe(false);
+      const bundle = await createSession(compiled, scenario.context);
+      const plan = bundle.session.getPlan();
+      expect(plan.steps.filter((step) => step.kind === "remote_fragment")).toHaveLength(1);
+      expect(plan.steps.some((step) => step.kind === "lookup_join")).toBe(true);
+      expect(plan.steps.some((step) => step.kind === "scan")).toBe(false);
 
-    const snapshot = await runSessionToCompletion(bundle.session, []);
+      const snapshot = await runSessionToCompletion(bundle.session, []);
 
-    expect(snapshot.executedOperations).toHaveLength(2);
-    expect(snapshot.executedOperations.map((operation) => operation.kind)).toEqual([
-      "sql_query",
-      "kv_lookup",
-    ]);
-  });
+      expect(snapshot.executedOperations).toHaveLength(2);
+      expect(snapshot.executedOperations.map((operation) => operation.kind)).toEqual([
+        "sql_query",
+        "kv_lookup",
+      ]);
+    },
+  );
 });

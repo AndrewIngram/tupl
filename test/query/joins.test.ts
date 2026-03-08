@@ -2,14 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createMethodsProvider } from "../support/methods-provider";
 import { createArrayTableMethods, scanArrayRows } from "../../src/array-methods";
 
-import {
-  defineTableMethods,
-  type TableLookupRequest,
-  type TableScanRequest,
-} from "../../src";
+import { defineTableMethods, type TableLookupRequest, type TableScanRequest } from "../../src";
 import { commerceRows, commerceSchema } from "../support/commerce-fixture";
 import { withQueryHarness } from "../support/query-harness";
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -117,7 +113,7 @@ describe("query/joins", () => {
   });
 
   it("does not match null join keys on inner joins", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: { type: "text", nullable: false },
@@ -165,7 +161,7 @@ describe("query/joins", () => {
   });
 
   it("returns no rows when a joined table is empty", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: { type: "text", nullable: false },
@@ -205,7 +201,7 @@ describe("query/joins", () => {
   });
 
   it("supports LEFT JOIN with null-extended right rows", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: { type: "text", nullable: false },
@@ -254,7 +250,7 @@ describe("query/joins", () => {
   });
 
   it("supports RIGHT JOIN with null-extended left rows", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: { type: "text", nullable: false },
@@ -304,7 +300,7 @@ describe("query/joins", () => {
   });
 
   it("supports FULL JOIN with null-extension on both sides", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: { type: "text", nullable: false },

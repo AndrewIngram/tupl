@@ -292,12 +292,20 @@ function matchesFilters(row: QueryRow, filters: ScanFilterClause[]): boolean {
         }
         break;
       case "like":
-        if (typeof value !== "string" || typeof clause.value !== "string" || !matchesLike(value, clause.value)) {
+        if (
+          typeof value !== "string" ||
+          typeof clause.value !== "string" ||
+          !matchesLike(value, clause.value)
+        ) {
           return false;
         }
         break;
       case "not_like":
-        if (typeof value !== "string" || typeof clause.value !== "string" || matchesLike(value, clause.value)) {
+        if (
+          typeof value !== "string" ||
+          typeof clause.value !== "string" ||
+          matchesLike(value, clause.value)
+        ) {
           return false;
         }
         break;

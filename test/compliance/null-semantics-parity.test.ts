@@ -1,8 +1,8 @@
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 import type { RowsByTable } from "../support/query-harness";
 import { registerParityCases, type ComplianceCase } from "./support/case-runner";
 
-const schema = buildStaticSchema({
+const schema = buildEntitySchema({
   items: {
     columns: {
       id: { type: "text", nullable: false },

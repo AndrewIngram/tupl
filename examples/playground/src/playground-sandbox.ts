@@ -15,7 +15,6 @@ import {
   type RelNode,
   type SchemaDefinition,
 } from "../../../src/index";
-import { finalizeSchemaDefinition } from "../../../src/schema";
 
 import { createVirtualModuleRuntime } from "./playground-module-runtime";
 import {
@@ -400,7 +399,7 @@ export async function validateSchemaInSandbox(
     );
     return {
       ok: true,
-      schema: finalizeSchemaDefinition(executableSchema.schema),
+      schema: executableSchema.schema,
       issues: [],
     };
   } catch (error) {

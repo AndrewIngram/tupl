@@ -166,7 +166,10 @@ export function lowerSqlToRel(sql: string, schema: SchemaDefinition): RelLowerin
   return result.value;
 }
 
-export function lowerSqlToRelResult(sql: string, schema: SchemaDefinition): SqlqlResult<RelLoweringResult> {
+export function lowerSqlToRelResult(
+  sql: string,
+  schema: SchemaDefinition,
+): SqlqlResult<RelLoweringResult> {
   return Result.gen(function* () {
     const ast = yield* parseSqliteSelectAstResult(sql);
     return Result.try({
@@ -176,7 +179,11 @@ export function lowerSqlToRelResult(sql: string, schema: SchemaDefinition): Sqlq
   });
 }
 
-function lowerSqlAstToRel(ast: SelectAst, sql: string, schema: SchemaDefinition): RelLoweringResult {
+function lowerSqlAstToRel(
+  ast: SelectAst,
+  sql: string,
+  schema: SchemaDefinition,
+): RelLoweringResult {
   const structured = tryLowerStructuredSelect(ast, schema, new Set<string>());
   if (structured) {
     validateRelAgainstSchema(structured, schema);
@@ -245,13 +252,7 @@ export async function planPhysicalQueryResult<TContext>(
     const state: { steps: PhysicalStep[] } = { steps: [] };
 
     const rootStepId = yield* Result.await(
-      planPhysicalNodeResult(
-        plannedRel,
-        schema,
-        providers,
-        context,
-        state,
-      ),
+      planPhysicalNodeResult(plannedRel, schema, providers, context, state),
     );
 
     return Result.ok({
@@ -293,7 +294,9 @@ async function planPhysicalNodeResult<TContext>(
       case "aggregate":
       case "sort":
       case "limit_offset": {
-        const input = yield* Result.await(planPhysicalNodeResult(node.input, schema, providers, context, state));
+        const input = yield* Result.await(
+          planPhysicalNodeResult(node.input, schema, providers, context, state),
+        );
         const kind =
           node.kind === "filter"
             ? "local_filter"
@@ -317,7 +320,9 @@ async function planPhysicalNodeResult<TContext>(
       case "join": {
         const lookup = resolveLookupJoinCandidate(node, schema, providers);
         if (lookup) {
-          const left = yield* Result.await(planPhysicalNodeResult(node.left, schema, providers, context, state));
+          const left = yield* Result.await(
+            planPhysicalNodeResult(node.left, schema, providers, context, state),
+          );
           const step: PhysicalStep = {
             id: nextPhysicalStepId("lookup_join"),
             kind: "lookup_join",
@@ -335,8 +340,12 @@ async function planPhysicalNodeResult<TContext>(
           return Result.ok(step.id);
         }
 
-        const left = yield* Result.await(planPhysicalNodeResult(node.left, schema, providers, context, state));
-        const right = yield* Result.await(planPhysicalNodeResult(node.right, schema, providers, context, state));
+        const left = yield* Result.await(
+          planPhysicalNodeResult(node.left, schema, providers, context, state),
+        );
+        const right = yield* Result.await(
+          planPhysicalNodeResult(node.right, schema, providers, context, state),
+        );
         const step: PhysicalStep = {
           id: nextPhysicalStepId("local_hash_join"),
           kind: "local_hash_join",
@@ -347,7 +356,9 @@ async function planPhysicalNodeResult<TContext>(
         return Result.ok(step.id);
       }
       case "window": {
-        const input = yield* Result.await(planPhysicalNodeResult(node.input, schema, providers, context, state));
+        const input = yield* Result.await(
+          planPhysicalNodeResult(node.input, schema, providers, context, state),
+        );
         const step: PhysicalStep = {
           id: nextPhysicalStepId("local_window"),
           kind: "local_window",
@@ -358,8 +369,12 @@ async function planPhysicalNodeResult<TContext>(
         return Result.ok(step.id);
       }
       case "set_op": {
-        const left = yield* Result.await(planPhysicalNodeResult(node.left, schema, providers, context, state));
-        const right = yield* Result.await(planPhysicalNodeResult(node.right, schema, providers, context, state));
+        const left = yield* Result.await(
+          planPhysicalNodeResult(node.left, schema, providers, context, state),
+        );
+        const right = yield* Result.await(
+          planPhysicalNodeResult(node.right, schema, providers, context, state),
+        );
         const step: PhysicalStep = {
           id: nextPhysicalStepId("local_set_op"),
           kind: "local_set_op",
@@ -373,7 +388,9 @@ async function planPhysicalNodeResult<TContext>(
         const dependencies: string[] = [];
         for (const cte of node.ctes) {
           dependencies.push(
-            yield* Result.await(planPhysicalNodeResult(cte.query, schema, providers, context, state)),
+            yield* Result.await(
+              planPhysicalNodeResult(cte.query, schema, providers, context, state),
+            ),
           );
         }
         dependencies.push(
@@ -426,11 +443,7 @@ function expandRelViewsInternal<TContext>(
       }
 
       const alias = node.alias ?? node.table;
-      let current = compileViewRelForPlanner(
-        node.table,
-        binding.rel(context as unknown),
-        schema,
-      );
+      let current = compileViewRelForPlanner(node.table, binding.rel(context as unknown), schema);
       const expandedView = expandRelViewsInternal(current, schema, context);
       current = expandedView.node;
 
@@ -447,7 +460,9 @@ function expandRelViewsInternal<TContext>(
         );
       } else {
         viewAliasMapping = {};
-        for (const [logicalColumn, source] of Object.entries(getNormalizedColumnSourceMap(binding))) {
+        for (const [logicalColumn, source] of Object.entries(
+          getNormalizedColumnSourceMap(binding),
+        )) {
           viewAliasMapping[logicalColumn] = resolveViewSourceRef(source, expandedView.aliases);
         }
       }
@@ -494,10 +509,7 @@ function expandRelViewsInternal<TContext>(
         };
       }
 
-      const aliases = mergeAliasMaps(
-        expandedView.aliases,
-        new Map([[alias, viewAliasMapping]]),
-      );
+      const aliases = mergeAliasMaps(expandedView.aliases, new Map([[alias, viewAliasMapping]]));
       return {
         node: current,
         aliases,
@@ -541,7 +553,8 @@ function expandRelViewsInternal<TContext>(
               : {
                   ...column,
                   expr: mapRelExprRefs(column.expr, input.aliases),
-                }),
+                },
+          ),
         },
         aliases: input.aliases,
       };
@@ -551,9 +564,7 @@ function expandRelViewsInternal<TContext>(
       const groupBy = node.groupBy.map((column) => resolveMappedColumnRef(column, input.aliases));
       const metrics = node.metrics.map((metric) => ({
         ...metric,
-        ...(metric.column
-          ? { column: resolveMappedColumnRef(metric.column, input.aliases) }
-          : {}),
+        ...(metric.column ? { column: resolveMappedColumnRef(metric.column, input.aliases) } : {}),
       }));
       const aggregateNode: RelNode = {
         ...node,
@@ -599,7 +610,9 @@ function expandRelViewsInternal<TContext>(
           input: input.node,
           functions: node.functions.map((fn) => ({
             ...fn,
-            partitionBy: fn.partitionBy.map((column) => resolveMappedColumnRef(column, input.aliases)),
+            partitionBy: fn.partitionBy.map((column) =>
+              resolveMappedColumnRef(column, input.aliases),
+            ),
             orderBy: fn.orderBy.map((term) => ({
               ...term,
               source: resolveMappedColumnRef(term.source, input.aliases),
@@ -688,7 +701,9 @@ function expandRelViewsInternal<TContext>(
   }
 }
 
-function mergeAliasMaps(...maps: Array<Map<string, ViewAliasColumnMap>>): Map<string, ViewAliasColumnMap> {
+function mergeAliasMaps(
+  ...maps: Array<Map<string, ViewAliasColumnMap>>
+): Map<string, ViewAliasColumnMap> {
   const out = new Map<string, ViewAliasColumnMap>();
   for (const aliases of maps) {
     for (const [alias, mapping] of aliases.entries()) {
@@ -870,7 +885,9 @@ function rewriteViewBindingExprForPlanner(
       return {
         kind: "function",
         name: expr.name,
-        args: expr.args.map((arg) => rewriteViewBindingExprForPlanner(arg, columnBindings, aliases)),
+        args: expr.args.map((arg) =>
+          rewriteViewBindingExprForPlanner(arg, columnBindings, aliases),
+        ),
       };
     case "column": {
       if (!expr.ref.table && !expr.ref.alias) {
@@ -892,7 +909,10 @@ function rewriteViewBindingExprForPlanner(
   }
 }
 
-function resolveViewSourceRef(source: string, aliases: Map<string, ViewAliasColumnMap>): RelColumnRef {
+function resolveViewSourceRef(
+  source: string,
+  aliases: Map<string, ViewAliasColumnMap>,
+): RelColumnRef {
   const ref = parseRelColumnRef(source);
   return ref.alias || ref.table ? resolveMappedColumnRef(ref, aliases) : ref;
 }
@@ -906,7 +926,9 @@ function mapViewColumnName(
   if (idx > 0) {
     const name = column.slice(idx + 1);
     if (name in viewAliasMapping) {
-      return toColumnName(resolveMappedColumnRef(viewAliasMapping[name] ?? parseRelColumnRef(name), aliases));
+      return toColumnName(
+        resolveMappedColumnRef(viewAliasMapping[name] ?? parseRelColumnRef(name), aliases),
+      );
     }
     return rewriteColumnNameWithAliases(column, aliases);
   }
@@ -942,9 +964,8 @@ function resolveMappedColumnRef(
         if (!mapped) {
           continue;
         }
-        const resolved = mapped.alias || mapped.table
-          ? resolveMappedColumnRef(mapped, aliases)
-          : mapped;
+        const resolved =
+          mapped.alias || mapped.table ? resolveMappedColumnRef(mapped, aliases) : mapped;
         const key = toColumnName(resolved);
         if (!candidate) {
           candidate = resolved;
@@ -1110,17 +1131,26 @@ function compileViewRelForPlanner(
     return definition as RelNode;
   }
 
-  if (!definition || typeof definition !== "object" || typeof (definition as { kind?: unknown }).kind !== "string") {
+  if (
+    !definition ||
+    typeof definition !== "object" ||
+    typeof (definition as { kind?: unknown }).kind !== "string"
+  ) {
     throw new Error("View returned an unsupported rel definition.");
   }
 
   return compileSchemaViewRelForPlanner(definition as SchemaViewRelNode, schema);
 }
 
-function compileSchemaViewRelForPlanner(node: SchemaViewRelNode, schema: SchemaDefinition): RelNode {
+function compileSchemaViewRelForPlanner(
+  node: SchemaViewRelNode,
+  schema: SchemaDefinition,
+): RelNode {
   switch (node.kind) {
     case "scan": {
-      const table = schema.tables[node.table] ?? (node.entity ? createTableDefinitionFromEntity(node.entity) : undefined);
+      const table =
+        schema.tables[node.table] ??
+        (node.entity ? createTableDefinitionFromEntity(node.entity) : undefined);
       if (!table || (node.entity && Object.keys(table.columns).length === 0)) {
         throw new Error(`Unknown table in view rel scan: ${node.table}`);
       }
@@ -1344,7 +1374,8 @@ function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition): RelNo
               : {
                   ...column,
                   expr: mapRelExprRefsForAliasSource(column.expr, aliasToSource),
-                }),
+                },
+          ),
         };
       case "join":
         return {
@@ -1372,7 +1403,9 @@ function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition): RelNo
           input: visit(current.input),
           functions: current.functions.map((fn) => ({
             ...fn,
-            partitionBy: fn.partitionBy.map((column) => mapColumnRefForAlias(column, aliasToSource)),
+            partitionBy: fn.partitionBy.map((column) =>
+              mapColumnRefForAlias(column, aliasToSource),
+            ),
             orderBy: fn.orderBy.map((term) => ({
               ...term,
               source: mapColumnRefForAlias(term.source, aliasToSource),
@@ -1478,16 +1511,10 @@ function simplifyProviderProjects(node: RelNode): RelNode {
 }
 
 function hoistProjectAcrossUnaryChain(project: RelProjectNode): RelNode {
-  const unaryChain: Array<
-    Extract<RelNode, { kind: "filter" | "sort" | "limit_offset" }>
-  > = [];
+  const unaryChain: Array<Extract<RelNode, { kind: "filter" | "sort" | "limit_offset" }>> = [];
   let current = project.input;
 
-  while (
-    current.kind === "filter" ||
-    current.kind === "sort" ||
-    current.kind === "limit_offset"
-  ) {
+  while (current.kind === "filter" || current.kind === "sort" || current.kind === "limit_offset") {
     unaryChain.push(current);
     current = current.input;
   }
@@ -1561,12 +1588,15 @@ function composeProjectMappings(
 }
 
 function normalizeScanForProvider(node: RelScanNode, schema: SchemaDefinition): RelScanNode {
-  const binding = getNormalizedTableBinding(schema, node.table)
-    ?? (node.entity ? createPhysicalBindingFromEntity(node.entity) : undefined);
+  const binding =
+    getNormalizedTableBinding(schema, node.table) ??
+    (node.entity ? createPhysicalBindingFromEntity(node.entity) : undefined);
   if (!binding || binding.kind !== "physical") {
     return node;
   }
-  const table = schema.tables[node.table] ?? (node.entity ? createTableDefinitionFromEntity(node.entity) : undefined);
+  const table =
+    schema.tables[node.table] ??
+    (node.entity ? createTableDefinitionFromEntity(node.entity) : undefined);
 
   const mapColumn = (column: string): string => resolveNormalizedColumnSource(binding, column);
   const mapClause = (clause: ScanFilterClause): ScanFilterClause => {
@@ -1598,10 +1628,7 @@ function normalizeScanForProvider(node: RelScanNode, schema: SchemaDefinition): 
   };
 }
 
-function mapEnumFilterForProvider(
-  definition: unknown,
-  clause: ScanFilterClause,
-): ScanFilterClause {
+function mapEnumFilterForProvider(definition: unknown, clause: ScanFilterClause): ScanFilterClause {
   if (!definition || typeof definition === "string") {
     return clause;
   }
@@ -1647,9 +1674,7 @@ function mapEnumFilterForProvider(
   if (clause.op === "in") {
     const mapped = [...new Set(clause.values.flatMap((value) => mapFacadeValueToSource(value)))];
     if (mapped.length === 0) {
-      throw new Error(
-        `No upstream enum mappings for IN predicate on ${clause.column}.`,
-      );
+      throw new Error(`No upstream enum mappings for IN predicate on ${clause.column}.`);
     }
     return {
       ...clause,
@@ -1666,8 +1691,9 @@ function collectAliasToSourceMappings(node: RelNode, schema: SchemaDefinition): 
   const visit = (current: RelNode): void => {
     switch (current.kind) {
       case "scan": {
-        const binding = getNormalizedTableBinding(schema, current.table)
-          ?? (current.entity ? createPhysicalBindingFromEntity(current.entity) : undefined);
+        const binding =
+          getNormalizedTableBinding(schema, current.table) ??
+          (current.entity ? createPhysicalBindingFromEntity(current.entity) : undefined);
         if (binding?.kind !== "physical") {
           return;
         }
@@ -1926,15 +1952,14 @@ function tryLowerStructuredSelect(
 
   for (const clause of withClauses) {
     const rawName = (clause as { name?: unknown }).name;
-    const cteName = typeof rawName === "string"
-      ? rawName
-      : (
-        rawName &&
-          typeof rawName === "object" &&
-          typeof (rawName as { value?: unknown }).value === "string"
-      )
-      ? (rawName as { value: string }).value
-      : null;
+    const cteName =
+      typeof rawName === "string"
+        ? rawName
+        : rawName &&
+            typeof rawName === "object" &&
+            typeof (rawName as { value?: unknown }).value === "string"
+          ? (rawName as { value: string }).value
+          : null;
     if (!cteName) {
       return null;
     }
@@ -1943,15 +1968,14 @@ function tryLowerStructuredSelect(
 
   for (const clause of withClauses) {
     const rawName = (clause as { name?: unknown }).name;
-    const cteName = typeof rawName === "string"
-      ? rawName
-      : (
-        rawName &&
-          typeof rawName === "object" &&
-          typeof (rawName as { value?: unknown }).value === "string"
-      )
-      ? (rawName as { value: string }).value
-      : null;
+    const cteName =
+      typeof rawName === "string"
+        ? rawName
+        : rawName &&
+            typeof rawName === "object" &&
+            typeof (rawName as { value?: unknown }).value === "string"
+          ? (rawName as { value: string }).value
+          : null;
     const cteAst = (clause as { stmt?: { ast?: unknown } }).stmt?.ast;
     if (!cteName || !cteAst || typeof cteAst !== "object") {
       return null;
@@ -1969,11 +1993,7 @@ function tryLowerStructuredSelect(
   const hasSetOp = typeof ast.set_op === "string" && !!ast._next;
   if (!hasSetOp) {
     const { with: _ignoredWith, ...withoutWith } = ast;
-    const simple = tryLowerSimpleSelect(
-      withoutWith as SelectAst,
-      schema,
-      scopedCteNames,
-    );
+    const simple = tryLowerSimpleSelect(withoutWith as SelectAst, schema, scopedCteNames);
     if (!simple) {
       return null;
     }
@@ -1995,11 +2015,7 @@ function tryLowerStructuredSelect(
   const { with: _ignoredWith, ...withoutWith } = ast;
   let currentAst: SelectAst = withoutWith as SelectAst;
   const { set_op: _ignoredSetOp, _next: _ignoredNext, ...currentBaseAst } = currentAst;
-  let currentNode = tryLowerSimpleSelect(
-    currentBaseAst as SelectAst,
-    schema,
-    scopedCteNames,
-  );
+  let currentNode = tryLowerSimpleSelect(currentBaseAst as SelectAst, schema, scopedCteNames);
   if (!currentNode) {
     return null;
   }
@@ -2010,7 +2026,12 @@ function tryLowerStructuredSelect(
       return null;
     }
 
-    const { with: _ignoredRightWith, set_op: _ignoredRightSetOp, _next: _ignoredRightNext, ...rightBaseAst } = currentAst._next;
+    const {
+      with: _ignoredRightWith,
+      set_op: _ignoredRightSetOp,
+      _next: _ignoredRightNext,
+      ...rightBaseAst
+    } = currentAst._next;
     const rightBase = tryLowerSimpleSelect(rightBaseAst as SelectAst, schema, scopedCteNames);
     if (!rightBase) {
       return null;
@@ -2077,7 +2098,11 @@ function tryLowerSimpleSelect(
     return null;
   }
 
-  if (from.some((entry) => typeof (entry as FromEntryAst).table !== "string" || (entry as FromEntryAst).stmt)) {
+  if (
+    from.some(
+      (entry) => typeof (entry as FromEntryAst).table !== "string" || (entry as FromEntryAst).stmt,
+    )
+  ) {
     return null;
   }
 
@@ -2122,11 +2147,11 @@ function tryLowerSimpleSelect(
   const projections = aggregateMode
     ? null
     : parseProjection(
-      ast.columns,
-      bindings,
-      aliasToBinding,
-      parseNamedWindowSpecifications(ast.window),
-    );
+        ast.columns,
+        bindings,
+        aliasToBinding,
+        parseNamedWindowSpecifications(ast.window),
+      );
   if (!aggregateMode && projections == null) {
     return null;
   }
@@ -2164,7 +2189,10 @@ function tryLowerSimpleSelect(
     effectiveGroupBy = distinctGroupBy;
   }
 
-  if (aggregateMode && !validateAggregateProjectionGroupBy(safeAggregateProjections, effectiveGroupBy)) {
+  if (
+    aggregateMode &&
+    !validateAggregateProjectionGroupBy(safeAggregateProjections, effectiveGroupBy)
+  ) {
     return null;
   }
 
@@ -2396,8 +2424,12 @@ function tryLowerSimpleSelect(
       input: current,
       groupBy: effectiveGroupBy,
       metrics: safeAggregateProjections
-        .filter((projection): projection is ParsedAggregateProjection & { metric: NonNullable<ParsedAggregateProjection["metric"]> } =>
-          projection.kind === "metric" && !!projection.metric
+        .filter(
+          (
+            projection,
+          ): projection is ParsedAggregateProjection & {
+            metric: NonNullable<ParsedAggregateProjection["metric"]>;
+          } => projection.kind === "metric" && !!projection.metric,
         )
         .map((projection) => projection.metric),
       output: [
@@ -2405,8 +2437,12 @@ function tryLowerSimpleSelect(
           name: ref.column,
         })),
         ...safeAggregateProjections
-          .filter((projection): projection is ParsedAggregateProjection & { metric: NonNullable<ParsedAggregateProjection["metric"]> } =>
-            projection.kind === "metric" && !!projection.metric
+          .filter(
+            (
+              projection,
+            ): projection is ParsedAggregateProjection & {
+              metric: NonNullable<ParsedAggregateProjection["metric"]>;
+            } => projection.kind === "metric" && !!projection.metric,
           )
           .map((projection) => ({
             name: projection.metric.as,
@@ -2422,10 +2458,7 @@ function tryLowerSimpleSelect(
       convention: "local",
       input: current,
       functions: windowFunctions,
-      output: [
-        ...current.output,
-        ...windowFunctions.map((fn) => ({ name: fn.as })),
-      ],
+      output: [...current.output, ...windowFunctions.map((fn) => ({ name: fn.as }))],
     };
   }
 
@@ -2483,7 +2516,8 @@ function tryLowerSimpleSelect(
                   column: projection.metric!.as,
                 },
                 output: projection.output,
-              })
+              },
+        )
       : safeProjections.map((projection) => ({
           ...(projection.kind === "expr"
             ? {
@@ -2716,9 +2750,7 @@ function parseWindowProjection(
     });
   }
 
-  const output = typeof entry.as === "string" && entry.as.length > 0
-    ? entry.as
-    : name;
+  const output = typeof entry.as === "string" && entry.as.length > 0 ? entry.as : name;
 
   return {
     kind: "window",
@@ -2877,7 +2909,8 @@ function lowerFunctionExprToRelExpr(
     return null;
   }
 
-  const rawName = (expr.name as { name?: Array<{ value?: unknown }> } | undefined)?.name?.[0]?.value;
+  const rawName = (expr.name as { name?: Array<{ value?: unknown }> } | undefined)?.name?.[0]
+    ?.value;
   if (typeof rawName !== "string") {
     return null;
   }
@@ -2998,9 +3031,10 @@ function mapBinaryOperatorToRelFunction(operator: string): string | null {
   }
 }
 
-function readWindowFunctionName(
-  expr: { type?: unknown; name?: unknown },
-): "dense_rank" | "rank" | "row_number" | null {
+function readWindowFunctionName(expr: {
+  type?: unknown;
+  name?: unknown;
+}): "dense_rank" | "rank" | "row_number" | null {
   if (expr.type === "aggr_func" && typeof expr.name === "string") {
     return expr.name.toLowerCase() as "dense_rank" | "rank" | "row_number";
   }
@@ -3262,9 +3296,7 @@ function validateAggregateProjectionGroupBy(
   projections: ParsedAggregateProjection[],
   groupBy: RelColumnRef[],
 ): boolean {
-  const groupBySet = new Set(
-    groupBy.map((ref) => `${ref.alias ?? ""}.${ref.column}`),
-  );
+  const groupBySet = new Set(groupBy.map((ref) => `${ref.alias ?? ""}.${ref.column}`));
 
   for (const projection of projections) {
     if (projection.kind !== "group" || !projection.source) {
@@ -3377,14 +3409,17 @@ function parseWhereFilters(
     literals.push(parsed);
   }
 
-  const residualExpr = residualParts.reduce<RelExpr | null>((acc, current) =>
-    acc
-      ? {
-          kind: "function",
-          name: "and",
-          args: [acc, current],
-        }
-      : current, null);
+  const residualExpr = residualParts.reduce<RelExpr | null>(
+    (acc, current) =>
+      acc
+        ? {
+            kind: "function",
+            name: "and",
+            args: [acc, current],
+          }
+        : current,
+    null,
+  );
 
   return residualExpr
     ? {

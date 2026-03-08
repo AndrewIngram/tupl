@@ -19,14 +19,12 @@ describe("query/schema dsl", () => {
     });
 
     const builder = createSchemaBuilder<Record<string, never>>();
-    builder.table(vendorsEntity, {
-      name: "my_vendors",
+    builder.table("my_vendors", vendorsEntity, {
       columns: () => ({
         id: { source: "id", type: "text", nullable: false, primaryKey: true },
       }),
     });
-    builder.table(ordersEntity, {
-      name: "my_orders",
+    builder.table("my_orders", ordersEntity, {
       columns: () => ({
         id: { source: "id", type: "text", nullable: false, primaryKey: true },
         vendor_id: {

@@ -1,7 +1,7 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import { buildSchema, buildStaticSchema } from "../support/schema-builder";
+import { buildSchema, buildEntitySchema } from "../support/schema-builder";
 import { finalizeProviders } from "../support/executable-schema";
 import {
   buildProviderFragmentForRelResult,
@@ -14,7 +14,7 @@ import {
 
 describe("query/planning", () => {
   it("lowers simple select/join into relational operators", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "orders",
         columns: {
@@ -75,7 +75,7 @@ describe("query/planning", () => {
   });
 
   it("returns tagged planning errors from the result API", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         provider: "warehouse",
         columns: {
@@ -99,9 +99,7 @@ describe("query/planning", () => {
 
   it("returns tagged planning errors when expanding invalid view rels", () => {
     const schema = buildSchema((builder) => {
-      builder.view({
-        name: "broken_view",
-        rel: ({ scan }) => scan("missing_table"),
+      builder.view("broken_view", ({ scan }) => scan("missing_table"), {
         columns: {
           id: { source: "missing_table.id" },
         },
@@ -124,9 +122,7 @@ describe("query/planning", () => {
 
   it("returns tagged planning errors when building provider fragments for invalid expanded rels", () => {
     const schema = buildSchema((builder) => {
-      builder.view({
-        name: "broken_view",
-        rel: ({ scan }) => scan("missing_table"),
+      builder.view("broken_view", ({ scan }) => scan("missing_table"), {
         columns: {
           id: { source: "missing_table.id" },
         },
@@ -148,7 +144,7 @@ describe("query/planning", () => {
   });
 
   it("returns tagged planning errors from physical planning when a provider adapter is missing", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         provider: "warehouse",
         columns: {
@@ -179,7 +175,7 @@ describe("query/planning", () => {
   });
 
   it("plans lookup_join for cross-provider joins with lookupMany", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "orders",
         columns: {
@@ -257,7 +253,7 @@ describe("query/planning", () => {
   });
 
   it("plans same-provider subtree as a remote rel fragment when supported", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
         columns: {
@@ -323,7 +319,7 @@ describe("query/planning", () => {
   });
 
   it("splits deterministically to remote scans + local join when rel pushdown is rejected", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
         columns: {
@@ -384,7 +380,7 @@ describe("query/planning", () => {
   });
 
   it("does not plan lookup_join for RIGHT joins", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "orders",
         columns: {
@@ -462,7 +458,7 @@ describe("query/planning", () => {
   });
 
   it("lowers non-correlated IN (SELECT ...) to a semi join (not sql rel fallback)", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       my_orders: {
         provider: "warehouse",
         columns: {
@@ -502,7 +498,7 @@ describe("query/planning", () => {
   });
 
   it("lowers UNION ALL to structured set_op rel", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       a: {
         provider: "warehouse",
         columns: { id: "text" },
@@ -530,7 +526,7 @@ describe("query/planning", () => {
   });
 
   it("lowers WITH queries to structured with rel", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         provider: "warehouse",
         columns: {
@@ -563,7 +559,7 @@ describe("query/planning", () => {
   });
 
   it("lowers DENSE_RANK window projections to a window rel node", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
         columns: {

@@ -12,13 +12,13 @@ import {
   type TableLookupRequest,
   type TableScanRequest,
 } from "../../src";
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
 describe("query/planner-hooks", () => {
   it("applies ID-based planScan pushdown with local residual execution", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",
@@ -77,7 +77,7 @@ describe("query/planner-hooks", () => {
   });
 
   it("allows planScan residuals by default", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",
@@ -108,7 +108,7 @@ describe("query/planner-hooks", () => {
   });
 
   it("supports explicit remote/residual planScan mode", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",
@@ -154,7 +154,7 @@ describe("query/planner-hooks", () => {
   });
 
   it("applies planLookup and local residual filters", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",
@@ -212,7 +212,7 @@ describe("query/planner-hooks", () => {
   });
 
   it("falls back from aggregate handler when planAggregate leaves residual and policy allows it", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",

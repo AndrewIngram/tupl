@@ -53,7 +53,9 @@ describe("sqlite-parser", () => {
       FROM orders
     `);
 
-    const columns = ast.columns as Array<{ expr?: { over?: { as_window_specification?: unknown } } }>;
+    const columns = ast.columns as Array<{
+      expr?: { over?: { as_window_specification?: unknown } };
+    }>;
     const over = columns[0]?.expr?.over?.as_window_specification as {
       window_specification?: {
         partitionby?: unknown[];
@@ -71,7 +73,9 @@ describe("sqlite-parser", () => {
       FROM orders
     `);
 
-    const columns = ast.columns as Array<{ expr?: { over?: { as_window_specification?: unknown } } }>;
+    const columns = ast.columns as Array<{
+      expr?: { over?: { as_window_specification?: unknown } };
+    }>;
     expect(columns[0]?.expr?.over?.as_window_specification).toBe("w");
   });
 

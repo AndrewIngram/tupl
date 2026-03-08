@@ -75,14 +75,18 @@ export function createMethodsProvider<TContext>(
         case "scan": {
           const method = methods[fragment.table];
           if (!method?.scan) {
-            return Result.err(new Error(`No table methods registered for table: ${fragment.table}`));
+            return Result.err(
+              new Error(`No table methods registered for table: ${fragment.table}`),
+            );
           }
           return Result.ok(await method.scan(fragment.request, context));
         }
         case "aggregate": {
           const method = methods[fragment.table];
           if (!method?.aggregate) {
-            return Result.err(new Error(`No aggregate method registered for table: ${fragment.table}`));
+            return Result.err(
+              new Error(`No aggregate method registered for table: ${fragment.table}`),
+            );
           }
           return Result.ok(await method.aggregate(fragment.request, context));
         }
@@ -132,16 +136,16 @@ export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDe
   const builder = createSchemaBuilder<TContext>();
 
   for (const [tableName, tableDefinition] of Object.entries(schema.tables)) {
-    builder.table(provider.entities![tableName]!, {
-      name: tableName,
-      columns: () => Object.fromEntries(
-        Object.entries(tableDefinition.columns).map(([columnName, definition]) => [
-          columnName,
-          typeof definition === "string"
-            ? { source: columnName, type: definition }
-            : { source: columnName, ...definition },
-        ]),
-      ),
+    builder.table(tableName, provider.entities![tableName]!, {
+      columns: () =>
+        Object.fromEntries(
+          Object.entries(tableDefinition.columns).map(([columnName, definition]) => [
+            columnName,
+            typeof definition === "string"
+              ? { source: columnName, type: definition }
+              : { source: columnName, ...definition },
+          ]),
+        ),
       ...(tableDefinition.constraints ? { constraints: tableDefinition.constraints } : {}),
     });
   }
@@ -149,20 +153,15 @@ export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDe
   return createExecutableSchema(builder);
 }
 
-export function queryWithMethods<TContext>(
-  input: {
-    schema: SchemaDefinition;
-    methods: TableMethodsMap<TContext>;
-    context: TContext;
-    sql: string;
-    queryGuardrails?: Partial<QueryGuardrails>;
-    constraintValidation?: ConstraintValidationOptions;
-  },
-): Promise<QueryRow[]> {
-  return createExecutableMethodsSchema(
-    input.schema,
-    input.methods,
-  ).query({
+export function queryWithMethods<TContext>(input: {
+  schema: SchemaDefinition;
+  methods: TableMethodsMap<TContext>;
+  context: TContext;
+  sql: string;
+  queryGuardrails?: Partial<QueryGuardrails>;
+  constraintValidation?: ConstraintValidationOptions;
+}): Promise<QueryRow[]> {
+  return createExecutableMethodsSchema(input.schema, input.methods).query({
     context: input.context,
     sql: input.sql,
     ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),
@@ -170,21 +169,16 @@ export function queryWithMethods<TContext>(
   });
 }
 
-export function createMethodsSession<TContext>(
-  input: {
-    schema: SchemaDefinition;
-    methods: TableMethodsMap<TContext>;
-    context: TContext;
-    sql: string;
-    queryGuardrails?: Partial<QueryGuardrails>;
-    constraintValidation?: ConstraintValidationOptions;
-    options?: QuerySessionOptions;
-  },
-) {
-  return createExecutableMethodsSchema(
-    input.schema,
-    input.methods,
-  ).createSession({
+export function createMethodsSession<TContext>(input: {
+  schema: SchemaDefinition;
+  methods: TableMethodsMap<TContext>;
+  context: TContext;
+  sql: string;
+  queryGuardrails?: Partial<QueryGuardrails>;
+  constraintValidation?: ConstraintValidationOptions;
+  options?: QuerySessionOptions;
+}) {
+  return createExecutableMethodsSchema(input.schema, input.methods).createSession({
     context: input.context,
     sql: input.sql,
     ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),

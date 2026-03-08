@@ -3,13 +3,13 @@ import { queryWithMethods } from "../support/methods-provider";
 import { createArrayTableMethods } from "../../src/array-methods";
 
 import { defineTableMethods } from "../../src";
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
 describe("query/enums", () => {
   it("rejects invalid enum literal for = predicates", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",
@@ -33,7 +33,7 @@ describe("query/enums", () => {
   });
 
   it("rejects invalid enum literal for IN predicates", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",
@@ -57,7 +57,7 @@ describe("query/enums", () => {
   });
 
   it("surfaces runtime enum/check violations in constraint validation mode", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: { type: "text", nullable: false },
@@ -91,7 +91,7 @@ describe("query/enums", () => {
   });
 
   it("supports explicit CHECK IN constraints", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       invoices: {
         columns: {
           id: { type: "text", nullable: false },

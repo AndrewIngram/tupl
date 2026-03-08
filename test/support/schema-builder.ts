@@ -1,4 +1,5 @@
 import {
+  createDataEntityHandle,
   createSchemaBuilder,
   type SchemaBuilder,
   type SchemaDefinition,
@@ -14,15 +15,18 @@ export function buildSchema<TContext = Record<string, never>>(
   return builder.build();
 }
 
-type StaticTableDefinition<TColumns extends Record<string, TableColumnDefinition>> = {
+type EntityTableDefinition<TColumns extends Record<string, TableColumnDefinition>> = {
   provider?: string;
   columns: TColumns;
   constraints?: TableConstraints;
 };
 
-type StaticSchemaInput = Record<string, StaticTableDefinition<Record<string, TableColumnDefinition>>>;
+type EntitySchemaInput = Record<
+  string,
+  EntityTableDefinition<Record<string, TableColumnDefinition>>
+>;
 
-type StaticSchemaDefinition<TTables extends StaticSchemaInput> = {
+type EntitySchemaDefinition<TTables extends EntitySchemaInput> = {
   tables: {
     [TTableName in keyof TTables]: {
       provider?: string;
@@ -32,17 +36,19 @@ type StaticSchemaDefinition<TTables extends StaticSchemaInput> = {
   };
 };
 
-export function buildStaticSchema<const TTables extends StaticSchemaInput>(
+export function buildEntitySchema<const TTables extends EntitySchemaInput>(
   tables: TTables,
-): StaticSchemaDefinition<TTables> {
+): EntitySchemaDefinition<TTables> {
   const builder = createSchemaBuilder<Record<string, never>>();
   for (const [name, table] of Object.entries(tables)) {
-    builder.table({
-      name,
-      ...(table.provider ? { provider: table.provider } : {}),
+    const entity = createDataEntityHandle({
+      entity: name,
+      provider: table.provider ?? "memory",
+    });
+    builder.table(name, entity, {
       columns: table.columns,
       ...(table.constraints ? { constraints: table.constraints } : {}),
     });
   }
-  return builder.build() as StaticSchemaDefinition<TTables>;
+  return builder.build() as EntitySchemaDefinition<TTables>;
 }

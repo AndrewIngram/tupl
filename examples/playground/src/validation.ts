@@ -1,12 +1,12 @@
 import { z } from "zod";
 import {
+  createDataEntityHandle,
   createSchemaBuilder,
   type QueryRow,
   type SchemaDefinition,
   type TableColumnDefinition,
   type TableDefinition,
 } from "../../../src/index";
-import { finalizeSchemaDefinition } from "../../../src/schema";
 
 import { DOWNSTREAM_ROWS_SCHEMA } from "./downstream-model";
 import { KV_INPUT_TABLE_DEFINITION, KV_INPUT_TABLE_NAME } from "./kv-provider";
@@ -33,141 +33,37 @@ const sqlScalarTypeSchema = z.enum([
   "json",
 ]);
 const sqlScalarTypeValues = sqlScalarTypeSchema.options;
-const physicalDialectSchema = z.enum(["postgres", "sqlite"]);
 
 const downstreamInputRowsBuilder = createSchemaBuilder<Record<string, never>>();
+const inputRowsEntity = (name: string, provider?: string) =>
+  createDataEntityHandle({
+    entity: name,
+    provider: provider ?? "memory",
+  });
 
 for (const [tableName, tableDefinition] of Object.entries(DOWNSTREAM_ROWS_SCHEMA.tables)) {
-  downstreamInputRowsBuilder.table({
-    name: tableName,
-    ...(tableDefinition.provider ? { provider: tableDefinition.provider } : {}),
-    columns: tableDefinition.columns,
-    ...(tableDefinition.constraints ? { constraints: tableDefinition.constraints } : {}),
-  });
+  downstreamInputRowsBuilder.table(
+    tableName,
+    inputRowsEntity(tableName, tableDefinition.provider),
+    {
+      columns: tableDefinition.columns,
+      ...(tableDefinition.constraints ? { constraints: tableDefinition.constraints } : {}),
+    },
+  );
 }
 
-downstreamInputRowsBuilder.table({
-  name: KV_INPUT_TABLE_NAME,
-  ...(KV_INPUT_TABLE_DEFINITION.provider ? { provider: KV_INPUT_TABLE_DEFINITION.provider } : {}),
-  columns: KV_INPUT_TABLE_DEFINITION.columns,
-  ...(KV_INPUT_TABLE_DEFINITION.constraints
-    ? { constraints: KV_INPUT_TABLE_DEFINITION.constraints }
-    : {}),
-});
+downstreamInputRowsBuilder.table(
+  KV_INPUT_TABLE_NAME,
+  inputRowsEntity(KV_INPUT_TABLE_NAME, KV_INPUT_TABLE_DEFINITION.provider),
+  {
+    columns: KV_INPUT_TABLE_DEFINITION.columns,
+    ...(KV_INPUT_TABLE_DEFINITION.constraints
+      ? { constraints: KV_INPUT_TABLE_DEFINITION.constraints }
+      : {}),
+  },
+);
 
 const DOWNSTREAM_INPUT_ROWS_SCHEMA: SchemaDefinition = downstreamInputRowsBuilder.build();
-
-const primaryKeySchema = z
-  .object({
-    columns: z.array(z.string()).min(1),
-    name: z.string().optional(),
-  })
-  .strict();
-
-const uniqueSchema = z
-  .object({
-    columns: z.array(z.string()).min(1),
-    name: z.string().optional(),
-  })
-  .strict();
-
-const referentialActionSchema = z.enum([
-  "NO ACTION",
-  "RESTRICT",
-  "CASCADE",
-  "SET NULL",
-  "SET DEFAULT",
-]);
-
-const columnForeignKeySchema = z
-  .object({
-    table: z.string().min(1),
-    column: z.string().min(1),
-    name: z.string().optional(),
-    onDelete: referentialActionSchema.optional(),
-    onUpdate: referentialActionSchema.optional(),
-  })
-  .strict();
-
-const foreignKeySchema = z
-  .object({
-    columns: z.array(z.string()).min(1),
-    references: z
-      .object({
-        table: z.string().min(1),
-        columns: z.array(z.string()).min(1),
-      })
-      .strict(),
-    name: z.string().optional(),
-    onDelete: referentialActionSchema.optional(),
-    onUpdate: referentialActionSchema.optional(),
-  })
-  .strict();
-
-const checkConstraintSchema = z
-  .object({
-    kind: z.literal("in"),
-    column: z.string().min(1),
-    values: z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])).min(1),
-    name: z.string().optional(),
-  })
-  .strict();
-
-const columnObjectDefinitionSchema = z
-  .object({
-    type: sqlScalarTypeSchema,
-    nullable: z.boolean().optional(),
-    primaryKey: z.boolean().optional(),
-    unique: z.boolean().optional(),
-    enum: z.array(z.string()).min(1).optional(),
-    enumFrom: z.string().min(1).optional(),
-    enumMap: z.record(z.string().min(1), z.string().min(1)).optional(),
-    physicalType: z.string().min(1).optional(),
-    physicalDialect: physicalDialectSchema.optional(),
-    foreignKey: columnForeignKeySchema.optional(),
-    description: z.string().optional(),
-  })
-  .strict()
-  .superRefine((value, ctx) => {
-    if (value.primaryKey === true && value.unique === true) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["unique"],
-        message: "A column cannot be both primaryKey and unique.",
-      });
-    }
-    if (value.enumMap && !value.enumFrom) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["enumMap"],
-        message: "enumMap requires enumFrom.",
-      });
-    }
-  });
-
-const columnDefinitionSchema = z.union([sqlScalarTypeSchema, columnObjectDefinitionSchema]);
-
-const tableSchema = z
-  .object({
-    provider: z.string().min(1),
-    columns: z.record(z.string().min(1), columnDefinitionSchema),
-    constraints: z
-      .object({
-        primaryKey: primaryKeySchema.optional(),
-        unique: z.array(uniqueSchema).optional(),
-        foreignKeys: z.array(foreignKeySchema).optional(),
-        checks: z.array(checkConstraintSchema).optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
-
-const schemaSchema = z
-  .object({
-    tables: z.record(z.string().min(1), tableSchema),
-  })
-  .strict();
 
 function issuePath(path: Array<string | number>): string {
   if (path.length === 0) {
@@ -192,7 +88,7 @@ function zodIssues(error: z.ZodError): SchemaValidationIssue[] {
 }
 
 function canUseWorkerSandbox(): boolean {
-  return typeof Worker !== "undefined";
+  return "window" in globalThis && typeof Worker !== "undefined";
 }
 
 export async function parseFacadeSchemaCode(
@@ -217,61 +113,24 @@ export async function parseFacadeSchemaCode(
       schemaCode: value,
       ...(options.modules ? { options: { modules: options.modules } } : {}),
     });
-    if (!workerResult.ok || !workerResult.schema) {
-      return workerResult;
-    }
-    return {
-      ok: true,
-      schema: finalizeSchemaDefinition(workerResult.schema),
-      issues: [],
-    };
+    return workerResult;
   }
 
   return validateSchemaInSandbox(value, options);
 }
 
 export function parseFacadeSchemaText(value: string): SchemaParseResult {
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(value);
-  } catch (error) {
-    return {
-      ok: false,
-      issues: [
-        {
-          path: "$",
-          message: error instanceof Error ? error.message : "Invalid JSON.",
-        },
-      ],
-    };
-  }
-
-  const parsedSchema = schemaSchema.safeParse(parsedJson);
-  if (!parsedSchema.success) {
-    return {
-      ok: false,
-      issues: zodIssues(parsedSchema.error),
-    };
-  }
-
-  try {
-    const schema = finalizeSchemaDefinition(parsedSchema.data as SchemaDefinition);
-    return {
-      ok: true,
-      schema,
-      issues: [],
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      issues: [
-        {
-          path: "$",
-          message: error instanceof Error ? error.message : "Invalid schema.",
-        },
-      ],
-    };
-  }
+  void value;
+  return {
+    ok: false,
+    issues: [
+      {
+        path: "$",
+        message:
+          "Raw facade schema JSON is no longer supported. Export `executableSchema` created via createSchemaBuilder().",
+      },
+    ],
+  };
 }
 
 export const parseSchemaText = parseFacadeSchemaText;

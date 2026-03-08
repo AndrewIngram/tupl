@@ -103,7 +103,11 @@ async function resolveKnex<TContext>(
 ): Promise<KnexLike> {
   const knex = typeof options.knex === "function" ? await options.knex(context) : options.knex;
   const candidate = knex as Partial<KnexLike> | null | undefined;
-  if (!candidate || typeof candidate.table !== "function" || typeof candidate.queryBuilder !== "function") {
+  if (
+    !candidate ||
+    typeof candidate.table !== "function" ||
+    typeof candidate.queryBuilder !== "function"
+  ) {
     throw new Error(
       "Objection provider runtime binding did not resolve to a valid knex instance. Check your context and knex callback.",
     );
@@ -244,20 +248,23 @@ type InferObjectionEntityColumns<TConfig> = TConfig extends { shape: infer TShap
     ? Extract<keyof TRow, string>
     : string;
 
-type InferObjectionEntityRow<TConfig> = TConfig extends ObjectionProviderEntityConfig<any, infer TRow, any>
-  ? TRow
-  : Record<string, unknown>;
+type InferObjectionEntityRow<TConfig> =
+  TConfig extends ObjectionProviderEntityConfig<any, infer TRow, any>
+    ? TRow
+    : Record<string, unknown>;
 
-type NormalizeObjectionEntityRow<TConfig> = InferObjectionEntityRow<TConfig> & Partial<
-  Record<InferObjectionEntityColumns<TConfig>, unknown>
->;
+type NormalizeObjectionEntityRow<TConfig> = InferObjectionEntityRow<TConfig> &
+  Partial<Record<InferObjectionEntityColumns<TConfig>, unknown>>;
 
 type InferObjectionEntityColumnMetadata<TConfig> = TConfig extends { shape: infer TShape }
   ? InferDataEntityShapeMetadata<
       InferObjectionEntityColumns<TConfig>,
       Extract<TShape, DataEntityShape<InferObjectionEntityColumns<TConfig>>>
     >
-  : DataEntityReadMetadataMap<InferObjectionEntityColumns<TConfig>, NormalizeObjectionEntityRow<TConfig>>;
+  : DataEntityReadMetadataMap<
+      InferObjectionEntityColumns<TConfig>,
+      NormalizeObjectionEntityRow<TConfig>
+    >;
 
 export function createObjectionProvider<
   TContext,
@@ -361,7 +368,9 @@ export function createObjectionProvider<
         }
         default:
           return Result.err(
-            new Error(`Unsupported Objection fragment kind: ${(fragment as { kind?: unknown }).kind}`),
+            new Error(
+              `Unsupported Objection fragment kind: ${(fragment as { kind?: unknown }).kind}`,
+            ),
           );
       }
     },
@@ -539,14 +548,19 @@ function canCompileBasicRel<TContext>(
     case "filter":
       return !node.expr && canCompileBasicRel(node.input, entityConfigs);
     case "project":
-      return node.columns.every((column) => isRelProjectColumnMapping(column))
-        && canCompileBasicRel(node.input, entityConfigs);
+      return (
+        node.columns.every((column) => isRelProjectColumnMapping(column)) &&
+        canCompileBasicRel(node.input, entityConfigs)
+      );
     case "aggregate":
     case "sort":
     case "limit_offset":
       return canCompileBasicRel(node.input, entityConfigs);
     case "join":
-      return canCompileBasicRel(node.left, entityConfigs) && canCompileBasicRel(node.right, entityConfigs);
+      return (
+        canCompileBasicRel(node.left, entityConfigs) &&
+        canCompileBasicRel(node.right, entityConfigs)
+      );
     case "window":
     case "set_op":
     case "with":
@@ -691,18 +705,13 @@ async function buildObjectionBasicRelSingleQueryBuilder<TContext>(
 ): Promise<KnexLikeQueryBuilder> {
   const plan = await buildSingleQueryPlan(rel, entityConfigs);
 
-  const rootSource = createJoinSource(knex, plan.joinPlan.root, context);
+  const rootSource = createJoinSource(plan.joinPlan.root, context);
   let query = knex.queryBuilder().from(rootSource);
 
   for (const joinStep of plan.joinPlan.joins) {
     if (joinStep.joinType === "semi") {
       const leftRef = `${joinStep.leftKey.alias}.${joinStep.leftKey.column}`;
-      const subquery = await buildObjectionSemiJoinSubquery(
-        knex,
-        entityConfigs,
-        joinStep,
-        context,
-      );
+      const subquery = await buildObjectionSemiJoinSubquery(knex, entityConfigs, joinStep, context);
       query = query.whereIn(leftRef, subquery);
       continue;
     }
@@ -723,7 +732,7 @@ async function buildObjectionBasicRelSingleQueryBuilder<TContext>(
       );
     }
 
-    const rightSource = createJoinSource(knex, joinStep.right, context);
+    const rightSource = createJoinSource(joinStep.right, context);
     query = (fn as (...args: unknown[]) => KnexLikeQueryBuilder).call(
       query,
       rightSource,
@@ -751,7 +760,8 @@ async function buildObjectionBasicRelSingleQueryBuilder<TContext>(
       ...plan.pipeline.aggregate.groupBy.map((ref) =>
         resolveColumnRef(plan.joinPlan.aliases, {
           ...toRef(ref.alias ?? ref.table, ref.column),
-        })),
+        }),
+      ),
     );
   }
 
@@ -854,7 +864,10 @@ async function buildObjectionSetOpRelSingleQueryBuilder<TContext>(
   if (wrapper.project) {
     for (const rawMapping of wrapper.project.columns) {
       const mapping = requireColumnProjectMapping(rawMapping);
-      if ((mapping.source.alias || mapping.source.table) && mapping.source.column !== mapping.output) {
+      if (
+        (mapping.source.alias || mapping.source.table) &&
+        mapping.source.column !== mapping.output
+      ) {
         throw new UnsupportedSingleQueryPlanError(
           "Set-op projections with qualified or renamed columns are not supported in single-query pushdown.",
         );
@@ -923,7 +936,9 @@ async function buildObjectionWithRelSingleQueryBuilder<TContext>(
 
   const body = unwrapWithBodyRel(rel.body);
   if (!body) {
-    throw new UnsupportedSingleQueryPlanError("Unsupported WITH body shape for single-query pushdown.");
+    throw new UnsupportedSingleQueryPlanError(
+      "Unsupported WITH body shape for single-query pushdown.",
+    );
   }
 
   const scanAlias = body.cteScan.alias ?? body.cteScan.table;
@@ -964,7 +979,7 @@ async function buildObjectionWithRelSingleQueryBuilder<TContext>(
   const projection: Array<{
     source: { alias?: string; table?: string; column: string };
     output: string;
-  }> = (body.project?.columns.map((mapping) => requireColumnProjectMapping(mapping)) ?? [
+  }> = body.project?.columns.map((mapping) => requireColumnProjectMapping(mapping)) ?? [
     ...body.cteScan.select.map((column) => ({
       source: { column },
       output: column,
@@ -973,10 +988,14 @@ async function buildObjectionWithRelSingleQueryBuilder<TContext>(
       source: { column },
       output: column,
     })),
-  ]);
+  ];
 
   for (const mapping of projection) {
-    if (!mapping.source.alias && !mapping.source.table && windowAliases.has(mapping.source.column)) {
+    if (
+      !mapping.source.alias &&
+      !mapping.source.table &&
+      windowAliases.has(mapping.source.column)
+    ) {
       query = query.select({ [mapping.output]: mapping.source.column });
       continue;
     }
@@ -1010,12 +1029,7 @@ function applyWindowFunction(
   fn: Extract<RelNode, { kind: "window" }>["functions"][number],
   scanAlias: string,
 ): KnexLikeQueryBuilder {
-  const methodName =
-    fn.fn === "dense_rank"
-      ? "denseRank"
-      : fn.fn === "rank"
-        ? "rank"
-        : "rowNumber";
+  const methodName = fn.fn === "dense_rank" ? "denseRank" : fn.fn === "rank" ? "rank" : "rowNumber";
 
   const method = (query as unknown as Record<string, unknown>)[methodName];
   if (typeof method !== "function") {
@@ -1078,11 +1092,7 @@ function resolveWithBodyColumnRef(
   return `${scanAlias}.${ref.column}`;
 }
 
-function createJoinSource<TContext>(
-  knex: KnexLike,
-  binding: ScanBinding<TContext>,
-  context: TContext,
-): unknown {
+function createJoinSource<TContext>(binding: ScanBinding<TContext>, context: TContext): unknown {
   if (!binding.config.base) {
     return { [binding.alias]: binding.table };
   }
@@ -1160,7 +1170,9 @@ function extractRelPipeline(node: RelNode): RelPipeline {
         continue;
       case "limit_offset":
         if (limitOffset) {
-          throw new UnsupportedSingleQueryPlanError("Multiple limit/offset nodes are not supported.");
+          throw new UnsupportedSingleQueryPlanError(
+            "Multiple limit/offset nodes are not supported.",
+          );
         }
         limitOffset = current;
         current = current.input;
@@ -1299,7 +1311,9 @@ async function buildJoinPlan<TContext>(
   }
 
   if (node.kind !== "join") {
-    throw new UnsupportedSingleQueryPlanError(`Expected scan/join base node, received "${node.kind}".`);
+    throw new UnsupportedSingleQueryPlanError(
+      `Expected scan/join base node, received "${node.kind}".`,
+    );
   }
 
   const left = await buildJoinPlan(node.left, entityConfigs);
@@ -1381,7 +1395,9 @@ function createScanBinding<TContext>(
 ): ScanBinding<TContext> {
   const binding = entityConfigs[scan.table];
   if (!binding) {
-    throw new UnsupportedSingleQueryPlanError(`Missing Objection entity config for "${scan.table}".`);
+    throw new UnsupportedSingleQueryPlanError(
+      `Missing Objection entity config for "${scan.table}".`,
+    );
   }
 
   return {
@@ -1489,7 +1505,9 @@ function applySelection<TContext>(
   if (!plan.pipeline.aggregate) {
     const project = plan.pipeline.project;
     if (!project) {
-      throw new UnsupportedSingleQueryPlanError("Non-aggregate rel fragment requires a project node.");
+      throw new UnsupportedSingleQueryPlanError(
+        "Non-aggregate rel fragment requires a project node.",
+      );
     }
 
     for (const rawMapping of project.columns) {
@@ -1507,17 +1525,16 @@ function applySelection<TContext>(
     plan.pipeline.aggregate.groupBy.map((groupBy) => [groupBy.column, groupBy] as const),
   );
 
-  const projection = plan.pipeline.project?.columns ??
-    [
-      ...plan.pipeline.aggregate.groupBy.map((groupBy) => ({
-        source: { column: groupBy.column },
-        output: groupBy.column,
-      })),
-      ...plan.pipeline.aggregate.metrics.map((metric) => ({
-        source: { column: metric.as },
-        output: metric.as,
-      })),
-    ];
+  const projection = plan.pipeline.project?.columns ?? [
+    ...plan.pipeline.aggregate.groupBy.map((groupBy) => ({
+      source: { column: groupBy.column },
+      output: groupBy.column,
+    })),
+    ...plan.pipeline.aggregate.metrics.map((metric) => ({
+      source: { column: metric.as },
+      output: metric.as,
+    })),
+  ];
 
   for (const rawMapping of projection) {
     const mapping = requireColumnProjectMapping(rawMapping);
@@ -1544,7 +1561,7 @@ function applySelection<TContext>(
 function applyMetricSelection<TContext>(
   query: KnexLikeQueryBuilder,
   aliases: Map<string, ScanBinding<TContext>>,
-  metric: Extract<RelNode, { kind: "aggregate" }>['metrics'][number],
+  metric: Extract<RelNode, { kind: "aggregate" }>["metrics"][number],
   output: string,
 ): void {
   if (metric.fn === "count" && !metric.column) {
@@ -1566,11 +1583,15 @@ function applyMetricSelection<TContext>(
   }
 
   if (metric.fn === "sum" && metric.distinct) {
-    throw new UnsupportedSingleQueryPlanError("Knex sum(distinct ...) is not supported in this adapter yet.");
+    throw new UnsupportedSingleQueryPlanError(
+      "Knex sum(distinct ...) is not supported in this adapter yet.",
+    );
   }
 
   if (metric.fn === "avg" && metric.distinct) {
-    throw new UnsupportedSingleQueryPlanError("Knex avg(distinct ...) is not supported in this adapter yet.");
+    throw new UnsupportedSingleQueryPlanError(
+      "Knex avg(distinct ...) is not supported in this adapter yet.",
+    );
   }
 
   switch (metric.fn) {
@@ -1594,7 +1615,7 @@ function applyMetricSelection<TContext>(
 
 function resolveSortRef<TContext>(
   plan: SingleQueryPlan<TContext>,
-  term: Extract<RelNode, { kind: "sort" }>['orderBy'][number],
+  term: Extract<RelNode, { kind: "sort" }>["orderBy"][number],
 ): string {
   if (term.source.alias || term.source.table) {
     return resolveColumnRef(plan.joinPlan.aliases, {

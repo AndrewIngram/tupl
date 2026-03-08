@@ -10,7 +10,7 @@ import {
   resolveTableColumnDefinition,
   toSqlDDL,
 } from "../src";
-import { buildSchema, buildStaticSchema } from "./support/schema-builder";
+import { buildSchema, buildEntitySchema } from "./support/schema-builder";
 
 describe("createSchemaBuilder", () => {
   it("supports source-neutral physical entity lens mappings", () => {
@@ -20,9 +20,7 @@ describe("createSchemaBuilder", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table({
-        name: "my_orders",
-        from: ordersEntity,
+      builder.table("my_orders", ordersEntity, {
         columns: {
           id: { source: "id", type: "text", nullable: false },
           total_cents: { source: "total_cents", type: "integer", nullable: false },
@@ -53,15 +51,14 @@ describe("createSchemaBuilder", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table({
-        name: "my_orders",
-        from: ordersEntity,
+      builder.table("my_orders", ordersEntity, {
         columns: {
           id: { source: "id", type: "text", nullable: false },
           total_cents: { source: "total_cents", type: "integer", nullable: false },
         },
       });
       builder.view(
+        "my_order_stats",
         ({ scan, aggregate, col, agg }) =>
           aggregate({
             from: scan("my_orders"),
@@ -72,7 +69,6 @@ describe("createSchemaBuilder", () => {
             },
           }),
         {
-          name: "my_order_stats",
           columns: ({ col }) => ({
             order_id: col.string("order_id", { nullable: false }),
             spend: col.integer("spend"),
@@ -104,9 +100,7 @@ describe("createSchemaBuilder", () => {
     });
 
     const schema = buildSchema((builder) => {
-      const myOrders = builder.table({
-        name: "myOrders",
-        from: ordersEntity,
+      const myOrders = builder.table("myOrders", ordersEntity, {
         columns: {
           id: { source: "id", type: "text", nullable: false },
           vendorId: { source: "vendor_id", type: "text", nullable: false },
@@ -114,9 +108,7 @@ describe("createSchemaBuilder", () => {
         },
       });
 
-      const vendorsForOrg = builder.table({
-        name: "vendorsForOrg",
-        from: vendorsEntity,
+      const vendorsForOrg = builder.table("vendorsForOrg", vendorsEntity, {
         columns: {
           id: { source: "id", type: "text", nullable: false },
           name: { source: "name", type: "text", nullable: false },
@@ -124,6 +116,7 @@ describe("createSchemaBuilder", () => {
       });
 
       builder.view(
+        "spendByVendor",
         ({ scan, join, aggregate, col, expr, agg }) =>
           aggregate({
             from: join({
@@ -140,7 +133,6 @@ describe("createSchemaBuilder", () => {
             },
           }),
         {
-          name: "spendByVendor",
           columns: ({ col }) => ({
             vendor_id: col.string("vendor_id", { nullable: false }),
             vendor_name: col.string("vendor_name", { nullable: false }),
@@ -198,9 +190,7 @@ describe("createSchemaBuilder", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table({
-        name: "myOrders",
-        from: ordersEntity,
+      builder.table("myOrders", ordersEntity, {
         columns: {
           id: { source: "id" },
           status: { source: "status" },
@@ -237,8 +227,7 @@ describe("createSchemaBuilder", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table(ordersEntity, {
-        name: "myOrders",
+      builder.table("myOrders", ordersEntity, {
         columns: ({ col }) => ({
           id: col.id("id"),
           vendorId: col.string("vendorId"),
@@ -283,19 +272,16 @@ describe("createSchemaBuilder", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table(ordersEntity, {
-        name: "myOrders",
+      builder.table("myOrders", ordersEntity, {
         columns: ({ col, expr }) => ({
           id: col.id("id"),
           totalCents: col.integer("totalCents"),
-          totalDollars: col.real(
-            expr.divide(col("totalCents"), expr.literal(100)),
-            { nullable: false },
-          ),
-          isLargeOrder: col.boolean(
-            expr.gte(col("totalCents"), expr.literal(3000)),
-            { nullable: false },
-          ),
+          totalDollars: col.real(expr.divide(col("totalCents"), expr.literal(100)), {
+            nullable: false,
+          }),
+          isLargeOrder: col.boolean(expr.gte(col("totalCents"), expr.literal(3000)), {
+            nullable: false,
+          }),
         }),
       });
     });
@@ -357,13 +343,12 @@ describe("createSchemaBuilder", () => {
 
     expect(() =>
       buildSchema((builder) => {
-        builder.table(ordersEntity, {
-          name: "myOrders",
+        builder.table("myOrders", ordersEntity, {
           columns: ({ col }) => ({
             createdAt: col.string("createdAt"),
           }),
         });
-      })
+      }),
     ).toThrow(
       "Column orders_raw.created_at is exposed as timestamp, but the schema declared text. Add a coerce function or align the declared type.",
     );
@@ -380,8 +365,7 @@ describe("createSchemaBuilder", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table(ordersEntity, {
-        name: "myOrders",
+      builder.table("myOrders", ordersEntity, {
         columns: ({ col }) => ({
           totalCents: col.integer("totalCents", { coerce: (value) => Number(value) }),
           payload: col.json("payload", { coerce: (value) => JSON.parse(String(value)) }),
@@ -406,7 +390,7 @@ describe("createSchemaBuilder", () => {
         ["totalCents", "payload"],
         binding?.kind === "physical" ? binding : null,
         schema.tables.myOrders,
-      )
+      ),
     ).toThrow("must be an integer");
   });
 
@@ -421,17 +405,16 @@ describe("createSchemaBuilder", () => {
     });
 
     const schema = buildSchema((builder) => {
-      const myOrders = builder.table(ordersEntity, {
-        name: "myOrders",
+      const myOrders = builder.table("myOrders", ordersEntity, {
         columns: ({ col }) => ({
           vendorId: col.string("vendorId"),
           totalCents: col.integer("totalCents"),
         }),
       });
 
-      builder.view({
-        name: "orderStats",
-        rel: ({ scan, aggregate, col, agg }) =>
+      builder.view(
+        "orderStats",
+        ({ scan, aggregate, col, agg }) =>
           aggregate({
             from: scan(myOrders),
             groupBy: {
@@ -448,18 +431,20 @@ describe("createSchemaBuilder", () => {
               maxSpend: agg.max(col(myOrders, "totalCents")),
             },
           }),
-        columns: ({ col }) => ({
-          vendorId: col.string("vendorId"),
-          rowCount: col.integer("rowCount"),
-          distinctVendorCount: col.integer("distinctVendorCount"),
-          totalSpend: col.integer("totalSpend"),
-          totalSpendDistinct: col.integer("totalSpendDistinct"),
-          avgSpend: col.real("avgSpend"),
-          avgSpendDistinct: col.real("avgSpendDistinct"),
-          minSpend: col.integer("minSpend"),
-          maxSpend: col.integer("maxSpend"),
-        }),
-      });
+        {
+          columns: ({ col }) => ({
+            vendorId: col.string("vendorId"),
+            rowCount: col.integer("rowCount"),
+            distinctVendorCount: col.integer("distinctVendorCount"),
+            totalSpend: col.integer("totalSpend"),
+            totalSpendDistinct: col.integer("totalSpendDistinct"),
+            avgSpend: col.real("avgSpend"),
+            avgSpendDistinct: col.real("avgSpendDistinct"),
+            minSpend: col.integer("minSpend"),
+            maxSpend: col.integer("maxSpend"),
+          }),
+        },
+      );
     });
 
     const binding = getNormalizedTableBinding(schema, "orderStats");
@@ -481,7 +466,7 @@ describe("createSchemaBuilder", () => {
   });
 
   it("materializes enumFrom links and enforces strict enumMap coverage", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "db",
         columns: {
@@ -511,7 +496,7 @@ describe("createSchemaBuilder", () => {
   });
 
   it("rejects enumMap with unmapped upstream values by default", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "db",
         columns: {
@@ -537,7 +522,7 @@ describe("createSchemaBuilder", () => {
   });
 
   it("generates DDL with metadata comments for timestamp/description fields", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: { type: "text", nullable: false, description: "Order id" },
@@ -556,11 +541,11 @@ describe("createSchemaBuilder", () => {
     expect(ddl).toContain('"id" TEXT NOT NULL /* sqlql: description:"Order id" */');
     expect(ddl).toContain('"status" TEXT NOT NULL');
     expect(ddl).toContain('"created_at" TEXT /* sqlql: format:iso8601 */');
-    expect(ddl).toContain('CHECK ("status" IN (\'draft\', \'paid\', \'void\'))');
+    expect(ddl).toContain("CHECK (\"status\" IN ('draft', 'paid', 'void'))");
   });
 
   it("generates explicit CHECK constraints", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       invoices: {
         columns: {
           id: { type: "text", nullable: false },
@@ -585,7 +570,7 @@ describe("createSchemaBuilder", () => {
   });
 
   it("supports field-level foreignKey declarations and emits FOREIGN KEY in DDL", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false },
@@ -614,13 +599,11 @@ describe("createSchemaBuilder", () => {
     });
 
     const ddl = toSqlDDL(schema);
-    expect(ddl).toContain(
-      'FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE',
-    );
+    expect(ddl).toContain('FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE');
   });
 
   it("supports field-level primaryKey/unique and emits constraints in DDL", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       products: {
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
@@ -639,7 +622,7 @@ describe("createSchemaBuilder", () => {
 
   it("rejects invalid enum/check declarations", () => {
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         users: {
           columns: {
             status: { type: "integer", enum: ["active"] },
@@ -649,7 +632,7 @@ describe("createSchemaBuilder", () => {
     ).toThrow("enum is only supported on text columns");
 
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         invoices: {
           columns: {
             amount_due: "integer",
@@ -670,7 +653,7 @@ describe("createSchemaBuilder", () => {
 
   it("rejects conflicting field-level key declarations", () => {
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         users: {
           columns: {
             id: { type: "text", nullable: false, primaryKey: true, unique: true } as any,
@@ -680,7 +663,7 @@ describe("createSchemaBuilder", () => {
     ).toThrow("primaryKey and unique cannot both be true");
 
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         users: {
           columns: {
             id: { type: "text", primaryKey: true },
@@ -692,7 +675,7 @@ describe("createSchemaBuilder", () => {
 
   it("rejects multiple column-level primary keys; uses table-level for composite keys", () => {
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         memberships: {
           columns: {
             org_id: { type: "text", nullable: false, primaryKey: true },
@@ -702,7 +685,7 @@ describe("createSchemaBuilder", () => {
       }),
     ).toThrow("Use table.constraints.primaryKey for composite keys");
 
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       memberships: {
         columns: {
           org_id: { type: "text", nullable: false },
@@ -719,7 +702,7 @@ describe("createSchemaBuilder", () => {
 
   it("rejects constraints that reference unknown columns/tables or mismatched arity", () => {
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         users: {
           columns: {
             id: "text",
@@ -734,7 +717,7 @@ describe("createSchemaBuilder", () => {
     ).toThrow('column "missing_column" does not exist');
 
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         users: {
           columns: {
             id: "text",
@@ -761,7 +744,7 @@ describe("createSchemaBuilder", () => {
     ).toThrow('referenced table "missing_table" does not exist');
 
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         users: {
           columns: {
             id: "text",
@@ -791,7 +774,7 @@ describe("createSchemaBuilder", () => {
 
   it("rejects field-level foreign keys with missing references", () => {
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         orders: {
           columns: {
             id: { type: "text", nullable: false },
@@ -809,7 +792,7 @@ describe("createSchemaBuilder", () => {
     ).toThrow("foreignKey.column cannot be empty");
 
     expect(() =>
-      buildStaticSchema({
+      buildEntitySchema({
         users: {
           columns: {
             id: { type: "text", nullable: false },
@@ -833,7 +816,7 @@ describe("createSchemaBuilder", () => {
   });
 
   it("infers schema-typed request columns and enum values", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",
