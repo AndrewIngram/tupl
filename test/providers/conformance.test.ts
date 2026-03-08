@@ -9,7 +9,11 @@ import {
 } from "../../src";
 import { createDrizzleProvider, type DrizzleQueryExecutor } from "../../packages/drizzle/src";
 import { createKyselyProvider } from "../../packages/kysely/src";
-import { createObjectionProvider, type KnexLike, type KnexLikeQueryBuilder } from "../../packages/objection/src";
+import {
+  createObjectionProvider,
+  type KnexLike,
+  type KnexLikeQueryBuilder,
+} from "../../packages/objection/src";
 
 function buildRel(): RelNode {
   return {
@@ -277,8 +281,14 @@ function createMockObjectionKnex(rowsByJoin: Map<string, QueryRow[]>): KnexLike 
         return builder;
       },
       from(source: unknown) {
-        if (source && typeof source === "object" && "__sourceKey" in (source as Record<string, unknown>)) {
-          currentSourceKey = String((source as { __sourceKey?: unknown }).__sourceKey ?? currentSourceKey);
+        if (
+          source &&
+          typeof source === "object" &&
+          "__sourceKey" in (source as Record<string, unknown>)
+        ) {
+          currentSourceKey = String(
+            (source as { __sourceKey?: unknown }).__sourceKey ?? currentSourceKey,
+          );
         } else if (typeof source === "string") {
           currentSourceKey = source;
         }

@@ -207,7 +207,9 @@ export interface ExecutableSchemaQueryInput<TContext> {
   constraintValidation?: ConstraintValidationOptions;
 }
 
-export interface ExecutableSchemaSessionInput<TContext> extends ExecutableSchemaQueryInput<TContext> {
+export interface ExecutableSchemaSessionInput<
+  TContext,
+> extends ExecutableSchemaQueryInput<TContext> {
   options?: QuerySessionOptions;
 }
 
@@ -319,7 +321,10 @@ function tryQueryStep<T>(operation: string, fn: () => T): QueryResult<T> {
   }) as QueryResult<T>;
 }
 
-async function tryQueryStepAsync<T>(operation: string, fn: () => Promise<T>): Promise<QueryResult<T>> {
+async function tryQueryStepAsync<T>(
+  operation: string,
+  fn: () => Promise<T>,
+): Promise<QueryResult<T>> {
   return Result.tryPromise({
     try: fn,
     catch: (error) => toSqlqlRuntimeError(error, operation),
@@ -371,7 +376,9 @@ async function withTimeoutResult<T>(
   });
 
   try {
-    return await tryQueryStepAsync(operation, () => Promise.race([promiseFactory(), timeoutPromise]));
+    return await tryQueryStepAsync(operation, () =>
+      Promise.race([promiseFactory(), timeoutPromise]),
+    );
   } finally {
     if (timer) {
       clearTimeout(timer);
@@ -467,7 +474,7 @@ async function resolveProviderCapabilityForRel<TContext>(
   }
 
   const capabilityResult = await tryQueryStepAsync("resolve provider capability", () =>
-    Promise.resolve(provider.canExecute(fragment, input.context))
+    Promise.resolve(provider.canExecute(fragment, input.context)),
   );
   if (Result.isError(capabilityResult)) {
     return capabilityResult;
@@ -512,7 +519,7 @@ function resolveSyncProviderCapabilityForRel<TContext>(
   }
 
   const capabilityResult = tryQueryStep("resolve provider capability", () =>
-    provider.canExecute(fragment, input.context)
+    provider.canExecute(fragment, input.context),
   );
   if (Result.isError(capabilityResult)) {
     return capabilityResult;
@@ -548,21 +555,22 @@ function maybeRejectFallback<TContext>(
     resolution.report.estimatedCost > policy.maxJoinExpansionRisk;
 
   if (!policy.allowFallback || policy.rejectOnMissingAtom || exceedsEstimatedCost) {
-    const diagnostics = resolution.diagnostics.length > 0
-      ? resolution.diagnostics
-      : [
-          makeDiagnostic(
-            "SQLQL_ERR_FALLBACK",
-            "error",
-            summarizeCapabilityReason(resolution.report),
-            {
-              provider: resolution.provider.name,
-              fragment: resolution.fragment?.kind,
-              missingAtoms: resolution.report.missingAtoms,
-            },
-            "42000",
-          ),
-        ];
+    const diagnostics =
+      resolution.diagnostics.length > 0
+        ? resolution.diagnostics
+        : [
+            makeDiagnostic(
+              "SQLQL_ERR_FALLBACK",
+              "error",
+              summarizeCapabilityReason(resolution.report),
+              {
+                provider: resolution.provider.name,
+                fragment: resolution.fragment?.kind,
+                missingAtoms: resolution.report.missingAtoms,
+              },
+              "42000",
+            ),
+          ];
     throw new SqlqlDiagnosticError({
       message: summarizeCapabilityReason(resolution.report),
       diagnostics,
@@ -586,21 +594,22 @@ function maybeRejectFallbackResult<TContext>(
     resolution.report.estimatedCost > policy.maxJoinExpansionRisk;
 
   if (!policy.allowFallback || policy.rejectOnMissingAtom || exceedsEstimatedCost) {
-    const diagnostics = resolution.diagnostics.length > 0
-      ? resolution.diagnostics
-      : [
-          makeDiagnostic(
-            "SQLQL_ERR_FALLBACK",
-            "error",
-            summarizeCapabilityReason(resolution.report),
-            {
-              provider: resolution.provider.name,
-              fragment: resolution.fragment?.kind,
-              missingAtoms: resolution.report.missingAtoms,
-            },
-            "42000",
-          ),
-        ];
+    const diagnostics =
+      resolution.diagnostics.length > 0
+        ? resolution.diagnostics
+        : [
+            makeDiagnostic(
+              "SQLQL_ERR_FALLBACK",
+              "error",
+              summarizeCapabilityReason(resolution.report),
+              {
+                provider: resolution.provider.name,
+                fragment: resolution.fragment?.kind,
+                missingAtoms: resolution.report.missingAtoms,
+              },
+              "42000",
+            ),
+          ];
 
     return Result.err(
       new SqlqlDiagnosticError({
@@ -770,7 +779,9 @@ function createProviderFragmentSession<TContext>(
     };
 
     const compiledResult = await tryQueryStepAsync("compile provider fragment", async () =>
-      unwrapProviderOperationResult(await Promise.resolve(provider.compile(fragment, input.context)))
+      unwrapProviderOperationResult(
+        await Promise.resolve(provider.compile(fragment, input.context)),
+      ),
     );
     if (Result.isError(compiledResult)) {
       state = setFailedStepState(state, compiledResult.error, Date.now());
@@ -791,7 +802,7 @@ function createProviderFragmentSession<TContext>(
     let rows = executeRowsResult.value;
     if (fragment.kind === "rel") {
       const mappedRowsResult = tryQueryStep("map provider rows to logical rel output rows", () =>
-        mapProviderRowsToRelOutput(rows, rel, input.schema)
+        mapProviderRowsToRelOutput(rows, rel, input.schema),
       );
       if (Result.isError(mappedRowsResult)) {
         state = setFailedStepState(state, mappedRowsResult.error, Date.now());
@@ -936,17 +947,11 @@ function createRelExecutionSession<TContext>(
     const rowsResult = await withTimeoutResult(
       "execute relational query",
       () =>
-        executeRelWithProvidersResult(
-          rel,
-          input.schema,
-          input.providers,
-          input.context,
-          {
-            maxExecutionRows: guardrails.maxExecutionRows,
-            maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
-            maxLookupBatches: guardrails.maxLookupBatches,
-          },
-        ).then(unwrapQueryResult),
+        executeRelWithProvidersResult(rel, input.schema, input.providers, input.context, {
+          maxExecutionRows: guardrails.maxExecutionRows,
+          maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
+          maxLookupBatches: guardrails.maxLookupBatches,
+        }).then(unwrapQueryResult),
       guardrails.timeoutMs,
     );
     if (Result.isError(rowsResult)) {
@@ -1001,7 +1006,9 @@ function createRelExecutionSession<TContext>(
           endedAt: stepEndedAt,
           durationMs: stepDuration,
           ...(routeUsed ? { routeUsed } : {}),
-          ...(isRoot ? { rowCount: completedRows.length, outputRowCount: completedRows.length } : {}),
+          ...(isRoot
+            ? { rowCount: completedRows.length, outputRowCount: completedRows.length }
+            : {}),
           ...(isRoot && input.options?.captureRows === "full" ? { rows: completedRows } : {}),
           ...(step.diagnostics ? { diagnostics: step.diagnostics } : {}),
         };
@@ -1018,7 +1025,9 @@ function createRelExecutionSession<TContext>(
           endedAt: stepEndedAt,
           durationMs: stepDuration,
           ...(routeUsed ? { routeUsed } : {}),
-          ...(isRoot ? { rowCount: completedRows.length, outputRowCount: completedRows.length } : {}),
+          ...(isRoot
+            ? { rowCount: completedRows.length, outputRowCount: completedRows.length }
+            : {}),
           ...(isRoot && input.options?.captureRows === "full" ? { rows: completedRows } : {}),
           ...(step.diagnostics ? { diagnostics: step.diagnostics } : {}),
         };
@@ -1541,7 +1550,10 @@ function resolveSyncLookupJoinCandidate<TContext>(
   if (!leftScan || !rightScan) {
     return null;
   }
-  if ((!input.schema.tables[leftScan.table] && !leftScan.entity) || (!input.schema.tables[rightScan.table] && !rightScan.entity)) {
+  if (
+    (!input.schema.tables[leftScan.table] && !leftScan.entity) ||
+    (!input.schema.tables[rightScan.table] && !rightScan.entity)
+  ) {
     return null;
   }
 
@@ -1551,8 +1563,10 @@ function resolveSyncLookupJoinCandidate<TContext>(
     return null;
   }
 
-  const leftProvider = leftScan.entity?.provider ?? resolveTableProvider(input.schema, leftScan.table);
-  const rightProvider = rightScan.entity?.provider ?? resolveTableProvider(input.schema, rightScan.table);
+  const leftProvider =
+    leftScan.entity?.provider ?? resolveTableProvider(input.schema, leftScan.table);
+  const rightProvider =
+    rightScan.entity?.provider ?? resolveTableProvider(input.schema, rightScan.table);
   if (leftProvider === rightProvider) {
     return null;
   }
@@ -1672,9 +1686,13 @@ function normalizeRuntimeSchema<TContext>(input: QueryInput<TContext>): QueryInp
   };
 }
 
-function normalizeRuntimeSchemaResult<TContext>(input: QueryInput<TContext>): QueryResult<QueryInput<TContext>> {
+function normalizeRuntimeSchemaResult<TContext>(
+  input: QueryInput<TContext>,
+): QueryResult<QueryInput<TContext>> {
   return Result.gen(function* () {
-    const normalizedInput = yield* tryQueryStep("normalize runtime schema", () => normalizeRuntimeSchema(input));
+    const normalizedInput = yield* tryQueryStep("normalize runtime schema", () =>
+      normalizeRuntimeSchema(input),
+    );
     yield* validateProviderBindingsResult(normalizedInput.schema, normalizedInput.providers);
     return Result.ok(normalizedInput);
   });
@@ -1707,7 +1725,9 @@ function resolveSyncProviderCapabilityForRelResult<TContext>(
   });
 }
 
-function createQuerySessionResult<TContext>(input: QuerySessionInput<TContext>): QueryResult<QuerySession> {
+function createQuerySessionResult<TContext>(
+  input: QuerySessionInput<TContext>,
+): QueryResult<QuerySession> {
   return Result.gen(function* () {
     const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
     const guardrails = resolveGuardrails(input.queryGuardrails);
@@ -1715,7 +1735,11 @@ function createQuerySessionResult<TContext>(input: QuerySessionInput<TContext>):
     const plannerNodeCount = countRelNodes(lowered.rel);
 
     yield* enforcePlannerNodeLimitResult(plannerNodeCount, guardrails);
-    const expandedRel = yield* expandRelViewsResult(lowered.rel, resolvedInput.schema, resolvedInput.context);
+    const expandedRel = yield* expandRelViewsResult(
+      lowered.rel,
+      resolvedInput.schema,
+      resolvedInput.context,
+    );
     const providerSession = yield* tryCreateSyncProviderFragmentSession(
       resolvedInput,
       guardrails,
@@ -1746,7 +1770,9 @@ function createQuerySessionInternal<TContext>(input: QuerySessionInput<TContext>
   return unwrapQueryResult(createQuerySessionResult(input));
 }
 
-async function queryInternalResult<TContext>(input: QueryInput<TContext>): Promise<QueryResult<QueryRow[]>> {
+async function queryInternalResult<TContext>(
+  input: QueryInput<TContext>,
+): Promise<QueryResult<QueryRow[]>> {
   return Result.gen(async function* () {
     const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
     const guardrails = resolveGuardrails(input.queryGuardrails);
@@ -1754,7 +1780,11 @@ async function queryInternalResult<TContext>(input: QueryInput<TContext>): Promi
     const plannerNodeCount = countRelNodes(lowered.rel);
 
     yield* enforcePlannerNodeLimitResult(plannerNodeCount, guardrails);
-    const expandedRel = yield* expandRelViewsResult(lowered.rel, resolvedInput.schema, resolvedInput.context);
+    const expandedRel = yield* expandRelViewsResult(
+      lowered.rel,
+      resolvedInput.schema,
+      resolvedInput.context,
+    );
     const remoteRows = yield* Result.await(
       withTimeoutResult(
         "execute whole provider fragment",
@@ -1811,7 +1841,10 @@ function explainInternalResult<TContext>(input: QueryInput<TContext>): QueryResu
     const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
     const guardrails = resolveGuardrails(input.queryGuardrails);
     const lowered = yield* lowerSqlToRelResult(resolvedInput.sql, resolvedInput.schema);
-    const capabilityResolution = yield* resolveSyncProviderCapabilityForRelResult(resolvedInput, lowered.rel);
+    const capabilityResolution = yield* resolveSyncProviderCapabilityForRelResult(
+      resolvedInput,
+      lowered.rel,
+    );
 
     return Result.ok({
       rel: lowered.rel,
@@ -1836,7 +1869,7 @@ function collectExecutableProviders<TContext>(schema: SchemaDefinition): Provide
     const provider = binding.adapter as ProviderAdapter<TContext> | undefined;
     if (!provider) {
       throw new Error(
-        `Table ${tableName} must be declared from a provider-owned entity via table({ from: provider.entities... }).`,
+        `Table ${tableName} must be declared from a provider-owned entity via table(name, provider.entities.someTable, config).`,
       );
     }
 

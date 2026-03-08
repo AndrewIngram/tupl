@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { queryWithMethods } from "../support/methods-provider";
 
-import { defineTableMethods,  type ConstraintViolation } from "../../src";
-import { buildStaticSchema } from "../support/schema-builder";
+import { defineTableMethods, type ConstraintViolation } from "../../src";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
 describe("query/constraints", () => {
   it("does not validate constraints when mode=off", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false },
@@ -55,7 +55,7 @@ describe("query/constraints", () => {
   });
 
   it("reports violations in warn mode", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false },
@@ -101,7 +101,7 @@ describe("query/constraints", () => {
   });
 
   it("throws in error mode for not-null violations", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false },
@@ -132,7 +132,7 @@ describe("query/constraints", () => {
   });
 
   it("throws in error mode for primary key duplicates", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false },
@@ -171,7 +171,7 @@ describe("query/constraints", () => {
   });
 
   it("throws in error mode for unique duplicates", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false },
@@ -212,7 +212,7 @@ describe("query/constraints", () => {
   });
 
   it("validates field-level primaryKey/unique constraints at runtime", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false, primaryKey: true },
@@ -246,7 +246,7 @@ describe("query/constraints", () => {
   });
 
   it("does not perform foreign-key runtime validation", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false },

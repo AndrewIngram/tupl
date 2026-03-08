@@ -7,7 +7,11 @@ import {
   type RelNode,
   type TableScanRequest,
 } from "../../src";
-import { createObjectionProvider, type KnexLike, type KnexLikeQueryBuilder } from "../../packages/objection/src";
+import {
+  createObjectionProvider,
+  type KnexLike,
+  type KnexLikeQueryBuilder,
+} from "../../packages/objection/src";
 
 interface ObjectionCalls {
   where: unknown[][];
@@ -43,8 +47,14 @@ function createMockKnex(
         return builder;
       },
       from(source: unknown) {
-        if (source && typeof source === "object" && "__sourceKey" in (source as Record<string, unknown>)) {
-          currentSourceKey = String((source as { __sourceKey?: unknown }).__sourceKey ?? currentSourceKey);
+        if (
+          source &&
+          typeof source === "object" &&
+          "__sourceKey" in (source as Record<string, unknown>)
+        ) {
+          currentSourceKey = String(
+            (source as { __sourceKey?: unknown }).__sourceKey ?? currentSourceKey,
+          );
         } else if (typeof source === "string") {
           currentSourceKey = source;
         } else if (source && typeof source === "object") {
@@ -286,12 +296,7 @@ describe("objection adapter", () => {
       baseContexts: [],
     };
     const knex = createMockKnex(
-      new Map<string, QueryRow[]>([
-        [
-          "orders",
-          [{ "orders.id": "o1", "orders.user_id": "u1" }],
-        ],
-      ]),
+      new Map<string, QueryRow[]>([["orders", [{ "orders.id": "o1", "orders.user_id": "u1" }]]]),
       new Map<string, QueryRow[]>(),
       calls,
     );
@@ -320,7 +325,9 @@ describe("objection adapter", () => {
       } satisfies TableScanRequest,
     };
     const scanContext = { orgId: "org_1", knex };
-    const scanPlan = unwrapProviderOperationResult(await provider.compile(scanFragment, scanContext));
+    const scanPlan = unwrapProviderOperationResult(
+      await provider.compile(scanFragment, scanContext),
+    );
     const rows = unwrapProviderOperationResult(await provider.execute(scanPlan, scanContext));
     expect(rows).toEqual([{ id: "o1", user_id: "u1" }]);
 
@@ -377,7 +384,9 @@ describe("objection adapter", () => {
 
     await expect(
       Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult),
-    ).rejects.toThrow("Objection provider runtime binding did not resolve to a valid knex instance.");
+    ).rejects.toThrow(
+      "Objection provider runtime binding did not resolve to a valid knex instance.",
+    );
   });
 
   it("preserves scoped roots for both sides of joined rel fragments", async () => {
@@ -432,7 +441,9 @@ describe("objection adapter", () => {
       provider: "dbProvider",
       rel: buildJoinProjectRel(),
     };
-    const plan = unwrapProviderOperationResult(await provider.compile(relFragment, { orgId: "org_1" }));
+    const plan = unwrapProviderOperationResult(
+      await provider.compile(relFragment, { orgId: "org_1" }),
+    );
     const rows = unwrapProviderOperationResult(await provider.execute(plan, { orgId: "org_1" }));
 
     expect(rows).toEqual([{ id: "o2", email: "ada@example.com", total_cents: 3000 }]);
@@ -471,18 +482,23 @@ describe("objection adapter", () => {
       output: [{ name: "id" }],
     };
 
-    const result = provider.canExecute({
-      kind: "rel",
-      provider: "objection",
-      rel: withNode,
-    }, {});
+    const result = provider.canExecute(
+      {
+        kind: "rel",
+        provider: "objection",
+        rel: withNode,
+      },
+      {},
+    );
 
-    expect(result).toEqual(expect.objectContaining({
-      supported: false,
-      routeFamily: "rel-advanced",
-      requiredAtoms: expect.arrayContaining(["cte.non_recursive"]),
-      reason: "Rel fragment is not supported for single-query Objection pushdown.",
-    }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        supported: false,
+        routeFamily: "rel-advanced",
+        requiredAtoms: expect.arrayContaining(["cte.non_recursive"]),
+        reason: "Rel fragment is not supported for single-query Objection pushdown.",
+      }),
+    );
   });
 
   it("accepts with+window rel fragments for single-query pushdown", () => {
@@ -501,11 +517,14 @@ describe("objection adapter", () => {
       },
     });
 
-    const result = provider.canExecute({
-      kind: "rel",
-      provider: "objection",
-      rel: buildWithWindowRel(),
-    }, {});
+    const result = provider.canExecute(
+      {
+        kind: "rel",
+        provider: "objection",
+        rel: buildWithWindowRel(),
+      },
+      {},
+    );
 
     expect(result).toBe(true);
   });

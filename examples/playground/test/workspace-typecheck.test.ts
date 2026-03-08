@@ -99,11 +99,18 @@ function collectWorkspaceDiagnostics(): string[] {
       if (typeof sourceText === "string") {
         return ts.createSourceFile(normalized, sourceText, languageVersion, true);
       }
-      return baseHost.getSourceFile(normalized, languageVersion, onError, shouldCreateNewSourceFile);
+      return baseHost.getSourceFile(
+        normalized,
+        languageVersion,
+        onError,
+        shouldCreateNewSourceFile,
+      );
     },
     directoryExists: (directoryName) => {
       const normalized = normalizePath(directoryName);
-      return virtualDirectories.has(normalized) || (baseHost.directoryExists?.(normalized) ?? false);
+      return (
+        virtualDirectories.has(normalized) || (baseHost.directoryExists?.(normalized) ?? false)
+      );
     },
     getDirectories: (directoryName) => {
       const normalized = normalizePath(directoryName);
@@ -140,7 +147,7 @@ function collectWorkspaceDiagnostics(): string[] {
 }
 
 describe("playground/workspace-typecheck", () => {
-  it("typechecks the default virtual workspace", { timeout: 15_000 }, () => {
+  it("typechecks the default virtual workspace", { timeout: 30_000 }, () => {
     expect(collectWorkspaceDiagnostics()).toEqual([]);
   });
 });

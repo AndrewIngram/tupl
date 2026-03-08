@@ -84,7 +84,10 @@ class SqliteSelectParser {
 
   parseStatement(): SelectAst {
     const start = this.current();
-    if (start.kind === "keyword" && (start.upper === "UPDATE" || start.upper === "INSERT" || start.upper === "DELETE")) {
+    if (
+      start.kind === "keyword" &&
+      (start.upper === "UPDATE" || start.upper === "INSERT" || start.upper === "DELETE")
+    ) {
       throw new Error("Only SELECT statements are currently supported.");
     }
 
@@ -676,7 +679,7 @@ class SqliteSelectParser {
       const upperName = nameToken.upper;
 
       if (this.matchSymbol("(")) {
-        return this.parseFunctionCall(name, upperName);
+        return this.parseFunctionCall(upperName);
       }
 
       if (this.matchSymbol(".")) {
@@ -703,7 +706,7 @@ class SqliteSelectParser {
     throw this.error(`Unexpected token "${token.text}" in expression.`);
   }
 
-  parseFunctionCall(name: string, upperName: string): ExpressionAst {
+  parseFunctionCall(upperName: string): ExpressionAst {
     if (isAggregateFunctionName(upperName)) {
       return this.parseAggregateFunctionCall(upperName);
     }

@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 import { createMethodsSession, queryWithMethods } from "../support/methods-provider";
 import { createArrayTableMethods } from "../../src/array-methods";
 
-import {
-  defineTableMethods,
-} from "../../src";
+import { defineTableMethods } from "../../src";
 import { commerceRows, commerceSchema } from "../support/commerce-fixture";
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -18,7 +16,7 @@ function sleep(ms: number): Promise<void> {
 
 describe("query/session", () => {
   it("links CTE-backed scans to their producer step in the static plan", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       athletes: {
         columns: {
           id: { type: "text", nullable: false },
@@ -299,7 +297,7 @@ describe("query/session", () => {
   });
 
   it("propagates execution failures via next()", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false },
@@ -317,12 +315,12 @@ describe("query/session", () => {
         methods,
         context: EMPTY_CONTEXT,
         sql: "SELECT * FROM missing_table",
-      })
+      }),
     ).toThrow("Unknown table: missing_table");
   });
 
   it("marks the root step failed when execution times out", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         columns: {
           id: { type: "text", nullable: false },

@@ -12,7 +12,7 @@ import {
   type TableScanRequest,
 } from "../../src";
 import { finalizeProviders } from "../support/executable-schema";
-import { buildSchema, buildStaticSchema } from "../support/schema-builder";
+import { buildSchema, buildEntitySchema } from "../support/schema-builder";
 
 function scanRows(rows: QueryRow[], request: TableScanRequest): QueryRow[] {
   let out = rows.filter((row) => applyFilters(row, request.where ?? []));
@@ -107,12 +107,20 @@ function applyFilters(row: QueryRow, filters: ScanFilterClause[]): boolean {
         }
         break;
       case "like":
-        if (typeof value !== "string" || typeof clause.value !== "string" || !matchesLike(value, clause.value)) {
+        if (
+          typeof value !== "string" ||
+          typeof clause.value !== "string" ||
+          !matchesLike(value, clause.value)
+        ) {
           return false;
         }
         break;
       case "not_like":
-        if (typeof value !== "string" || typeof clause.value !== "string" || matchesLike(value, clause.value)) {
+        if (
+          typeof value !== "string" ||
+          typeof clause.value !== "string" ||
+          matchesLike(value, clause.value)
+        ) {
           return false;
         }
         break;
@@ -152,7 +160,7 @@ function matchesLike(value: string, pattern: string): boolean {
 
 describe("query/local executor", () => {
   it("returns tagged execution errors from the result API when a provider adapter is missing", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "memory",
         columns: {
@@ -171,11 +179,17 @@ describe("query/local executor", () => {
       output: [{ name: "o.id" }],
     };
 
-    const result = await executeRelWithProvidersResult(rel, schema, {}, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1000,
-      maxLookupBatches: 10,
-    });
+    const result = await executeRelWithProvidersResult(
+      rel,
+      schema,
+      {},
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1000,
+        maxLookupBatches: 10,
+      },
+    );
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
@@ -190,7 +204,7 @@ describe("query/local executor", () => {
   });
 
   it("returns tagged guardrail errors from the result API when lookup batches are exceeded", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "orders_provider",
         columns: {
@@ -281,11 +295,17 @@ describe("query/local executor", () => {
       output: [{ name: "o.id" }, { name: "o.user_id" }, { name: "u.id" }, { name: "u.email" }],
     };
 
-    const result = await executeRelWithProvidersResult(rel, schema, providers, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1,
-      maxLookupBatches: 1,
-    });
+    const result = await executeRelWithProvidersResult(
+      rel,
+      schema,
+      providers,
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1,
+        maxLookupBatches: 1,
+      },
+    );
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
@@ -301,7 +321,7 @@ describe("query/local executor", () => {
   });
 
   it("accepts adapter execute() methods that return Result errors", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "memory",
         columns: {
@@ -334,11 +354,17 @@ describe("query/local executor", () => {
       } satisfies Omit<ProviderAdapter, "name">,
     });
 
-    const result = await executeRelWithProvidersResult(rel, schema, providers, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1000,
-      maxLookupBatches: 10,
-    });
+    const result = await executeRelWithProvidersResult(
+      rel,
+      schema,
+      providers,
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1000,
+        maxLookupBatches: 10,
+      },
+    );
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
@@ -353,7 +379,7 @@ describe("query/local executor", () => {
   });
 
   it("returns tagged execution errors for invalid numeric coercions in local expressions", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       numbers: {
         provider: "memory",
         columns: {
@@ -411,11 +437,17 @@ describe("query/local executor", () => {
       output: [{ name: "value" }, { name: "bumped" }],
     };
 
-    const result = await executeRelWithProvidersResult(rel, schema, providers, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1000,
-      maxLookupBatches: 10,
-    });
+    const result = await executeRelWithProvidersResult(
+      rel,
+      schema,
+      providers,
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1000,
+        maxLookupBatches: 10,
+      },
+    );
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
@@ -431,9 +463,7 @@ describe("query/local executor", () => {
 
   it("returns tagged execution errors for invalid executable view rels", async () => {
     const schema = buildSchema((builder) => {
-      builder.view({
-        name: "broken_view",
-        rel: ({ scan }) => scan("missing_table"),
+      builder.view("broken_view", ({ scan }) => scan("missing_table"), {
         columns: {
           id: { source: "missing_table.id" },
         },
@@ -450,11 +480,17 @@ describe("query/local executor", () => {
       output: [{ name: "v.id" }],
     };
 
-    const result = await executeRelWithProvidersResult(rel, schema, {}, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1000,
-      maxLookupBatches: 10,
-    });
+    const result = await executeRelWithProvidersResult(
+      rel,
+      schema,
+      {},
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1000,
+        maxLookupBatches: 10,
+      },
+    );
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
@@ -469,7 +505,7 @@ describe("query/local executor", () => {
   });
 
   it("executes filter + aggregate nodes locally over provider scans", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "memory",
         columns: {
@@ -536,17 +572,23 @@ describe("query/local executor", () => {
       output: [{ name: "org_id" }, { name: "order_count" }, { name: "gross_cents" }],
     };
 
-    const result = await executeRelWithProviders(rel, schema, providers, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1000,
-      maxLookupBatches: 10,
-    });
+    const result = await executeRelWithProviders(
+      rel,
+      schema,
+      providers,
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1000,
+        maxLookupBatches: 10,
+      },
+    );
 
     expect(result).toEqual([{ org_id: "org_1", order_count: 2, gross_cents: 3000 }]);
   });
 
   it("executes set operations locally", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       left_items: {
         provider: "memory",
         columns: {
@@ -628,17 +670,23 @@ describe("query/local executor", () => {
       output: [{ name: "id" }],
     };
 
-    const result = await executeRelWithProviders(rel, schema, providers, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1000,
-      maxLookupBatches: 10,
-    });
+    const result = await executeRelWithProviders(
+      rel,
+      schema,
+      providers,
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1000,
+        maxLookupBatches: 10,
+      },
+    );
 
     expect(result).toEqual([{ id: "a" }, { id: "b" }, { id: "c" }]);
   });
 
   it("executes WITH nodes via local cte materialization", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         provider: "memory",
         columns: {
@@ -734,11 +782,17 @@ describe("query/local executor", () => {
       output: [{ name: "id" }, { name: "email" }],
     };
 
-    const result = await executeRelWithProviders(rel, schema, providers, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1000,
-      maxLookupBatches: 10,
-    });
+    const result = await executeRelWithProviders(
+      rel,
+      schema,
+      providers,
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1000,
+        maxLookupBatches: 10,
+      },
+    );
 
     expect(result).toEqual([
       { id: "u1", email: "a@example.com" },
@@ -747,7 +801,7 @@ describe("query/local executor", () => {
   });
 
   it("executes semi joins for IN-subquery style membership filtering", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       my_orders: {
         provider: "memory",
         columns: {
@@ -769,10 +823,7 @@ describe("query/local executor", () => {
         { id: "o2", vendor_id: "v2" },
         { id: "o3", vendor_id: "v3" },
       ],
-      preferred_vendors: [
-        { vendor_id: "v1" },
-        { vendor_id: "v3" },
-      ],
+      preferred_vendors: [{ vendor_id: "v1" }, { vendor_id: "v3" }],
     };
 
     const providers = finalizeProviders({
@@ -832,17 +883,23 @@ describe("query/local executor", () => {
       output: [{ name: "id" }],
     };
 
-    const result = await executeRelWithProviders(rel, schema, providers, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1000,
-      maxLookupBatches: 10,
-    });
+    const result = await executeRelWithProviders(
+      rel,
+      schema,
+      providers,
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1000,
+        maxLookupBatches: 10,
+      },
+    );
 
     expect(result).toEqual([{ id: "o1" }, { id: "o3" }]);
   });
 
   it("executes rank window functions locally", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       scores: {
         provider: "memory",
         columns: {
@@ -945,11 +1002,17 @@ describe("query/local executor", () => {
       ],
     };
 
-    const result = await executeRelWithProviders(rel, schema, providers, {}, {
-      maxExecutionRows: 1000,
-      maxLookupKeysPerBatch: 1000,
-      maxLookupBatches: 10,
-    });
+    const result = await executeRelWithProviders(
+      rel,
+      schema,
+      providers,
+      {},
+      {
+        maxExecutionRows: 1000,
+        maxLookupKeysPerBatch: 1000,
+        maxLookupBatches: 10,
+      },
+    );
 
     expect(result).toContainEqual({ id: "a", team: "red", dense_rank: 1, rank: 1, row_number: 1 });
     expect(result).toContainEqual({ id: "b", team: "red", dense_rank: 2, rank: 2, row_number: 2 });

@@ -12,7 +12,7 @@ import {
 } from "../../src";
 import { validateProviderBindingsResult } from "../../src/provider";
 import { createExecutableSchemaFromProviders } from "../support/executable-schema";
-import { buildSchema, buildStaticSchema } from "../support/schema-builder";
+import { buildSchema, buildEntitySchema } from "../support/schema-builder";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -113,12 +113,20 @@ function applyFilters(row: QueryRow, filters: ScanFilterClause[]): boolean {
         }
         break;
       case "like":
-        if (typeof value !== "string" || typeof clause.value !== "string" || !matchesLike(value, clause.value)) {
+        if (
+          typeof value !== "string" ||
+          typeof clause.value !== "string" ||
+          !matchesLike(value, clause.value)
+        ) {
           return false;
         }
         break;
       case "not_like":
-        if (typeof value !== "string" || typeof clause.value !== "string" || matchesLike(value, clause.value)) {
+        if (
+          typeof value !== "string" ||
+          typeof clause.value !== "string" ||
+          matchesLike(value, clause.value)
+        ) {
           return false;
         }
         break;
@@ -158,7 +166,7 @@ function matchesLike(value: string, pattern: string): boolean {
 
 describe("query/provider runtime", () => {
   it("routes same-provider queries through scan fragments", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
         columns: {
@@ -209,7 +217,7 @@ describe("query/provider runtime", () => {
   });
 
   it("executes same-provider rel fragment when provider supports rel pushdown", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
         columns: {
@@ -262,9 +270,7 @@ describe("query/provider runtime", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table({
-        name: "my_orders",
-        from: ordersEntity,
+      builder.table("my_orders", ordersEntity, {
         columns: {
           id: { source: "id" },
           totalCents: { source: "total_cents" },
@@ -281,9 +287,7 @@ describe("query/provider runtime", () => {
           },
         },
       });
-      builder.table({
-        name: "orders",
-        from: ordersEntity,
+      builder.table("orders", ordersEntity, {
         columns: {
           status: { source: "status", type: "text", enum: ["pending", "paid", "shipped"] as const },
         },
@@ -335,13 +339,16 @@ describe("query/provider runtime", () => {
         where?: Array<{ column?: string; op?: string }>;
       };
     } | null;
-    const scanNode = projectNode?.kind === "project" && projectNode.input?.kind === "scan"
-      ? projectNode.input
-      : null;
+    const scanNode =
+      projectNode?.kind === "project" && projectNode.input?.kind === "scan"
+        ? projectNode.input
+        : null;
     expect(scanNode?.table).toBe("orders_raw");
     expect(scanNode?.select).toContain("total_cents");
     expect(scanNode?.where?.[0]?.column).toBe("total_cents");
-    expect(scanNode?.where?.some((clause) => clause.column === "status" && clause.op === "in")).toBe(true);
+    expect(
+      scanNode?.where?.some((clause) => clause.column === "status" && clause.op === "in"),
+    ).toBe(true);
   });
 
   it("maps typed table columns back to logical names and applies built-in coercions on provider scans", async () => {
@@ -356,8 +363,7 @@ describe("query/provider runtime", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table(ordersEntity, {
-        name: "my_orders",
+      builder.table("my_orders", ordersEntity, {
         columns: ({ col }) => ({
           id: col.id("id"),
           totalCents: col.integer("totalCents"),
@@ -399,11 +405,7 @@ describe("query/provider runtime", () => {
 
     expect(capturedScan).not.toBeNull();
     const capturedRequest = (capturedScan as unknown as { request: TableScanRequest }).request;
-    expect(capturedRequest.select).toEqual([
-      "id",
-      "total_cents",
-      "created_at",
-    ]);
+    expect(capturedRequest.select).toEqual(["id", "total_cents", "created_at"]);
     expect(rows).toEqual([
       {
         id: "o1",
@@ -414,7 +416,7 @@ describe("query/provider runtime", () => {
   });
 
   it("uses lookupMany for cross-provider lookup join paths", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "orders_provider",
         columns: {
@@ -484,13 +486,15 @@ describe("query/provider runtime", () => {
           lookupCalls += 1;
           const keys = new Set(request.keys);
           return Result.ok(
-            usersRows.filter((row) => keys.has(row[request.key])).map((row) => {
-              const out: QueryRow = {};
-              for (const column of request.select) {
-                out[column] = row[column] ?? null;
-              }
-              return out;
-            }),
+            usersRows
+              .filter((row) => keys.has(row[request.key]))
+              .map((row) => {
+                const out: QueryRow = {};
+                for (const column of request.select) {
+                  out[column] = row[column] ?? null;
+                }
+                return out;
+              }),
           );
         },
       } satisfies Omit<ProviderAdapter, "name">,
@@ -514,7 +518,7 @@ describe("query/provider runtime", () => {
   });
 
   it("enforces lookup batching guardrails", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "orders_provider",
         columns: {
@@ -606,7 +610,7 @@ describe("query/provider runtime", () => {
   });
 
   it("preserves LEFT JOIN null semantics on lookup joins", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "orders_provider",
         columns: {
@@ -670,13 +674,15 @@ describe("query/provider runtime", () => {
         async lookupMany(request) {
           const keys = new Set(request.keys);
           return Result.ok(
-            usersRows.filter((row) => keys.has(row[request.key])).map((row) => {
-              const out: QueryRow = {};
-              for (const column of request.select) {
-                out[column] = row[column] ?? null;
-              }
-              return out;
-            }),
+            usersRows
+              .filter((row) => keys.has(row[request.key]))
+              .map((row) => {
+                const out: QueryRow = {};
+                for (const column of request.select) {
+                  out[column] = row[column] ?? null;
+                }
+                return out;
+              }),
           );
         },
       } satisfies Omit<ProviderAdapter, "name">,
@@ -705,15 +711,14 @@ describe("query/provider runtime", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table({
-        name: "my_orders",
-        from: ordersEntity,
+      builder.table("my_orders", ordersEntity, {
         columns: {
           id: { source: "id", type: "text", nullable: false },
           total_cents: { source: "total_cents", type: "integer", nullable: false },
         },
       });
       builder.view(
+        "order_spend",
         ({ scan, aggregate, col, agg }) =>
           aggregate({
             from: scan("my_orders"),
@@ -725,7 +730,6 @@ describe("query/provider runtime", () => {
             },
           }),
         {
-          name: "order_spend",
           columns: ({ col }) => ({
             order_id: col.string("order_id", { nullable: false }),
             spend: col.integer("spend"),
@@ -792,19 +796,16 @@ describe("query/provider runtime", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table(ordersEntity, {
-        name: "myOrders",
+      builder.table("myOrders", ordersEntity, {
         columns: ({ col, expr }) => ({
           id: col.id("id"),
           totalCents: col.integer("totalCents"),
-          totalDollars: col.real(
-            expr.divide(col("totalCents"), expr.literal(100)),
-            { nullable: false },
-          ),
-          isLargeOrder: col.boolean(
-            expr.gte(col("totalCents"), expr.literal(2000)),
-            { nullable: false },
-          ),
+          totalDollars: col.real(expr.divide(col("totalCents"), expr.literal(100)), {
+            nullable: false,
+          }),
+          isLargeOrder: col.boolean(expr.gte(col("totalCents"), expr.literal(2000)), {
+            nullable: false,
+          }),
         }),
       });
     });
@@ -834,11 +835,16 @@ describe("query/provider runtime", () => {
             return Result.ok([]);
           }
 
-          return Result.ok(scanRows([
-            { id: "o1", total_cents: 1200 },
-            { id: "o2", total_cents: 3200 },
-            { id: "o3", total_cents: 2100 },
-          ], fragment.request));
+          return Result.ok(
+            scanRows(
+              [
+                { id: "o1", total_cents: 1200 },
+                { id: "o2", total_cents: 3200 },
+                { id: "o3", total_cents: 2100 },
+              ],
+              fragment.request,
+            ),
+          );
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -871,19 +877,16 @@ describe("query/provider runtime", () => {
     });
 
     const schema = buildSchema((builder) => {
-      builder.table(ordersEntity, {
-        name: "myOrders",
+      builder.table("myOrders", ordersEntity, {
         columns: ({ col, expr }) => ({
           id: col.id("id"),
           totalCents: col.integer("totalCents"),
-          totalDollars: col.real(
-            expr.divide(col("totalCents"), expr.literal(100)),
-            { nullable: false },
-          ),
-          isLargeOrder: col.boolean(
-            expr.gte(col("totalCents"), expr.literal(20000)),
-            { nullable: false },
-          ),
+          totalDollars: col.real(expr.divide(col("totalCents"), expr.literal(100)), {
+            nullable: false,
+          }),
+          isLargeOrder: col.boolean(expr.gte(col("totalCents"), expr.literal(20000)), {
+            nullable: false,
+          }),
         }),
       });
     });
@@ -933,7 +936,7 @@ describe("query/provider runtime", () => {
   });
 
   it("coerces pushed-down aggregate and window outputs back to numeric query types", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       my_orders: {
         provider: "warehouse",
         columns: {
@@ -1025,18 +1028,28 @@ describe("query/provider runtime", () => {
         }
 
         if (fragment.request.table === "orders_raw") {
-          return Result.ok(scanRows([
-            { id: "o1", vendor_id: "v1", total_cents: 1200 },
-            { id: "o2", vendor_id: "v1", total_cents: 800 },
-            { id: "o3", vendor_id: "v2", total_cents: 500 },
-          ], fragment.request));
+          return Result.ok(
+            scanRows(
+              [
+                { id: "o1", vendor_id: "v1", total_cents: 1200 },
+                { id: "o2", vendor_id: "v1", total_cents: 800 },
+                { id: "o3", vendor_id: "v2", total_cents: 500 },
+              ],
+              fragment.request,
+            ),
+          );
         }
 
         if (fragment.request.table === "vendors_raw") {
-          return Result.ok(scanRows([
-            { id: "v1", name: "Acme" },
-            { id: "v2", name: "Bolt" },
-          ], fragment.request));
+          return Result.ok(
+            scanRows(
+              [
+                { id: "v1", name: "Acme" },
+                { id: "v2", name: "Bolt" },
+              ],
+              fragment.request,
+            ),
+          );
         }
 
         return Result.ok([]);
@@ -1065,6 +1078,7 @@ describe("query/provider runtime", () => {
 
     const schema = buildSchema((builder) => {
       builder.view(
+        "spendByVendor",
         ({ scan, join, aggregate, col, expr, agg }) =>
           aggregate({
             from: join({
@@ -1081,7 +1095,6 @@ describe("query/provider runtime", () => {
             },
           }),
         {
-          name: "spendByVendor",
           columns: ({ col }) => ({
             vendorName: col.string("vendorName", { nullable: false }),
             spendCents: col.integer("spendCents"),
@@ -1137,36 +1150,33 @@ describe("query/provider runtime", () => {
     });
 
     const schema = buildSchema((builder) => {
-      const myOrderItems = builder.table(orderItemsEntity, {
-        name: "myOrderItems",
+      const myOrderItems = builder.table("myOrderItems", orderItemsEntity, {
         columns: ({ col, expr }) => ({
           orderId: col.string("orderId"),
           productId: col.string("productId"),
           quantity: col.integer("quantity"),
           lineTotalCents: col.integer("lineTotalCents"),
-          unitPriceCents: col.real(
-            expr.divide(col("lineTotalCents"), col("quantity")),
-            { nullable: false },
-          ),
+          unitPriceCents: col.real(expr.divide(col("lineTotalCents"), col("quantity")), {
+            nullable: false,
+          }),
         }),
       });
 
-      const productsForOrg = builder.table(productsEntity, {
-        name: "productsForOrg",
+      const productsForOrg = builder.table("productsForOrg", productsEntity, {
         columns: ({ col }) => ({
           id: col.id("id"),
           name: col.string("name"),
         }),
       });
 
-      const productAccess = builder.table(accessEntity, {
-        name: "productAccess",
+      const productAccess = builder.table("productAccess", accessEntity, {
         columns: ({ col }) => ({
           productId: col.string("productId"),
         }),
       });
 
       const activeProducts = builder.view(
+        "activeProducts",
         ({ scan, join, col, expr }) =>
           join({
             left: scan(productsForOrg),
@@ -1175,7 +1185,6 @@ describe("query/provider runtime", () => {
             type: "inner",
           }),
         {
-          name: "activeProducts",
           columns: ({ col }) => ({
             id: col.id(productsForOrg, "id"),
             name: col.string(productsForOrg, "name", { nullable: false }),
@@ -1184,6 +1193,7 @@ describe("query/provider runtime", () => {
       );
 
       builder.view(
+        "myOrderLines",
         ({ scan, join, col, expr }) =>
           join({
             left: scan(myOrderItems),
@@ -1192,7 +1202,6 @@ describe("query/provider runtime", () => {
             type: "inner",
           }),
         {
-          name: "myOrderLines",
           columns: ({ col }) => ({
             orderId: col.string(myOrderItems, "orderId", { nullable: false }),
             productId: col.string(activeProducts, "id", { nullable: false }),
@@ -1230,10 +1239,7 @@ describe("query/provider runtime", () => {
               { id: "p1", name: "Edge Router" },
               { id: "p2", name: "Backup Service" },
             ],
-            product_access_raw: [
-              { product_id: "p1" },
-              { product_id: "p2" },
-            ],
+            product_access_raw: [{ product_id: "p1" }, { product_id: "p2" }],
           };
 
           return Result.ok(scanRows(rowsByTable[fragment.table] ?? [], fragment.request));
@@ -1284,8 +1290,7 @@ describe("query/provider runtime", () => {
     });
 
     const schema = buildSchema((builder) => {
-      const myOrderItems = builder.table(orderItemsEntity, {
-        name: "myOrderItems",
+      const myOrderItems = builder.table("myOrderItems", orderItemsEntity, {
         columns: ({ col }) => ({
           orderId: col.string("orderId"),
           productId: col.string("productId"),
@@ -1294,22 +1299,21 @@ describe("query/provider runtime", () => {
         }),
       });
 
-      const productsForOrg = builder.table(productsEntity, {
-        name: "productsForOrg",
+      const productsForOrg = builder.table("productsForOrg", productsEntity, {
         columns: ({ col }) => ({
           id: col.id("id"),
           name: col.string("name"),
         }),
       });
 
-      const productAccess = builder.table(accessEntity, {
-        name: "productAccess",
+      const productAccess = builder.table("productAccess", accessEntity, {
         columns: ({ col }) => ({
           productId: col.string("productId"),
         }),
       });
 
       const activeProducts = builder.view(
+        "activeProducts",
         ({ scan, join, col, expr }) =>
           join({
             left: scan(productsForOrg),
@@ -1318,7 +1322,6 @@ describe("query/provider runtime", () => {
             type: "inner",
           }),
         {
-          name: "activeProducts",
           columns: ({ col }) => ({
             id: col.id(productsForOrg, "id"),
             name: col.string(productsForOrg, "name", { nullable: false }),
@@ -1327,6 +1330,7 @@ describe("query/provider runtime", () => {
       );
 
       const myOrderLines = builder.view(
+        "myOrderLines",
         ({ scan, join, col, expr }) =>
           join({
             left: scan(myOrderItems),
@@ -1335,7 +1339,6 @@ describe("query/provider runtime", () => {
             type: "inner",
           }),
         {
-          name: "myOrderLines",
           columns: ({ col }) => ({
             productId: col.string(activeProducts, "id", { nullable: false }),
             productName: col.string(activeProducts, "name", { nullable: false }),
@@ -1346,6 +1349,7 @@ describe("query/provider runtime", () => {
       );
 
       builder.view(
+        "productPerformance",
         ({ scan, aggregate, col, agg }) =>
           aggregate({
             from: scan(myOrderLines),
@@ -1359,7 +1363,6 @@ describe("query/provider runtime", () => {
             },
           }),
         {
-          name: "productPerformance",
           columns: ({ col }) => ({
             productId: col.id("productId"),
             productName: col.string("productName"),
@@ -1398,10 +1401,7 @@ describe("query/provider runtime", () => {
               { id: "p1", name: "Edge Router" },
               { id: "p2", name: "Backup Service" },
             ],
-            product_access_raw: [
-              { product_id: "p1" },
-              { product_id: "p2" },
-            ],
+            product_access_raw: [{ product_id: "p1" }, { product_id: "p2" }],
           };
 
           return Result.ok(scanRows(rowsByTable[fragment.table] ?? [], fragment.request));
@@ -1443,16 +1443,14 @@ describe("query/provider runtime", () => {
     });
 
     const schema = buildSchema((builder) => {
-      const products = builder.table(productsEntity, {
-        name: "products",
+      const products = builder.table("products", productsEntity, {
         columns: ({ col }) => ({
           id: col.id("id"),
           productName: col.string("name"),
         }),
       });
 
-      const productViewCounts = builder.table(viewCountsEntity, {
-        name: "productViewCounts",
+      const productViewCounts = builder.table("productViewCounts", viewCountsEntity, {
         columns: ({ col }) => ({
           productId: col.string("productId"),
           viewCount: col.integer("viewCount"),
@@ -1460,6 +1458,7 @@ describe("query/provider runtime", () => {
       });
 
       builder.view(
+        "productEngagement",
         ({ scan, join, col, expr }) =>
           join({
             left: scan(products),
@@ -1468,7 +1467,6 @@ describe("query/provider runtime", () => {
             type: "left",
           }),
         {
-          name: "productEngagement",
           columns: {
             productName: { source: "products.productName", type: "text", nullable: false },
             viewCount: { source: "productViewCounts.viewCount", type: "integer", nullable: true },
@@ -1495,10 +1493,15 @@ describe("query/provider runtime", () => {
             return Result.ok([]);
           }
 
-          return Result.ok(scanRows([
-            { id: "p1", name: "Edge Router" },
-            { id: "p2", name: "Backup Service" },
-          ], fragment.request));
+          return Result.ok(
+            scanRows(
+              [
+                { id: "p1", name: "Edge Router" },
+                { id: "p2", name: "Backup Service" },
+              ],
+              fragment.request,
+            ),
+          );
         },
       } satisfies Omit<ProviderAdapter, "name">,
       kv: {
@@ -1518,9 +1521,7 @@ describe("query/provider runtime", () => {
             return Result.ok([]);
           }
 
-          return Result.ok(scanRows([
-            { product_id: "p1", view_count: 12 },
-          ], fragment.request));
+          return Result.ok(scanRows([{ product_id: "p1", view_count: 12 }], fragment.request));
         },
       } satisfies Omit<ProviderAdapter, "name">,
     });
@@ -1566,22 +1567,21 @@ describe("query/provider runtime", () => {
     });
 
     const schema = buildSchema((builder) => {
-      const products = builder.table(productsEntity, {
-        name: "products",
+      const products = builder.table("products", productsEntity, {
         columns: ({ col }) => ({
           id: col.id("id"),
           name: col.string("name", { nullable: false }),
         }),
       });
 
-      const productAccess = builder.table(productAccessEntity, {
-        name: "productAccess",
+      const productAccess = builder.table("productAccess", productAccessEntity, {
         columns: ({ col }) => ({
           product_id: col.string("product_id", { nullable: false }),
         }),
       });
 
       builder.view(
+        "active_products",
         ({ scan, join, col, expr }) =>
           join({
             left: scan(products),
@@ -1590,7 +1590,6 @@ describe("query/provider runtime", () => {
             type: "inner",
           }),
         {
-          name: "active_products",
           columns: {
             id: { source: "products.id", type: "text", nullable: false, primaryKey: true },
             name: { source: "products.name", type: "text", nullable: false },
@@ -1598,8 +1597,7 @@ describe("query/provider runtime", () => {
         },
       );
 
-      builder.table(viewCountsEntity, {
-        name: "product_view_counts",
+      builder.table("product_view_counts", viewCountsEntity, {
         columns: ({ col }) => ({
           product_id: col.string("product_id", { nullable: false }),
           view_count: col.integer("view_count", { nullable: false }),
@@ -1672,9 +1670,7 @@ describe("query/provider runtime", () => {
         async lookupMany(request) {
           kvLookupCalls += 1;
           return Result.ok(
-            request.keys.includes("p1")
-              ? [{ product_id: "p1", view_count: 12 }]
-              : [],
+            request.keys.includes("p1") ? [{ product_id: "p1", view_count: 12 }] : [],
           );
         },
       } satisfies Omit<ProviderAdapter, "name">,
@@ -1715,7 +1711,7 @@ describe("query/provider runtime", () => {
   });
 
   it("exposes scan stages in session plans", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
         columns: {
@@ -1757,7 +1753,7 @@ describe("query/provider runtime", () => {
   });
 
   it("includes fallback diagnostics in explain output for unsupported rel pushdown", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
         columns: {
@@ -1812,16 +1808,18 @@ describe("query/provider runtime", () => {
       `,
     });
 
-    expect(explained.diagnostics).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        code: "SQLQL_WARN_FALLBACK",
-        severity: "warning",
-      }),
-    ]));
+    expect(explained.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "SQLQL_WARN_FALLBACK",
+          severity: "warning",
+        }),
+      ]),
+    );
   });
 
   it("rejects fallback when query policy forbids missing capability atoms", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
         columns: {
@@ -1860,17 +1858,19 @@ describe("query/provider runtime", () => {
       } satisfies Omit<ProviderAdapter, "name">,
     });
 
-    await expect(executableSchema.query({
-      context: {},
-      fallbackPolicy: {
-        rejectOnMissingAtom: true,
-      },
-      sql: `
+    await expect(
+      executableSchema.query({
+        context: {},
+        fallbackPolicy: {
+          rejectOnMissingAtom: true,
+        },
+        sql: `
         SELECT o.id, u.email
         FROM orders o
         JOIN users u ON o.user_id = u.id
       `,
-    })).rejects.toMatchObject({
+      }),
+    ).rejects.toMatchObject({
       _tag: "SqlqlDiagnosticError",
       diagnostics: expect.any(Array),
       name: "SqlqlDiagnosticError",
@@ -1878,7 +1878,7 @@ describe("query/provider runtime", () => {
   });
 
   it("surfaces tagged timeout errors through the Promise query API", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         provider: "warehouse",
         columns: {
@@ -1910,13 +1910,15 @@ describe("query/provider runtime", () => {
       } satisfies Omit<ProviderAdapter, "name">,
     });
 
-    await expect(executableSchema.query({
-      context: {},
-      queryGuardrails: {
-        timeoutMs: 5,
-      },
-      sql: "SELECT id FROM users",
-    })).rejects.toMatchObject({
+    await expect(
+      executableSchema.query({
+        context: {},
+        queryGuardrails: {
+          timeoutMs: 5,
+        },
+        sql: "SELECT id FROM users",
+      }),
+    ).rejects.toMatchObject({
       _tag: "SqlqlTimeoutError",
       name: "SqlqlTimeoutError",
       message: "Query timed out after 5ms.",
@@ -1924,7 +1926,7 @@ describe("query/provider runtime", () => {
   });
 
   it("returns tagged provider binding errors from the result API", () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         provider: "warehouse",
         columns: {
@@ -1949,7 +1951,7 @@ describe("query/provider runtime", () => {
   });
 
   it("executes scalar expressions and missing operators locally when scan pushdown is the only provider capability", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       users: {
         provider: "warehouse",
         columns: {

@@ -164,7 +164,9 @@ function collectConstraintViolations(
       continue;
     }
 
-    const allowed = new Set(check.values.filter((value): value is string | number | boolean => value != null));
+    const allowed = new Set(
+      check.values.filter((value): value is string | number | boolean => value != null),
+    );
     rows.forEach((row, rowIndex) => {
       const value = row[check.column];
       if (value == null) {

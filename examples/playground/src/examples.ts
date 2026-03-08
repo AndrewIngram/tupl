@@ -44,8 +44,7 @@ const productViewCountsEntity = createDataEntityHandle<"product_id" | "view_coun
 
 const facadeSchemaBuilder = createSchemaBuilder<Record<string, never>>();
 
-facadeSchemaBuilder.table(ordersEntity, {
-  name: "my_orders",
+facadeSchemaBuilder.table("my_orders", ordersEntity, {
   columns: ({ col, expr }) => ({
     id: col.id("id"),
     vendor_id: col.string("vendor_id", {
@@ -70,8 +69,7 @@ facadeSchemaBuilder.table(ordersEntity, {
   }),
 });
 
-const myOrderItemsRef = facadeSchemaBuilder.table(orderItemsEntity, {
-  name: "my_order_items",
+const myOrderItemsRef = facadeSchemaBuilder.table("my_order_items", orderItemsEntity, {
   columns: ({ col, expr }) => ({
     id: col.id("id"),
     order_id: col.string("order_id", {
@@ -96,8 +94,7 @@ const myOrderItemsRef = facadeSchemaBuilder.table(orderItemsEntity, {
   }),
 });
 
-facadeSchemaBuilder.table(vendorsEntity, {
-  name: "vendors_for_org",
+facadeSchemaBuilder.table("vendors_for_org", vendorsEntity, {
   columns: ({ col }) => ({
     id: col.id("id"),
     name: col.string("name", { nullable: false }),
@@ -108,8 +105,7 @@ facadeSchemaBuilder.table(vendorsEntity, {
   }),
 });
 
-const productsForOrgRef = facadeSchemaBuilder.table(productsEntity, {
-  name: "products_for_org",
+const productsForOrgRef = facadeSchemaBuilder.table("products_for_org", productsEntity, {
   columns: ({ col }) => ({
     id: col.id("id"),
     sku: col.string("sku", { nullable: false }),
@@ -121,20 +117,24 @@ const productsForOrgRef = facadeSchemaBuilder.table(productsEntity, {
   }),
 });
 
-const productAccessForUserRef = facadeSchemaBuilder.table(userProductAccessEntity, {
-  name: "product_access_for_user",
-  columns: ({ col }) => ({
-    product_id: col.string("product_id", {
-      nullable: false,
-      foreignKey: {
-        table: "products_for_org",
-        column: "id",
-      },
+const productAccessForUserRef = facadeSchemaBuilder.table(
+  "product_access_for_user",
+  userProductAccessEntity,
+  {
+    columns: ({ col }) => ({
+      product_id: col.string("product_id", {
+        nullable: false,
+        foreignKey: {
+          table: "products_for_org",
+          column: "id",
+        },
+      }),
     }),
-  }),
-});
+  },
+);
 
 const activeProductsRef = facadeSchemaBuilder.view(
+  "active_products",
   ({ scan, join, col, expr }) =>
     join({
       left: scan(productsForOrgRef),
@@ -143,7 +143,6 @@ const activeProductsRef = facadeSchemaBuilder.view(
       type: "inner",
     }),
   {
-    name: "active_products",
     columns: ({ col }) => ({
       id: col.id(productsForOrgRef, "id"),
       sku: col.string(productsForOrgRef, "sku", { nullable: false }),
@@ -157,6 +156,7 @@ const activeProductsRef = facadeSchemaBuilder.view(
 );
 
 const myOrderLinesRef = facadeSchemaBuilder.view(
+  "my_order_lines",
   ({ scan, join, col, expr }) =>
     join({
       left: scan(myOrderItemsRef),
@@ -165,7 +165,6 @@ const myOrderLinesRef = facadeSchemaBuilder.view(
       type: "inner",
     }),
   {
-    name: "my_order_lines",
     columns: ({ col }) => ({
       order_id: col.string(myOrderItemsRef, "order_id", {
         nullable: false,
@@ -188,21 +187,25 @@ const myOrderLinesRef = facadeSchemaBuilder.view(
   },
 );
 
-const productViewCountsRef = facadeSchemaBuilder.table(productViewCountsEntity, {
-  name: "product_view_counts",
-  columns: ({ col }) => ({
-    product_id: col.string("product_id", {
-      nullable: false,
-      foreignKey: {
-        table: "active_products",
-        column: "id",
-      },
+const productViewCountsRef = facadeSchemaBuilder.table(
+  "product_view_counts",
+  productViewCountsEntity,
+  {
+    columns: ({ col }) => ({
+      product_id: col.string("product_id", {
+        nullable: false,
+        foreignKey: {
+          table: "active_products",
+          column: "id",
+        },
+      }),
+      view_count: col.integer("view_count", { nullable: false }),
     }),
-    view_count: col.integer("view_count", { nullable: false }),
-  }),
-});
+  },
+);
 
 facadeSchemaBuilder.view(
+  "product_engagement",
   ({ scan, join, col, expr }) =>
     join({
       left: scan(activeProductsRef),
@@ -211,7 +214,6 @@ facadeSchemaBuilder.view(
       type: "left",
     }),
   {
-    name: "product_engagement",
     columns: ({ col, expr }) => ({
       product_id: col.id(activeProductsRef, "id"),
       product_sku: col.string(activeProductsRef, "sku", { nullable: false }),
@@ -230,6 +232,7 @@ facadeSchemaBuilder.view(
 );
 
 facadeSchemaBuilder.view(
+  "product_performance",
   ({ scan, aggregate, col, agg }) =>
     aggregate({
       from: scan(myOrderLinesRef),
@@ -245,7 +248,6 @@ facadeSchemaBuilder.view(
       },
     }),
   {
-    name: "product_performance",
     columns: ({ col }) => ({
       product_id: col.id("product_id", {
         foreignKey: {
@@ -272,223 +274,251 @@ export const DB_PROVIDER_MODULE_ID = "./db-provider";
 export const KV_PROVIDER_MODULE_ID = "./kv-provider";
 export const CONTEXT_MODULE_ID = "./context";
 
-export const DEFAULT_CONTEXT_CODE = `
-import { drizzle } from "drizzle-orm/pglite";
+function dedent(text: string): string {
+  const trimmed = text.replace(/^\n/u, "").replace(/\n\s*$/u, "");
+  const lines = trimmed.split("\n");
+  const margin = lines.reduce<number>((smallest, line) => {
+    if (line.trim().length === 0) {
+      return smallest;
+    }
+    const indent = line.match(/^\s*/u)?.[0].length ?? 0;
+    return Math.min(smallest, indent);
+  }, Number.POSITIVE_INFINITY);
 
-export type QueryContext = {
-  orgId: string;
-  userId: string;
-  db: ReturnType<typeof drizzle>;
-};
-`.trim();
-
-export const DEFAULT_GENERATED_DB_FILE_CODE = `
-// Generated from the downstream Postgres model used by the playground.
-// This file is read-only in the editor.
-import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
-
-const orgsTable = pgTable("orgs", {
-  id: text("id").primaryKey().notNull(),
-  name: text("name").notNull(),
-});
-
-const usersTable = pgTable("users", {
-  id: text("id").primaryKey().notNull(),
-  org_id: text("org_id").notNull(),
-  email: text("email").notNull(),
-  display_name: text("display_name").notNull(),
-  role: text("role").notNull(),
-});
-
-const vendorsTable = pgTable("vendors", {
-  id: text("id").primaryKey().notNull(),
-  org_id: text("org_id").notNull(),
-  name: text("name").notNull(),
-  tier: text("tier").notNull(),
-});
-
-const productsTable = pgTable("products", {
-  id: text("id").primaryKey().notNull(),
-  org_id: text("org_id").notNull(),
-  sku: text("sku").notNull(),
-  name: text("name").notNull(),
-  category: text("category").notNull(),
-  active: boolean("active").notNull(),
-});
-
-const ordersTable = pgTable("orders", {
-  id: text("id").primaryKey().notNull(),
-  org_id: text("org_id").notNull(),
-  user_id: text("user_id").notNull(),
-  vendor_id: text("vendor_id").notNull(),
-  status: text("status").notNull(),
-  total_cents: integer("total_cents").notNull(),
-  created_at: timestamp("created_at", { mode: "string" }).notNull(),
-});
-
-const orderItemsTable = pgTable("order_items", {
-  id: text("id").primaryKey().notNull(),
-  org_id: text("org_id").notNull(),
-  user_id: text("user_id").notNull(),
-  order_id: text("order_id").notNull(),
-  product_id: text("product_id").notNull(),
-  quantity: integer("quantity").notNull(),
-  line_total_cents: integer("line_total_cents").notNull(),
-});
-
-const userProductAccessTable = pgTable("user_product_access", {
-  id: text("id").primaryKey().notNull(),
-  user_id: text("user_id").notNull(),
-  product_id: text("product_id").notNull(),
-});
-
-export const tables = {
-  orgs: orgsTable,
-  users: usersTable,
-  vendors: vendorsTable,
-  products: productsTable,
-  orders: ordersTable,
-  order_items: orderItemsTable,
-  user_product_access: userProductAccessTable,
-} as const;
-`.trim();
-
-export const DEFAULT_DB_PROVIDER_CODE = `
-import { and, eq } from "drizzle-orm";
-import { createDrizzleProvider } from "@sqlql/drizzle";
-import type { QueryContext } from "${CONTEXT_MODULE_ID}";
-import { tables } from "${GENERATED_DB_MODULE_ID}";
-
-const providerTables = {
-  orders: {
-    table: tables.orders,
-    scope: (ctx: QueryContext) =>
-      and(
-        eq(tables.orders.org_id, ctx.orgId),
-        eq(tables.orders.user_id, ctx.userId),
-      ),
-  },
-  order_items: {
-    table: tables.order_items,
-    scope: (ctx: QueryContext) =>
-      and(
-        eq(tables.order_items.org_id, ctx.orgId),
-        eq(tables.order_items.user_id, ctx.userId),
-      ),
-  },
-  vendors: {
-    table: tables.vendors,
-    scope: (ctx: QueryContext) => eq(tables.vendors.org_id, ctx.orgId),
-  },
-  products: {
-    table: tables.products,
-    scope: (ctx: QueryContext) =>
-      and(
-        eq(tables.products.org_id, ctx.orgId),
-        eq(tables.products.active, true),
-      ),
-  },
-  user_product_access: {
-    table: tables.user_product_access,
-    scope: (ctx: QueryContext) => eq(tables.user_product_access.user_id, ctx.userId),
-  },
-};
-
-export const dbProvider = createDrizzleProvider({
-  name: "dbProvider",
-  dialect: "postgres",
-  db: (ctx: QueryContext) => ctx.db,
-  tables: providerTables,
-});
-`.trim();
-
-export const DEFAULT_KV_PROVIDER_CODE = `
-import { createKvProvider, playgroundKvRuntime, type KvProviderFactoryRuntime } from "@playground/kv-provider-core";
-import type { QueryContext } from "${CONTEXT_MODULE_ID}";
-
-function parseViewCounterKey(raw: string): { userId: string; productId: string } | null {
-  const separator = raw.indexOf(":");
-  if (separator <= 0 || separator >= raw.length - 1) {
-    return null;
+  if (!Number.isFinite(margin) || margin === 0) {
+    return trimmed;
   }
 
-  const userId = raw.slice(0, separator).trim();
-  const productId = raw.slice(separator + 1).trim();
-  if (userId.length === 0 || productId.length === 0) {
-    return null;
-  }
-
-  return { userId, productId };
+  return lines.map((line) => line.slice(margin)).join("\n");
 }
 
-export function createProvider(runtime: KvProviderFactoryRuntime) {
-  return createKvProvider<QueryContext>({
-    name: "kvProvider",
-    rows: runtime.rows,
-    recordOperation: runtime.recordOperation,
-    entities: {
-      product_view_counts: {
-        entity: "product_view_counts",
-        columns: ["product_id", "view_count"] as const,
-        mapRow({ key, value, context }: { key: string; value: unknown; context: QueryContext }) {
-          const parsed = parseViewCounterKey(key);
-          if (!parsed || parsed.userId !== context.userId) {
-            return null;
-          }
-          if (typeof value !== "number" || !Number.isFinite(value)) {
-            return null;
-          }
-          return {
-            product_id: parsed.productId,
-            view_count: Math.trunc(value),
-          };
+export const DEFAULT_CONTEXT_CODE = dedent(`
+  import { drizzle } from "drizzle-orm/pglite";
+
+  export type QueryContext = {
+    orgId: string;
+    userId: string;
+    db: ReturnType<typeof drizzle>;
+  };
+`);
+
+export const DEFAULT_GENERATED_DB_FILE_CODE = dedent(`
+  // Generated from the downstream Postgres model used by the playground.
+  // This file is read-only in the editor.
+  import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+
+  const orgsTable = pgTable("orgs", {
+    id: text("id").primaryKey().notNull(),
+    name: text("name").notNull(),
+  });
+
+  const usersTable = pgTable("users", {
+    id: text("id").primaryKey().notNull(),
+    org_id: text("org_id").notNull(),
+    email: text("email").notNull(),
+    display_name: text("display_name").notNull(),
+    role: text("role").notNull(),
+  });
+
+  const vendorsTable = pgTable("vendors", {
+    id: text("id").primaryKey().notNull(),
+    org_id: text("org_id").notNull(),
+    name: text("name").notNull(),
+    tier: text("tier").notNull(),
+  });
+
+  const productsTable = pgTable("products", {
+    id: text("id").primaryKey().notNull(),
+    org_id: text("org_id").notNull(),
+    sku: text("sku").notNull(),
+    name: text("name").notNull(),
+    category: text("category").notNull(),
+    active: boolean("active").notNull(),
+  });
+
+  const ordersTable = pgTable("orders", {
+    id: text("id").primaryKey().notNull(),
+    org_id: text("org_id").notNull(),
+    user_id: text("user_id").notNull(),
+    vendor_id: text("vendor_id").notNull(),
+    status: text("status").notNull(),
+    total_cents: integer("total_cents").notNull(),
+    created_at: timestamp("created_at", { mode: "string" }).notNull(),
+  });
+
+  const orderItemsTable = pgTable("order_items", {
+    id: text("id").primaryKey().notNull(),
+    org_id: text("org_id").notNull(),
+    user_id: text("user_id").notNull(),
+    order_id: text("order_id").notNull(),
+    product_id: text("product_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    line_total_cents: integer("line_total_cents").notNull(),
+  });
+
+  const userProductAccessTable = pgTable("user_product_access", {
+    id: text("id").primaryKey().notNull(),
+    user_id: text("user_id").notNull(),
+    product_id: text("product_id").notNull(),
+  });
+
+  export const tables = {
+    orgs: orgsTable,
+    users: usersTable,
+    vendors: vendorsTable,
+    products: productsTable,
+    orders: ordersTable,
+    order_items: orderItemsTable,
+    user_product_access: userProductAccessTable,
+  } as const;
+`);
+
+export const DEFAULT_DB_PROVIDER_CODE = dedent(`
+  import { and, eq } from "drizzle-orm";
+  import { createDrizzleProvider } from "@sqlql/drizzle";
+  import type { QueryContext } from "${CONTEXT_MODULE_ID}";
+  import { tables } from "${GENERATED_DB_MODULE_ID}";
+
+  const providerTables = {
+    orders: {
+      table: tables.orders,
+      scope: (ctx: QueryContext) =>
+        and(
+          eq(tables.orders.org_id, ctx.orgId),
+          eq(tables.orders.user_id, ctx.userId),
+        ),
+    },
+    order_items: {
+      table: tables.order_items,
+      scope: (ctx: QueryContext) =>
+        and(
+          eq(tables.order_items.org_id, ctx.orgId),
+          eq(tables.order_items.user_id, ctx.userId),
+        ),
+    },
+    vendors: {
+      table: tables.vendors,
+      scope: (ctx: QueryContext) => eq(tables.vendors.org_id, ctx.orgId),
+    },
+    products: {
+      table: tables.products,
+      scope: (ctx: QueryContext) =>
+        and(
+          eq(tables.products.org_id, ctx.orgId),
+          eq(tables.products.active, true),
+        ),
+    },
+    user_product_access: {
+      table: tables.user_product_access,
+      scope: (ctx: QueryContext) => eq(tables.user_product_access.user_id, ctx.userId),
+    },
+  };
+
+  export const dbProvider = createDrizzleProvider({
+    name: "dbProvider",
+    dialect: "postgres",
+    db: (ctx: QueryContext) => ctx.db,
+    tables: providerTables,
+  });
+`);
+
+export const DEFAULT_KV_PROVIDER_CODE = dedent(`
+  import {
+    createKvProvider,
+    playgroundKvRuntime,
+    type KvProviderFactoryRuntime,
+  } from "@playground/kv-provider-core";
+  import type { QueryContext } from "${CONTEXT_MODULE_ID}";
+
+  function parseViewCounterKey(raw: string): { userId: string; productId: string } | null {
+    const separator = raw.indexOf(":");
+    if (separator <= 0 || separator >= raw.length - 1) {
+      return null;
+    }
+
+    const userId = raw.slice(0, separator).trim();
+    const productId = raw.slice(separator + 1).trim();
+    if (userId.length === 0 || productId.length === 0) {
+      return null;
+    }
+
+    return { userId, productId };
+  }
+
+  export function createProvider(runtime: KvProviderFactoryRuntime) {
+    return createKvProvider<QueryContext>({
+      name: "kvProvider",
+      rows: runtime.rows,
+      recordOperation: runtime.recordOperation,
+      entities: {
+        product_view_counts: {
+          entity: "product_view_counts",
+          columns: ["product_id", "view_count"] as const,
+          mapRow({
+            key,
+            value,
+            context,
+          }: {
+            key: string;
+            value: unknown;
+            context: QueryContext;
+          }) {
+            const parsed = parseViewCounterKey(key);
+            if (!parsed || parsed.userId !== context.userId) {
+              return null;
+            }
+            if (typeof value !== "number" || !Number.isFinite(value)) {
+              return null;
+            }
+            return {
+              product_id: parsed.productId,
+              view_count: Math.trunc(value),
+            };
+          },
         },
       },
-    },
+    });
+  }
+
+  export const kvProvider = createProvider(playgroundKvRuntime);
+`);
+
+export const DEFAULT_FACADE_SCHEMA_CODE = dedent(`
+  import { createExecutableSchema, createSchemaBuilder } from "sqlql";
+  import type { QueryContext } from "${CONTEXT_MODULE_ID}";
+  import { dbProvider } from "${DB_PROVIDER_MODULE_ID}";
+  import { kvProvider } from "${KV_PROVIDER_MODULE_ID}";
+
+  const builder = createSchemaBuilder<QueryContext>();
+
+  builder.table("my_orders", dbProvider.entities.orders, {
+    columns: ({ col, expr }) => ({
+      id: col.id("id"),
+      vendor_id: col.string("vendor_id", {
+        nullable: false,
+        foreignKey: {
+          table: "vendors_for_org",
+          column: "id",
+        },
+      }),
+      status: col.string("status", {
+        nullable: false,
+        enum: ["pending", "paid", "shipped"] as const,
+      }),
+      total_cents: col.integer("total_cents", { nullable: false }),
+      created_at: col.timestamp("created_at", { nullable: false }),
+      total_dollars: col.real(
+        expr.divide(col("total_cents"), expr.literal(100)),
+        { nullable: false },
+      ),
+      is_large_order: col.boolean(
+        expr.gte(col("total_cents"), expr.literal(30000)),
+        { nullable: false },
+      ),
+    }),
   });
-}
 
-export const kvProvider = createProvider(playgroundKvRuntime);
-`.trim();
-
-export const DEFAULT_FACADE_SCHEMA_CODE = `
-import { createExecutableSchema, createSchemaBuilder } from "sqlql";
-import type { QueryContext } from "${CONTEXT_MODULE_ID}";
-import { dbProvider } from "${DB_PROVIDER_MODULE_ID}";
-import { kvProvider } from "${KV_PROVIDER_MODULE_ID}";
-
-const builder = createSchemaBuilder<QueryContext>();
-
-builder.table(dbProvider.entities.orders, {
-  name: "my_orders",
-  columns: ({ col, expr }) => ({
-    id: col.id("id"),
-    vendor_id: col.string("vendor_id", {
-      nullable: false,
-      foreignKey: {
-        table: "vendors_for_org",
-        column: "id",
-      },
-    }),
-    status: col.string("status", {
-      nullable: false,
-      enum: ["pending", "paid", "shipped"] as const,
-    }),
-    total_cents: col.integer("total_cents", { nullable: false }),
-    created_at: col.timestamp("created_at", { nullable: false }),
-    total_dollars: col.real(
-      expr.divide(col("total_cents"), expr.literal(100)),
-      { nullable: false },
-    ),
-    is_large_order: col.boolean(
-      expr.gte(col("total_cents"), expr.literal(30000)),
-      { nullable: false },
-    ),
-  }),
-});
-
-const myOrderItemsRef = builder.table(dbProvider.entities.order_items, {
-    name: "my_order_items",
+  const myOrderItemsRef = builder.table("my_order_items", dbProvider.entities.order_items, {
     columns: ({ col, expr }) => ({
       id: col.id("id"),
       order_id: col.string("order_id", {
@@ -512,22 +542,20 @@ const myOrderItemsRef = builder.table(dbProvider.entities.order_items, {
         { nullable: false },
       ),
     }),
-});
+  });
 
-builder.table(dbProvider.entities.vendors, {
-  name: "vendors_for_org",
-  columns: ({ col }) => ({
-    id: col.id("id"),
-    name: col.string("name", { nullable: false }),
-    tier: col.string("tier", {
-      nullable: false,
-      enum: ["standard", "preferred"] as const,
+  builder.table("vendors_for_org", dbProvider.entities.vendors, {
+    columns: ({ col }) => ({
+      id: col.id("id"),
+      name: col.string("name", { nullable: false }),
+      tier: col.string("tier", {
+        nullable: false,
+        enum: ["standard", "preferred"] as const,
+      }),
     }),
-  }),
-});
+  });
 
-const productsForOrgRef = builder.table(dbProvider.entities.products, {
-    name: "products_for_org",
+  const productsForOrgRef = builder.table("products_for_org", dbProvider.entities.products, {
     columns: ({ col }) => ({
       id: col.id("id"),
       sku: col.string("sku", { nullable: false }),
@@ -537,60 +565,63 @@ const productsForOrgRef = builder.table(dbProvider.entities.products, {
         enum: ["hardware", "software", "services"] as const,
       }),
     }),
-});
+  });
 
-const productAccessForUserRef = builder.table(dbProvider.entities.user_product_access, {
-    name: "product_access_for_user",
-    columns: ({ col }) => ({
-      product_id: col.string("product_id", {
-        nullable: false,
-        foreignKey: {
-          table: "products_for_org",
-          column: "id",
-        },
-      }),
-    }),
-});
-
-const activeProductsRef = builder.view(
-  ({ scan, join, col, expr }) =>
-    join({
-      left: scan(productsForOrgRef),
-      right: scan(productAccessForUserRef),
-      on: expr.eq(
-        col(productsForOrgRef, "id"),
-        col(productAccessForUserRef, "product_id"),
-      ),
-      type: "inner",
-    }),
-  {
-    name: "active_products",
-    columns: ({ col }) => ({
-      id: col.id(productsForOrgRef, "id"),
-      sku: col.string(productsForOrgRef, "sku", { nullable: false }),
-      name: col.string(productsForOrgRef, "name", { nullable: false }),
-      category: col.string(productsForOrgRef, "category", {
-        nullable: false,
-        enum: ["hardware", "software", "services"] as const,
-      }),
+  const productAccessForUserRef = builder.table(
+    "product_access_for_user",
+    dbProvider.entities.user_product_access,
+    {
+      columns: ({ col }) => ({
+        product_id: col.string("product_id", {
+          nullable: false,
+          foreignKey: {
+            table: "products_for_org",
+            column: "id",
+          },
+        }),
       }),
     },
-);
+  );
 
-const myOrderLinesRef = builder.view(
-  ({ scan, join, col, expr }) =>
-    join({
-      left: scan(myOrderItemsRef),
-      right: scan(activeProductsRef),
-      on: expr.eq(
-        col(myOrderItemsRef, "product_id"),
-        col(activeProductsRef, "id"),
-      ),
-      type: "inner",
-    }),
-  {
-    name: "my_order_lines",
-    columns: ({ col }) => ({
+  const activeProductsRef = builder.view(
+    "active_products",
+    ({ scan, join, col, expr }) =>
+      join({
+        left: scan(productsForOrgRef),
+        right: scan(productAccessForUserRef),
+        on: expr.eq(
+          col(productsForOrgRef, "id"),
+          col(productAccessForUserRef, "product_id"),
+        ),
+        type: "inner",
+      }),
+    {
+      columns: ({ col }) => ({
+        id: col.id(productsForOrgRef, "id"),
+        sku: col.string(productsForOrgRef, "sku", { nullable: false }),
+        name: col.string(productsForOrgRef, "name", { nullable: false }),
+        category: col.string(productsForOrgRef, "category", {
+          nullable: false,
+          enum: ["hardware", "software", "services"] as const,
+        }),
+      }),
+    },
+  );
+
+  const myOrderLinesRef = builder.view(
+    "my_order_lines",
+    ({ scan, join, col, expr }) =>
+      join({
+        left: scan(myOrderItemsRef),
+        right: scan(activeProductsRef),
+        on: expr.eq(
+          col(myOrderItemsRef, "product_id"),
+          col(activeProductsRef, "id"),
+        ),
+        type: "inner",
+      }),
+    {
+      columns: ({ col }) => ({
         order_id: col.string(myOrderItemsRef, "order_id", {
           nullable: false,
           foreignKey: {
@@ -616,53 +647,57 @@ const myOrderLinesRef = builder.view(
         unit_price_cents: col.real(myOrderItemsRef, "unit_price_cents", { nullable: false }),
       }),
     },
-);
+  );
 
-const productViewCountsRef = builder.table(kvProvider.entities.product_view_counts, {
-    name: "product_view_counts",
-    columns: ({ col }) => ({
-      product_id: col.string("product_id", {
-        nullable: false,
-        foreignKey: {
-          table: "active_products",
-          column: "id",
-        },
+  const productViewCountsRef = builder.table(
+    "product_view_counts",
+    kvProvider.entities.product_view_counts,
+    {
+      columns: ({ col }) => ({
+        product_id: col.string("product_id", {
+          nullable: false,
+          foreignKey: {
+            table: "active_products",
+            column: "id",
+          },
+        }),
+        view_count: col.integer("view_count", { nullable: false }),
       }),
-      view_count: col.integer("view_count", { nullable: false }),
-    }),
-});
+    },
+  );
 
-builder.view(
-  ({ scan, join, col, expr }) =>
-    join({
-      left: scan(activeProductsRef),
-      right: scan(productViewCountsRef),
-      on: expr.eq(
-        col(activeProductsRef, "id"),
-        col(productViewCountsRef, "product_id"),
-      ),
-      type: "left",
-    }),
-  {
-    name: "product_engagement",
-    columns: ({ col, expr }) => ({
-      product_id: col.id(activeProductsRef, "id"),
-      product_sku: col.string(activeProductsRef, "sku", { nullable: false }),
-      product_name: col.string(activeProductsRef, "name", { nullable: false }),
-      product_category: col.string(activeProductsRef, "category", {
-        nullable: false,
-        enum: ["hardware", "software", "services"] as const,
+  builder.view(
+    "product_engagement",
+    ({ scan, join, col, expr }) =>
+      join({
+        left: scan(activeProductsRef),
+        right: scan(productViewCountsRef),
+        on: expr.eq(
+          col(activeProductsRef, "id"),
+          col(productViewCountsRef, "product_id"),
+        ),
+        type: "left",
       }),
-      view_count: col.integer(productViewCountsRef, "view_count", { nullable: true }),
-      engagement_score: col.real(
-        expr.divide(expr.add(col("view_count"), expr.literal(1)), expr.literal(10)),
-        { nullable: false },
-      ),
-    }),
-  },
-);
+    {
+      columns: ({ col, expr }) => ({
+        product_id: col.id(activeProductsRef, "id"),
+        product_sku: col.string(activeProductsRef, "sku", { nullable: false }),
+        product_name: col.string(activeProductsRef, "name", { nullable: false }),
+        product_category: col.string(activeProductsRef, "category", {
+          nullable: false,
+          enum: ["hardware", "software", "services"] as const,
+        }),
+        view_count: col.integer(productViewCountsRef, "view_count", { nullable: true }),
+        engagement_score: col.real(
+          expr.divide(expr.add(col("view_count"), expr.literal(1)), expr.literal(10)),
+          { nullable: false },
+        ),
+      }),
+    },
+  );
 
-builder.view(
+  builder.view(
+    "product_performance",
     ({ scan, aggregate, col, agg }) =>
       aggregate({
         from: scan(myOrderLinesRef),
@@ -678,7 +713,6 @@ builder.view(
         },
       }),
     {
-      name: "product_performance",
       columns: ({ col }) => ({
         product_id: col.id("product_id", {
           foreignKey: {
@@ -696,10 +730,10 @@ builder.view(
         revenue_cents: col.integer("revenue_cents", { nullable: false }),
       }),
     },
-);
+  );
 
-export const executableSchema = createExecutableSchema(builder);
-`.trim();
+  export const executableSchema = createExecutableSchema(builder);
+`);
 
 export const QUERY_PRESETS: PlaygroundQueryPreset[] = [
   {

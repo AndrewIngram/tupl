@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { commerceRows, commerceSchema } from "../support/commerce-fixture";
 import { withQueryHarness } from "../support/query-harness";
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -33,7 +33,7 @@ describe("query/basic", () => {
   });
 
   it("handles null filters and null ordering like sqlite", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       items: {
         columns: {
           id: { type: "text", nullable: false },
@@ -100,7 +100,7 @@ describe("query/basic", () => {
   });
 
   it("returns empty result sets for empty tables", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       events: {
         columns: {
           id: { type: "text", nullable: false },

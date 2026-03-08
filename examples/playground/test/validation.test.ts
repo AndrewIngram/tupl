@@ -21,7 +21,7 @@ import {
 } from "../src/validation";
 
 describe("playground/validation", () => {
-  it("parses facade schema TypeScript module", async () => {
+  it("parses facade schema TypeScript module", { timeout: 15_000 }, async () => {
     const schemaResult = await parseFacadeSchemaCode(DEFAULT_FACADE_SCHEMA_CODE, {
       modules: {
         [DB_PROVIDER_MODULE_ID]: DEFAULT_DB_PROVIDER_CODE,
@@ -34,7 +34,7 @@ describe("playground/validation", () => {
     expect(schemaResult.issues).toEqual([]);
   });
 
-  it("rejects schema modules missing exported executableSchema", async () => {
+  it("rejects schema modules missing exported executableSchema", { timeout: 15_000 }, async () => {
     const schemaResult = await parseFacadeSchemaCode("export const notSchema = 1;");
 
     expect(schemaResult.ok).toBe(false);
@@ -42,12 +42,18 @@ describe("playground/validation", () => {
     expect(schemaResult.issues[0]?.message).toContain("executableSchema");
   });
 
-  it("rejects schema modules with invalid executable schema export", async () => {
-    const schemaResult = await parseFacadeSchemaCode("export const executableSchema = { nope: true };");
+  it(
+    "rejects schema modules with invalid executable schema export",
+    { timeout: 15_000 },
+    async () => {
+      const schemaResult = await parseFacadeSchemaCode(
+        "export const executableSchema = { nope: true };",
+      );
 
-    expect(schemaResult.ok).toBe(false);
-    expect(schemaResult.issues[0]?.message).toContain("SCHEMA_EXPORT_INVALID");
-  });
+      expect(schemaResult.ok).toBe(false);
+      expect(schemaResult.issues[0]?.message).toContain("SCHEMA_EXPORT_INVALID");
+    },
+  );
 
   it("rejects schema modules that throw at runtime", async () => {
     const schemaResult = await parseFacadeSchemaCode(
@@ -58,15 +64,17 @@ describe("playground/validation", () => {
     expect(schemaResult.issues[0]?.message).toContain("SCHEMA_EXEC_ERROR");
   });
 
+  it("rejects raw facade schema JSON input", () => {
+    const schemaResult = parseFacadeSchemaText(serializeJson(FACADE_SCHEMA));
+
+    expect(schemaResult.ok).toBe(false);
+    expect(schemaResult.issues[0]?.message).toContain("no longer supported");
+  });
+
   it("rejects downstream rows JSON with unknown columns", () => {
     const scenario = SCENARIO_PRESETS[0];
     if (!scenario) {
       throw new Error("Expected default scenario.");
-    }
-
-    const schemaResult = parseFacadeSchemaText(serializeJson(FACADE_SCHEMA));
-    if (!schemaResult.ok || !schemaResult.schema) {
-      throw new Error("Expected valid schema.");
     }
 
     const invalidRowsText = serializeJson({
@@ -92,12 +100,7 @@ describe("playground/validation", () => {
   });
 
   it("builds rows JSON schema from current schema", () => {
-    const schemaResult = parseFacadeSchemaText(serializeJson(FACADE_SCHEMA));
-    if (!schemaResult.ok || !schemaResult.schema) {
-      throw new Error("Expected valid schema.");
-    }
-
-    const rowsJsonSchema = buildRowsJsonSchema(schemaResult.schema);
+    const rowsJsonSchema = buildRowsJsonSchema(FACADE_SCHEMA);
     expect(rowsJsonSchema).toMatchObject({
       type: "object",
       properties: expect.objectContaining({

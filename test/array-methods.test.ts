@@ -7,11 +7,8 @@ import {
   scanArrayRows,
 } from "../src/array-methods";
 
-import {
-  defineTableMethods,
-  type QueryRow,
-} from "../src";
-import { buildStaticSchema } from "./support/schema-builder";
+import { defineTableMethods, type QueryRow } from "../src";
+import { buildEntitySchema } from "./support/schema-builder";
 
 describe("array methods", () => {
   const orders: QueryRow[] = [
@@ -75,7 +72,7 @@ describe("array methods", () => {
       { id: "usr_3", email: "c@example.com" },
     ];
 
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       orders: {
         columns: {
           id: "text",

@@ -1,4 +1,11 @@
-export type TokenKind = "identifier" | "keyword" | "string" | "number" | "symbol" | "operator" | "eof";
+export type TokenKind =
+  | "identifier"
+  | "keyword"
+  | "string"
+  | "number"
+  | "symbol"
+  | "operator"
+  | "eof";
 
 export interface Token {
   kind: TokenKind;

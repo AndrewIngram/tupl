@@ -329,7 +329,9 @@ describe("kysely adapter", () => {
       request: scanRequest,
     };
     const scanContext = { orgId: "org_1", db };
-    const scanPlan = unwrapProviderOperationResult(await provider.compile(scanFragment, scanContext));
+    const scanPlan = unwrapProviderOperationResult(
+      await provider.compile(scanFragment, scanContext),
+    );
     const scanRows = unwrapProviderOperationResult(await provider.execute(scanPlan, scanContext));
     expect(scanRows).toEqual([{ id: "o1", user_id: "u1" }]);
 
@@ -382,7 +384,9 @@ describe("kysely adapter", () => {
 
     await expect(
       Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult),
-    ).rejects.toThrow("Kysely provider runtime binding did not resolve to a valid database instance.");
+    ).rejects.toThrow(
+      "Kysely provider runtime binding did not resolve to a valid database instance.",
+    );
   });
 
   it("executes supported rel fragments as a single query", async () => {
@@ -470,18 +474,23 @@ describe("kysely adapter", () => {
       output: [{ name: "id" }],
     };
 
-    const result = provider.canExecute({
-      kind: "rel",
-      provider: "kysely",
-      rel: withNode,
-    }, {});
+    const result = provider.canExecute(
+      {
+        kind: "rel",
+        provider: "kysely",
+        rel: withNode,
+      },
+      {},
+    );
 
-    expect(result).toEqual(expect.objectContaining({
-      supported: false,
-      routeFamily: "rel-advanced",
-      requiredAtoms: expect.arrayContaining(["cte.non_recursive"]),
-      reason: "Rel fragment is not supported for single-query Kysely pushdown.",
-    }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        supported: false,
+        routeFamily: "rel-advanced",
+        requiredAtoms: expect.arrayContaining(["cte.non_recursive"]),
+        reason: "Rel fragment is not supported for single-query Kysely pushdown.",
+      }),
+    );
   });
 
   it("accepts with+window rel fragments for single-query pushdown", () => {
@@ -494,11 +503,14 @@ describe("kysely adapter", () => {
       },
     });
 
-    const result = provider.canExecute({
-      kind: "rel",
-      provider: "kysely",
-      rel: buildWithWindowRel(),
-    }, {});
+    const result = provider.canExecute(
+      {
+        kind: "rel",
+        provider: "kysely",
+        rel: buildWithWindowRel(),
+      },
+      {},
+    );
 
     expect(result).toBe(true);
   });

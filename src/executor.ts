@@ -84,7 +84,10 @@ function tryExecutionStep<T>(operation: string, fn: () => T): SqlqlResult<T> {
   }) as SqlqlResult<T>;
 }
 
-async function tryExecutionStepAsync<T>(operation: string, fn: () => Promise<T>): Promise<SqlqlResult<T>> {
+async function tryExecutionStepAsync<T>(
+  operation: string,
+  fn: () => Promise<T>,
+): Promise<SqlqlResult<T>> {
   return Result.tryPromise({
     try: fn,
     catch: (error) => toSqlqlExecutionError(error, operation),
@@ -98,7 +101,9 @@ export async function executeRelWithProviders<TContext>(
   context: TContext,
   guardrails: RelExecutionGuardrails,
 ): Promise<QueryRow[]> {
-  return unwrapExecutionResult(await executeRelWithProvidersResult(rel, schema, providers, context, guardrails));
+  return unwrapExecutionResult(
+    await executeRelWithProvidersResult(rel, schema, providers, context, guardrails),
+  );
 }
 
 export async function executeRelWithProvidersResult<TContext>(
@@ -188,9 +193,8 @@ async function tryExecuteRemoteSubtreeResult<TContext>(
     return Result.ok(null);
   }
 
-  const normalizedBinding = node.kind === "scan"
-    ? getNormalizedTableBinding(context.schema, node.table)
-    : null;
+  const normalizedBinding =
+    node.kind === "scan" ? getNormalizedTableBinding(context.schema, node.table) : null;
   if (node.kind === "scan" && normalizedBinding?.kind !== "view") {
     return Result.ok(null);
   }
@@ -218,7 +222,7 @@ async function tryExecuteRemoteSubtreeResult<TContext>(
   }
 
   const capabilityResult = await tryExecutionStepAsync("check subtree provider capability", () =>
-    Promise.resolve(provider.canExecute(fragment, context.context))
+    Promise.resolve(provider.canExecute(fragment, context.context)),
   );
   if (Result.isError(capabilityResult)) {
     return capabilityResult;
@@ -230,7 +234,9 @@ async function tryExecuteRemoteSubtreeResult<TContext>(
   }
 
   const compiledResult = await tryExecutionStepAsync("compile subtree provider fragment", () =>
-    Promise.resolve(provider.compile(fragment, context.context)).then(unwrapProviderOperationResult)
+    Promise.resolve(provider.compile(fragment, context.context)).then(
+      unwrapProviderOperationResult,
+    ),
   );
   if (Result.isError(compiledResult)) {
     return compiledResult;
@@ -239,7 +245,7 @@ async function tryExecuteRemoteSubtreeResult<TContext>(
   const rowsResult = await tryExecutionStepAsync("execute subtree provider fragment", () =>
     Promise.resolve(provider.execute(compiledResult.value, context.context)).then(
       unwrapProviderOperationResult,
-    )
+    ),
   );
   if (Result.isError(rowsResult)) {
     return rowsResult;
@@ -247,23 +253,27 @@ async function tryExecuteRemoteSubtreeResult<TContext>(
 
   if (fragment.kind === "rel") {
     return tryExecutionStep("map provider rows to logical rel output rows", () =>
-      mapProviderRowsToRelOutput(rowsResult.value, fragment.rel, context.schema)
+      mapProviderRowsToRelOutput(rowsResult.value, fragment.rel, context.schema),
     );
   }
 
   if (node.kind === "scan") {
-    const physicalBinding = normalizedBinding?.kind === "physical"
-      ? normalizedBinding
-      : (node.entity ? createPhysicalBindingFromEntity(node.entity) : null);
-    const tableDefinition = context.schema.tables[node.table]
-      ?? (node.entity ? createTableDefinitionFromEntity(node.entity) : undefined);
+    const physicalBinding =
+      normalizedBinding?.kind === "physical"
+        ? normalizedBinding
+        : node.entity
+          ? createPhysicalBindingFromEntity(node.entity)
+          : null;
+    const tableDefinition =
+      context.schema.tables[node.table] ??
+      (node.entity ? createTableDefinitionFromEntity(node.entity) : undefined);
     const projectedResult = tryExecutionStep("map provider rows to logical rows", () =>
       mapProviderRowsToLogical(
         rowsResult.value as QueryRow[],
         node.select,
         physicalBinding,
         tableDefinition,
-      )
+      ),
     );
     if (Result.isError(projectedResult)) {
       return projectedResult;
@@ -304,11 +314,15 @@ function findNodeProviderAdapter<TContext>(
       return findNodeProviderAdapter(node.input, providerName);
     case "join":
     case "set_op":
-      return findNodeProviderAdapter(node.left, providerName)
-        ?? findNodeProviderAdapter(node.right, providerName);
+      return (
+        findNodeProviderAdapter(node.left, providerName) ??
+        findNodeProviderAdapter(node.right, providerName)
+      );
     case "with":
-      return node.ctes.map((cte) => findNodeProviderAdapter(cte.query, providerName)).find(Boolean)
-        ?? findNodeProviderAdapter(node.body, providerName);
+      return (
+        node.ctes.map((cte) => findNodeProviderAdapter(cte.query, providerName)).find(Boolean) ??
+        findNodeProviderAdapter(node.body, providerName)
+      );
     case "sql":
       return undefined;
   }
@@ -362,15 +376,19 @@ async function executeScanResult<TContext>(
     return Result.ok(scannedRows.map((row) => prefixRow(row, alias)));
   }
 
-  const providerNameResult = tryExecutionStep("resolve scan provider", () =>
-    scan.entity?.provider ?? resolveTableProvider(context.schema, scan.table)
+  const providerNameResult = tryExecutionStep(
+    "resolve scan provider",
+    () => scan.entity?.provider ?? resolveTableProvider(context.schema, scan.table),
   );
   if (Result.isError(providerNameResult)) {
     return providerNameResult;
   }
   const providerName = providerNameResult.value;
-  const provider = context.providers[providerName]
-    ?? (scan.entity ? (getDataEntityAdapter(scan.entity) as ProviderAdapter<TContext> | undefined) : undefined);
+  const provider =
+    context.providers[providerName] ??
+    (scan.entity
+      ? (getDataEntityAdapter(scan.entity) as ProviderAdapter<TContext> | undefined)
+      : undefined);
   if (!provider) {
     return Result.err(
       new SqlqlExecutionError({
@@ -380,19 +398,28 @@ async function executeScanResult<TContext>(
     );
   }
 
-  const physicalBinding = normalizedBinding?.kind === "physical"
-    ? normalizedBinding
-    : (scan.entity ? createPhysicalBindingFromEntity(scan.entity) : null);
-  const tableDefinition = context.schema.tables[scan.table] ?? (scan.entity ? createTableDefinitionFromEntity(scan.entity) : undefined);
-  const requestResult = tryExecutionStep("build provider scan request", () => ({
-    table: physicalBinding?.entity ?? scan.table,
-    ...(scan.alias ? { alias: scan.alias } : {}),
-    select: mapLogicalColumnsToSource(scan.select, physicalBinding),
-    ...(scan.where ? { where: mapWhereToSource(scan.where, physicalBinding) } : {}),
-    ...(scan.orderBy ? { orderBy: mapOrderToSource(scan.orderBy, physicalBinding) } : {}),
-    ...(scan.limit != null ? { limit: scan.limit } : {}),
-    ...(scan.offset != null ? { offset: scan.offset } : {}),
-  } satisfies TableScanRequest));
+  const physicalBinding =
+    normalizedBinding?.kind === "physical"
+      ? normalizedBinding
+      : scan.entity
+        ? createPhysicalBindingFromEntity(scan.entity)
+        : null;
+  const tableDefinition =
+    context.schema.tables[scan.table] ??
+    (scan.entity ? createTableDefinitionFromEntity(scan.entity) : undefined);
+  const requestResult = tryExecutionStep(
+    "build provider scan request",
+    () =>
+      ({
+        table: physicalBinding?.entity ?? scan.table,
+        ...(scan.alias ? { alias: scan.alias } : {}),
+        select: mapLogicalColumnsToSource(scan.select, physicalBinding),
+        ...(scan.where ? { where: mapWhereToSource(scan.where, physicalBinding) } : {}),
+        ...(scan.orderBy ? { orderBy: mapOrderToSource(scan.orderBy, physicalBinding) } : {}),
+        ...(scan.limit != null ? { limit: scan.limit } : {}),
+        ...(scan.offset != null ? { offset: scan.offset } : {}),
+      }) satisfies TableScanRequest,
+  );
   if (Result.isError(requestResult)) {
     return requestResult;
   }
@@ -406,7 +433,7 @@ async function executeScanResult<TContext>(
   };
 
   const capabilityResult = await tryExecutionStepAsync("check scan provider capability", () =>
-    Promise.resolve(provider.canExecute(fragment, context.context))
+    Promise.resolve(provider.canExecute(fragment, context.context)),
   );
   if (Result.isError(capabilityResult)) {
     return capabilityResult;
@@ -424,7 +451,9 @@ async function executeScanResult<TContext>(
   }
 
   const compiledResult = await tryExecutionStepAsync("compile scan provider fragment", () =>
-    Promise.resolve(provider.compile(fragment, context.context)).then(unwrapProviderOperationResult)
+    Promise.resolve(provider.compile(fragment, context.context)).then(
+      unwrapProviderOperationResult,
+    ),
   );
   if (Result.isError(compiledResult)) {
     return compiledResult;
@@ -432,7 +461,7 @@ async function executeScanResult<TContext>(
   const rowsResult = await tryExecutionStepAsync("execute scan provider fragment", () =>
     Promise.resolve(provider.execute(compiledResult.value, context.context)).then(
       unwrapProviderOperationResult,
-    )
+    ),
   );
   if (Result.isError(rowsResult)) {
     return rowsResult;
@@ -443,7 +472,7 @@ async function executeScanResult<TContext>(
       scan.select,
       physicalBinding,
       tableDefinition,
-    )
+    ),
   );
   if (Result.isError(projectedResult)) {
     return projectedResult;
@@ -494,7 +523,11 @@ async function executeJoinResult<TContext>(
     return leftRowsResult;
   }
 
-  const lookupResult = await maybeExecuteLookupJoinResult(join, leftRowsResult.value as InternalRow[], context);
+  const lookupResult = await maybeExecuteLookupJoinResult(
+    join,
+    leftRowsResult.value as InternalRow[],
+    context,
+  );
   if (Result.isError(lookupResult)) {
     return lookupResult;
   }
@@ -508,7 +541,11 @@ async function executeJoinResult<TContext>(
   }
 
   return Result.ok(
-    applyLocalHashJoin(join, leftRowsResult.value as InternalRow[], rightRowsResult.value as InternalRow[]),
+    applyLocalHashJoin(
+      join,
+      leftRowsResult.value as InternalRow[],
+      rightRowsResult.value as InternalRow[],
+    ),
   );
 }
 
@@ -533,27 +570,37 @@ async function maybeExecuteLookupJoinResult<TContext>(
     return Result.ok(null);
   }
 
-  const leftProviderName = leftScan.entity?.provider ?? resolveTableProvider(context.schema, leftScan.table);
-  const rightProviderName = rightScan.entity?.provider ?? resolveTableProvider(context.schema, rightScan.table);
+  const leftProviderName =
+    leftScan.entity?.provider ?? resolveTableProvider(context.schema, leftScan.table);
+  const rightProviderName =
+    rightScan.entity?.provider ?? resolveTableProvider(context.schema, rightScan.table);
   if (leftProviderName === rightProviderName) {
     return Result.ok(null);
   }
 
-  const rightProvider = context.providers[rightProviderName]
-    ?? (rightScan.entity ? (getDataEntityAdapter(rightScan.entity) as ProviderAdapter<TContext> | undefined) : undefined);
+  const rightProvider =
+    context.providers[rightProviderName] ??
+    (rightScan.entity
+      ? (getDataEntityAdapter(rightScan.entity) as ProviderAdapter<TContext> | undefined)
+      : undefined);
   if (!rightProvider?.lookupMany) {
     return Result.ok(null);
   }
   const lookupMany = rightProvider.lookupMany;
 
   const leftKey = `${join.leftKey.alias}.${join.leftKey.column}`;
-  const rightPhysicalBinding = rightBinding?.kind === "physical"
-    ? rightBinding
-    : (rightScan.entity ? createPhysicalBindingFromEntity(rightScan.entity) : null);
+  const rightPhysicalBinding =
+    rightBinding?.kind === "physical"
+      ? rightBinding
+      : rightScan.entity
+        ? createPhysicalBindingFromEntity(rightScan.entity)
+        : null;
   const rightKey = rightPhysicalBinding
     ? resolveNormalizedColumnSource(rightPhysicalBinding, join.rightKey.column)
     : join.rightKey.column;
-  const dedupedKeys = [...new Set(leftRows.map((row) => row[leftKey]).filter((value) => value != null))];
+  const dedupedKeys = [
+    ...new Set(leftRows.map((row) => row[leftKey]).filter((value) => value != null)),
+  ];
 
   const rightRows: InternalRow[] = [];
   for (
@@ -585,17 +632,14 @@ async function maybeExecuteLookupJoinResult<TContext>(
             table: rightPhysicalBinding?.entity ?? rightScan.table,
             key: rightKey,
             keys: batch,
-            select: mapLogicalColumnsToSource(
-              rightScan.select,
-              rightPhysicalBinding,
-            ),
+            select: mapLogicalColumnsToSource(rightScan.select, rightPhysicalBinding),
             ...(rightScan.where
               ? { where: mapWhereToSource(rightScan.where, rightPhysicalBinding) }
               : {}),
           },
           context.context,
         ),
-      )
+      ),
     );
     if (Result.isError(lookedUpResult)) {
       return lookedUpResult;
@@ -607,9 +651,9 @@ async function maybeExecuteLookupJoinResult<TContext>(
         lookedUpResult.value,
         rightScan.select,
         rightPhysicalBinding,
-        context.schema.tables[rightScan.table]
-          ?? (rightScan.entity ? createTableDefinitionFromEntity(rightScan.entity) : undefined),
-      )
+        context.schema.tables[rightScan.table] ??
+          (rightScan.entity ? createTableDefinitionFromEntity(rightScan.entity) : undefined),
+      ),
     );
     if (Result.isError(mappedRowsResult)) {
       return mappedRowsResult;
@@ -747,9 +791,7 @@ function applyWindowFunction(
       }
 
       const prev = idx > 0 ? entries[idx - 1] : undefined;
-      const isPeer = prev
-        ? compareWindowEntries(prev.row, entry.row, fn.orderBy) === 0
-        : false;
+      const isPeer = prev ? compareWindowEntries(prev.row, entry.row, fn.orderBy) === 0 : false;
       if (!isPeer) {
         denseRank += 1;
         rank = idx + 1;
@@ -983,7 +1025,11 @@ function compileViewRelToExecutableResult(
     return Result.ok(definition);
   }
 
-  if (!definition || typeof definition !== "object" || typeof (definition as { kind?: unknown }).kind !== "string") {
+  if (
+    !definition ||
+    typeof definition !== "object" ||
+    typeof (definition as { kind?: unknown }).kind !== "string"
+  ) {
     return Result.err(
       new SqlqlExecutionError({
         operation: "compile executable view rel",
@@ -1017,9 +1063,13 @@ function compileViewRelToExecutableResult(
           }
         : {
             kind: "expr" as const,
-            expr: rewriteViewBindingExprForExecution(columnBinding.expr, getNormalizedColumnBindings(binding)),
+            expr: rewriteViewBindingExprForExecution(
+              columnBinding.expr,
+              getNormalizedColumnBindings(binding),
+            ),
             output,
-          }),
+          },
+    ),
     output: columns.map(([name]) => ({ name })),
   });
 }
@@ -1058,7 +1108,9 @@ function compileSchemaViewRelNodeResult(
 ): SqlqlResult<RelNode> {
   switch (node.kind) {
     case "scan": {
-      const table = schema.tables[node.table] ?? (node.entity ? createTableDefinitionFromEntity(node.entity) : undefined);
+      const table =
+        schema.tables[node.table] ??
+        (node.entity ? createTableDefinitionFromEntity(node.entity) : undefined);
       if (!table || (node.entity && Object.keys(table.columns).length === 0)) {
         return Result.err(
           new SqlqlExecutionError({
@@ -1113,7 +1165,10 @@ function compileSchemaViewRelNodeResult(
       if (Result.isError(inputResult)) {
         return inputResult;
       }
-      const groupBy: Array<{ name: string; ref: { alias?: string; table?: string; column: string } }> = [];
+      const groupBy: Array<{
+        name: string;
+        ref: { alias?: string; table?: string; column: string };
+      }> = [];
       for (const [name, column] of Object.entries(node.groupBy)) {
         const refResult = resolveSchemaColRefResult(column);
         if (Result.isError(refResult)) {
@@ -1401,13 +1456,21 @@ function evaluateRelExprResult(expr: RelExpr, row: InternalRow): SqlqlResult<unk
         case "neq":
           return Result.ok(args[0] != null && args[0] !== args[1]);
         case "gt":
-          return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) > 0);
+          return Result.ok(
+            args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) > 0,
+          );
         case "gte":
-          return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) >= 0);
+          return Result.ok(
+            args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) >= 0,
+          );
         case "lt":
-          return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) < 0);
+          return Result.ok(
+            args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) < 0,
+          );
         case "lte":
-          return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) <= 0);
+          return Result.ok(
+            args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) <= 0,
+          );
         case "and":
           return Result.ok(args.every(Boolean));
         case "or":
@@ -1589,7 +1652,10 @@ function evaluateRelExprResult(expr: RelExpr, row: InternalRow): SqlqlResult<unk
 
 function testSqlLikePattern(value: string, pattern: string): boolean {
   const regex = new RegExp(
-    `^${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*").replace(/_/g, ".")}$`,
+    `^${pattern
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/%/g, ".*")
+      .replace(/_/g, ".")}$`,
     "su",
   );
   return regex.test(value);
@@ -1599,7 +1665,9 @@ function castValueResult(value: unknown, target: unknown): SqlqlResult<unknown> 
   if (value == null) {
     return Result.ok(null);
   }
-  const normalized = String(target ?? "").trim().toLowerCase();
+  const normalized = String(target ?? "")
+    .trim()
+    .toLowerCase();
   switch (normalized) {
     case "text":
       return Result.ok(String(value));
@@ -1652,9 +1720,7 @@ function evaluateAggregateMetricResult(
         numeric.push(numericResult.value);
       }
       return Result.ok(
-        numeric.length > 0
-          ? numeric.reduce((sum, value) => sum + value, 0) / numeric.length
-          : null,
+        numeric.length > 0 ? numeric.reduce((sum, value) => sum + value, 0) / numeric.length : null,
       );
     }
     case "min": {

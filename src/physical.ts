@@ -51,10 +51,7 @@ export interface LocalPhysicalStep extends PhysicalStepBase {
     | "local_limit_offset";
 }
 
-export type PhysicalStep =
-  | RemoteFragmentPhysicalStep
-  | LookupJoinPhysicalStep
-  | LocalPhysicalStep;
+export type PhysicalStep = RemoteFragmentPhysicalStep | LookupJoinPhysicalStep | LocalPhysicalStep;
 
 export interface PhysicalPlan {
   rel: RelNode;

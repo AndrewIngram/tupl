@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { commerceRows, commerceSchema } from "../support/commerce-fixture";
 import { withQueryHarness } from "../support/query-harness";
-import { buildStaticSchema } from "../support/schema-builder";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -38,7 +38,7 @@ describe("query/window", () => {
   });
 
   it("supports RANK and DENSE_RANK with ties", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       scores: {
         columns: {
           id: { type: "text", nullable: false },

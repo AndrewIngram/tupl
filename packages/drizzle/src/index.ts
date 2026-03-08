@@ -143,19 +143,21 @@ function requireColumnProjectMapping(
   return mapping;
 }
 
-type InferDrizzleEntityRow<TConfig> = TConfig extends DrizzleProviderTableConfig<any, infer TTable, any>
-  ? TTable extends Table
-    ? InferSelectModel<TTable>
-    : Record<string, unknown>
-  : Record<string, unknown>;
+type InferDrizzleEntityRow<TConfig> =
+  TConfig extends DrizzleProviderTableConfig<any, infer TTable, any>
+    ? TTable extends Table
+      ? InferSelectModel<TTable>
+      : Record<string, unknown>
+    : Record<string, unknown>;
 
-type InferDrizzleTableColumns<TConfig> = TConfig extends DrizzleProviderTableConfig<any, any, infer TColumn>
-  ? [TColumn] extends [string]
-    ? Extract<keyof InferDrizzleEntityRow<TConfig>, string> extends never
-      ? TColumn
+type InferDrizzleTableColumns<TConfig> =
+  TConfig extends DrizzleProviderTableConfig<any, any, infer TColumn>
+    ? [TColumn] extends [string]
+      ? Extract<keyof InferDrizzleEntityRow<TConfig>, string> extends never
+        ? TColumn
+        : Extract<keyof InferDrizzleEntityRow<TConfig>, string>
       : Extract<keyof InferDrizzleEntityRow<TConfig>, string>
-    : Extract<keyof InferDrizzleEntityRow<TConfig>, string>
-  : string;
+    : string;
 
 type InferDrizzleColumnRead<TColumn> = TColumn extends {
   _: {
@@ -183,7 +185,10 @@ type InferDrizzleScalarTypeFromColumnMetadata<
           ? "json"
           : TDataType extends "arraybuffer"
             ? "blob"
-            : TColumnType extends `${string}Real${string}` | `${string}Double${string}` | `${string}Float${string}`
+            : TColumnType extends
+                  | `${string}Real${string}`
+                  | `${string}Double${string}`
+                  | `${string}Float${string}`
               ? "real"
               : TColumnType extends
                     | `${string}Int${string}`
@@ -209,7 +214,9 @@ type InferDrizzleColumnSqlqlType<TColumn> = TColumn extends {
   : never;
 
 type InferDrizzleEntityColumnMetadataFromColumns<TColumns extends Record<string, unknown>> = {
-  [K in Extract<keyof TColumns, string>]: DataEntityColumnMetadata<InferDrizzleColumnRead<TColumns[K]>> & {
+  [K in Extract<keyof TColumns, string>]: DataEntityColumnMetadata<
+    InferDrizzleColumnRead<TColumns[K]>
+  > & {
     source: K;
   } & ([InferDrizzleColumnSqlqlType<TColumns[K]>] extends [never]
       ? {}
@@ -357,7 +364,9 @@ export function createDrizzleProvider<
         }
         default:
           return Result.err(
-            new Error(`Unsupported drizzle fragment kind: ${(fragment as { kind?: unknown }).kind}`),
+            new Error(
+              `Unsupported drizzle fragment kind: ${(fragment as { kind?: unknown }).kind}`,
+            ),
           );
       }
     },
@@ -388,7 +397,9 @@ export function createDrizzleProvider<
       throw new Error(`Missing drizzle table config: ${tableName}`);
     }
     const entityColumns = tableConfig.shape
-      ? normalizeDataEntityShape(tableConfig.shape as DataEntityShape<InferDrizzleTableColumns<TTables[typeof tableName]>>)
+      ? normalizeDataEntityShape(
+          tableConfig.shape as DataEntityShape<InferDrizzleTableColumns<TTables[typeof tableName]>>,
+        )
       : deriveEntityColumnsFromTable(tableConfig.table);
     handles[tableName] = createDataEntityHandle<
       InferDrizzleTableColumns<TTables[typeof tableName]>,
@@ -462,9 +473,8 @@ function readDbDialectHint(db: DrizzleQueryExecutor): string | undefined {
     return constructorName;
   }
 
-  const sessionName = (
-    db as unknown as { _: { session?: { constructor?: { name?: unknown } } } }
-  )._?.session?.constructor?.name;
+  const sessionName = (db as unknown as { _: { session?: { constructor?: { name?: unknown } } } })._
+    ?.session?.constructor?.name;
   return typeof sessionName === "string" ? sessionName : undefined;
 }
 
@@ -696,7 +706,11 @@ function inferSqlqlTypeFromDrizzleColumn(column: AnyColumn): SqlScalarType | und
   if (dataType === "json" || normalizedSqlType.includes("json")) {
     return "json";
   }
-  if (dataType === "arraybuffer" || normalizedSqlType.includes("blob") || normalizedSqlType.includes("bytea")) {
+  if (
+    dataType === "arraybuffer" ||
+    normalizedSqlType.includes("blob") ||
+    normalizedSqlType.includes("bytea")
+  ) {
     return "blob";
   }
   if (normalizedSqlType.includes("datetime")) {
@@ -731,9 +745,7 @@ function inferSqlqlTypeFromDrizzleColumn(column: AnyColumn): SqlScalarType | und
 
 function looksLikeDrizzleColumn(value: unknown): value is AnyColumn {
   return (
-    !!value &&
-    typeof value === "object" &&
-    typeof (value as { name?: unknown }).name === "string"
+    !!value && typeof value === "object" && typeof (value as { name?: unknown }).name === "string"
   );
 }
 
@@ -890,7 +902,9 @@ function canCompileBasicRel(
     case "limit_offset":
       return canCompileBasicRel(node.input, tableConfigs);
     case "join":
-      return canCompileBasicRel(node.left, tableConfigs) && canCompileBasicRel(node.right, tableConfigs);
+      return (
+        canCompileBasicRel(node.left, tableConfigs) && canCompileBasicRel(node.right, tableConfigs)
+      );
     case "window":
       return false;
     case "set_op":
@@ -1168,12 +1182,7 @@ async function buildDrizzleBasicRelSingleQueryBuilder<TContext>(
         alias: joinStep.leftKey.alias,
         column: joinStep.leftKey.column,
       });
-      const { subquery } = await buildSemiJoinSubquery(
-        joinStep,
-        options,
-        context,
-        db,
-      );
+      const { subquery } = await buildSemiJoinSubquery(joinStep, options, context, db);
       whereClauses.push(sql`${leftColumn} in (${asDrizzleSubquerySql(subquery)})`);
       continue;
     }
@@ -1198,7 +1207,11 @@ async function buildDrizzleBasicRelSingleQueryBuilder<TContext>(
   }
 
   for (const binding of plan.joinPlan.aliases.values()) {
-    whereClauses.push(...normalizeScope(binding.tableConfig.scope ? await binding.tableConfig.scope(context) : undefined));
+    whereClauses.push(
+      ...normalizeScope(
+        binding.tableConfig.scope ? await binding.tableConfig.scope(context) : undefined,
+      ),
+    );
     for (const clause of binding.scan.where ?? []) {
       whereClauses.push(toSqlCondition(clause, binding.columns, binding.tableName));
     }
@@ -1224,7 +1237,8 @@ async function buildDrizzleBasicRelSingleQueryBuilder<TContext>(
       resolveColumnRefFromAliasMap(
         plan.joinPlan.aliases,
         toAliasColumnRef(columnRef.alias ?? columnRef.table, columnRef.column),
-      ));
+      ),
+    );
     builder = builder.groupBy(...groupByColumns) as typeof builder;
   }
 
@@ -1260,7 +1274,12 @@ function asDrizzleSubquerySql(subquery: unknown): SQL {
   if (!subquery || typeof subquery !== "object") {
     throw new UnsupportedSingleQueryPlanError("SEMI join subquery must be a Drizzle query object.");
   }
-  const maybe = subquery as { getSQL?: unknown; toSQL?: unknown; execute?: unknown; then?: unknown };
+  const maybe = subquery as {
+    getSQL?: unknown;
+    toSQL?: unknown;
+    execute?: unknown;
+    then?: unknown;
+  };
   if (typeof maybe.getSQL !== "function") {
     throw new UnsupportedSingleQueryPlanError(
       "SEMI join subquery does not expose getSQL(), so it cannot be embedded as an IN subquery.",
@@ -1296,7 +1315,7 @@ async function executeDrizzleQueryBuilder(
   if (builder && typeof builder === "object") {
     const execute = (builder as { execute?: unknown }).execute;
     if (typeof execute === "function") {
-      return await execute.call(builder) as QueryRow[];
+      return (await execute.call(builder)) as QueryRow[];
     }
     const then = (builder as { then?: unknown }).then;
     if (typeof then === "function") {
@@ -1358,7 +1377,10 @@ async function buildSemiJoinSubquery<TContext>(
       "SEMI join subquery must project exactly one output column.",
     );
   }
-  return { subquery: (await buildDrizzleRelBuilderForStrategy(joinStep.right, options, context, db)).builder };
+  return {
+    subquery: (await buildDrizzleRelBuilderForStrategy(joinStep.right, options, context, db))
+      .builder,
+  };
 }
 
 async function buildDrizzleSetOpRelSingleQueryBuilder<TContext>(
@@ -1372,8 +1394,10 @@ async function buildDrizzleSetOpRelSingleQueryBuilder<TContext>(
     throw new UnsupportedSingleQueryPlanError("Expected set-op relational shape.");
   }
 
-  const left = (await buildDrizzleRelBuilderForStrategy(wrapper.setOp.left, options, context, db)).builder;
-  const right = (await buildDrizzleRelBuilderForStrategy(wrapper.setOp.right, options, context, db)).builder;
+  const left = (await buildDrizzleRelBuilderForStrategy(wrapper.setOp.left, options, context, db))
+    .builder;
+  const right = (await buildDrizzleRelBuilderForStrategy(wrapper.setOp.right, options, context, db))
+    .builder;
   const methodName =
     wrapper.setOp.op === "union_all"
       ? "unionAll"
@@ -1393,7 +1417,10 @@ async function buildDrizzleSetOpRelSingleQueryBuilder<TContext>(
   if (wrapper.project) {
     for (const rawMapping of wrapper.project.columns) {
       const mapping = requireColumnProjectMapping(rawMapping);
-      if ((mapping.source.alias || mapping.source.table) && mapping.source.column !== mapping.output) {
+      if (
+        (mapping.source.alias || mapping.source.table) &&
+        mapping.source.column !== mapping.output
+      ) {
         throw new UnsupportedSingleQueryPlanError(
           "Set-op projections with qualified or renamed columns are not supported in single-query pushdown.",
         );
@@ -1467,7 +1494,8 @@ async function buildDrizzleWithRelSingleQueryBuilder<TContext>(
   const cteBindings = new Map<string, unknown>();
   const cteRefs: unknown[] = [];
   for (const cte of rel.ctes) {
-    const query = (await buildDrizzleRelBuilderForStrategy(cte.query, options, context, db)).builder;
+    const query = (await buildDrizzleRelBuilderForStrategy(cte.query, options, context, db))
+      .builder;
     const cteRef = dbWithCtes.$with(cte.name).as(query);
     cteBindings.set(cte.name, cteRef);
     cteRefs.push(cteRef);
@@ -1475,7 +1503,9 @@ async function buildDrizzleWithRelSingleQueryBuilder<TContext>(
 
   const body = unwrapWithBodyRel(rel.body);
   if (!body) {
-    throw new UnsupportedSingleQueryPlanError("Unsupported WITH body shape for single-query pushdown.");
+    throw new UnsupportedSingleQueryPlanError(
+      "Unsupported WITH body shape for single-query pushdown.",
+    );
   }
   const source = cteBindings.get(body.cteScan.table);
   if (!source) {
@@ -1485,7 +1515,10 @@ async function buildDrizzleWithRelSingleQueryBuilder<TContext>(
 
   const windowExpressions = new Map<string, unknown>();
   for (const fn of body.window?.functions ?? []) {
-    windowExpressions.set(fn.as, buildWindowFunctionSql(fn, source as Record<string, unknown>, scanAlias));
+    windowExpressions.set(
+      fn.as,
+      buildWindowFunctionSql(fn, source as Record<string, unknown>, scanAlias),
+    );
   }
 
   const selection: Record<string, unknown> = {};
@@ -1515,7 +1548,10 @@ async function buildDrizzleWithRelSingleQueryBuilder<TContext>(
     }
   }
 
-  let builder = dbWithCtes.with(...cteRefs).select(selection).from(source) as DrizzleExecutableBuilder;
+  let builder = dbWithCtes
+    .with(...cteRefs)
+    .select(selection)
+    .from(source) as DrizzleExecutableBuilder;
 
   const whereClauses: SQL[] = [];
   for (const clause of body.cteScan.where ?? []) {
@@ -1564,11 +1600,7 @@ async function buildDrizzleWithRelSingleQueryBuilder<TContext>(
     const orderBy = body.sort.orderBy.map((term) => {
       const sourceColumn = windowExpressions.has(term.source.column)
         ? sql.identifier(term.source.column)
-        : resolveWithBodySourceColumn(
-          source as Record<string, unknown>,
-          term.source,
-          scanAlias,
-        );
+        : resolveWithBodySourceColumn(source as Record<string, unknown>, term.source, scanAlias);
       return term.direction === "asc" ? asc(sourceColumn) : desc(sourceColumn);
     });
     if (orderBy.length > 0) {
@@ -1622,9 +1654,7 @@ function resolveWithBodySourceColumn(
   }
   const column = source[ref.column];
   if (!column || typeof column !== "object") {
-    throw new UnsupportedSingleQueryPlanError(
-      `Unknown WITH body column "${ref.column}".`,
-    );
+    throw new UnsupportedSingleQueryPlanError(`Unknown WITH body column "${ref.column}".`);
   }
   return column as AnyColumn;
 }
@@ -1635,12 +1665,10 @@ function buildWindowFunctionSql(
   scanAlias: string,
 ): unknown {
   const call =
-    fn.fn === "dense_rank"
-      ? sql`dense_rank()`
-      : fn.fn === "rank"
-        ? sql`rank()`
-        : sql`row_number()`;
-  const partitionBy = fn.partitionBy.map((ref) => resolveWithBodySourceColumn(source, ref, scanAlias));
+    fn.fn === "dense_rank" ? sql`dense_rank()` : fn.fn === "rank" ? sql`rank()` : sql`row_number()`;
+  const partitionBy = fn.partitionBy.map((ref) =>
+    resolveWithBodySourceColumn(source, ref, scanAlias),
+  );
   const orderBy = fn.orderBy.map((term) => {
     const column = resolveWithBodySourceColumn(source, term.source, scanAlias);
     return sql`${column} ${term.direction === "asc" ? sql`asc` : sql`desc`}`;
@@ -1682,7 +1710,9 @@ function resolveSingleQuerySortSource<TContext>(
     return buildAggregateMetricSql(metric, plan.joinPlan.aliases);
   }
 
-  const groupBy = plan.pipeline.aggregate.groupBy.find((entry) => entry.column === term.source.column);
+  const groupBy = plan.pipeline.aggregate.groupBy.find(
+    (entry) => entry.column === term.source.column,
+  );
   if (groupBy) {
     return resolveColumnRefFromAliasMap(
       plan.joinPlan.aliases,
@@ -1775,7 +1805,9 @@ function extractRelPipeline(node: RelNode): RelPipeline {
         continue;
       case "limit_offset":
         if (limitOffset) {
-          throw new UnsupportedSingleQueryPlanError("Multiple limit/offset nodes are not supported.");
+          throw new UnsupportedSingleQueryPlanError(
+            "Multiple limit/offset nodes are not supported.",
+          );
         }
         limitOffset = current;
         current = current.input;
@@ -1913,7 +1945,9 @@ function buildJoinPlan<TContext>(
   }
 
   if (node.kind !== "join") {
-    throw new UnsupportedSingleQueryPlanError(`Expected scan/join base node, received "${node.kind}".`);
+    throw new UnsupportedSingleQueryPlanError(
+      `Expected scan/join base node, received "${node.kind}".`,
+    );
   }
 
   const left = buildJoinPlan(node.left, tableConfigs);
@@ -2086,10 +2120,13 @@ function buildSingleQuerySelection<TContext>(
 
   for (const binding of plan.joinPlan.aliases.values()) {
     for (const column of binding.scan.select) {
-      selection[`${binding.alias}.${column}`] = resolveColumnRefFromAliasMap(plan.joinPlan.aliases, {
-        alias: binding.alias,
-        column,
-      });
+      selection[`${binding.alias}.${column}`] = resolveColumnRefFromAliasMap(
+        plan.joinPlan.aliases,
+        {
+          alias: binding.alias,
+          column,
+        },
+      );
     }
   }
 
@@ -2190,9 +2227,15 @@ function buildSqlExpressionFromRelExpr<TContext>(
         case "divide":
           return sql`(${args[0]} / ${args[1]})`;
         case "and":
-          return sql`(${sql.join(args.map((arg) => sql`${arg}`), sql` and `)})`;
+          return sql`(${sql.join(
+            args.map((arg) => sql`${arg}`),
+            sql` and `,
+          )})`;
         case "or":
-          return sql`(${sql.join(args.map((arg) => sql`${arg}`), sql` or `)})`;
+          return sql`(${sql.join(
+            args.map((arg) => sql`${arg}`),
+            sql` or `,
+          )})`;
         case "not":
           return sql`not (${args[0]})`;
         default:
@@ -2226,10 +2269,7 @@ function toSqlConditionFromRelFilterClause<TContext>(
   return toSqlConditionFromSource(clause, source);
 }
 
-function toSqlConditionFromSource(
-  clause: ScanFilterClause,
-  source: AnyColumn | SQL,
-): SQL {
+function toSqlConditionFromSource(clause: ScanFilterClause, source: AnyColumn | SQL): SQL {
   switch (clause.op) {
     case "eq":
       return sql`${source} = ${clause.value as never}`;
@@ -2351,24 +2391,6 @@ interface DrizzleRelExecutionContext<TContext> {
   tableConfigs: Record<string, DrizzleProviderTableConfig<TContext>>;
   context: TContext;
   cteRows: Map<string, QueryRow[]>;
-}
-
-// oxlint-disable-next-line no-unused-vars
-async function executeDrizzleRel<TContext>(
-  rel: RelNode,
-  options: CreateDrizzleProviderOptions<TContext>,
-  context: TContext,
-): Promise<QueryRow[]> {
-  const db = await resolveDrizzleDb(options, context);
-  const executionContext: DrizzleRelExecutionContext<TContext> = {
-    options,
-    db,
-    tableConfigs: options.tables as Record<string, DrizzleProviderTableConfig<TContext>>,
-    context,
-    cteRows: new Map<string, QueryRow[]>(),
-  };
-
-  return executeDrizzleRelNode(rel, executionContext);
 }
 
 async function executeDrizzleRelNode<TContext>(
@@ -2584,7 +2606,12 @@ async function executeDrizzleRelAggregate<TContext>(
         ? [...new Map(values.map((value) => [JSON.stringify(value), value])).values()]
         : values;
 
-      row[metric.as] = evaluateAggregateMetric(metric.fn, metricValues, bucket.length, metric.column != null);
+      row[metric.as] = evaluateAggregateMetric(
+        metric.fn,
+        metricValues,
+        bucket.length,
+        metric.column != null,
+      );
     }
 
     out.push(row);
@@ -2683,7 +2710,10 @@ function scanLocalRows(rows: QueryRow[], request: TableScanRequest): QueryRow[] 
   if (request.orderBy && request.orderBy.length > 0) {
     out = [...out].sort((left, right) => {
       for (const term of request.orderBy ?? []) {
-        const comparison = compareNullableValues(readRowValue(left, term.column), readRowValue(right, term.column));
+        const comparison = compareNullableValues(
+          readRowValue(left, term.column),
+          readRowValue(right, term.column),
+        );
         if (comparison !== 0) {
           return term.direction === "asc" ? comparison : -comparison;
         }
@@ -2822,11 +2852,15 @@ function evaluateAggregateMetric(
     case "count":
       return hasColumn ? values.filter((value) => value != null).length : bucketSize;
     case "sum": {
-      const numeric = values.filter((value) => value != null).map((value) => toFiniteNumber(value, "SUM"));
+      const numeric = values
+        .filter((value) => value != null)
+        .map((value) => toFiniteNumber(value, "SUM"));
       return numeric.length > 0 ? numeric.reduce((sum, value) => sum + value, 0) : null;
     }
     case "avg": {
-      const numeric = values.filter((value) => value != null).map((value) => toFiniteNumber(value, "AVG"));
+      const numeric = values
+        .filter((value) => value != null)
+        .map((value) => toFiniteNumber(value, "AVG"));
       return numeric.length > 0
         ? numeric.reduce((sum, value) => sum + value, 0) / numeric.length
         : null;

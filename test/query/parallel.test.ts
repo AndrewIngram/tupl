@@ -2,12 +2,8 @@ import { describe, expect, it } from "vitest";
 import { queryWithMethods } from "../support/methods-provider";
 import { createArrayTableMethods, scanArrayRows } from "../../src/array-methods";
 
-import {
-  defineTableMethods,
-  type TableMethodsForSchema,
-  type TableScanRequest,
-} from "../../src";
-import { buildStaticSchema } from "../support/schema-builder";
+import { defineTableMethods, type TableMethodsForSchema, type TableScanRequest } from "../../src";
+import { buildEntitySchema } from "../support/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;
 
@@ -19,7 +15,7 @@ function sleep(ms: number): Promise<void> {
 
 describe("query/parallel", () => {
   it("runs set-operation branches in parallel", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       a: {
         columns: {
           id: { type: "text", nullable: false },
@@ -73,7 +69,7 @@ describe("query/parallel", () => {
   });
 
   it("runs independent CTEs in parallel", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       a: {
         columns: {
           id: { type: "text", nullable: false },
@@ -129,7 +125,7 @@ describe("query/parallel", () => {
   });
 
   it("runs eligible join scans concurrently and keeps deterministic results", async () => {
-    const schema = buildStaticSchema({
+    const schema = buildEntitySchema({
       t1: {
         columns: {
           id: { type: "text", nullable: false },
