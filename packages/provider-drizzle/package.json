@@ -1,0 +1,32 @@
+{
+  "name": "@tupl/provider-drizzle",
+  "version": "0.7.0",
+  "description": "Drizzle adapter helpers for tupl",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsdown src/index.ts --tsconfig tsconfig.build.json --format esm,cjs --sourcemap --clean --dts --unbundle",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsgo --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tupl/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "drizzle-orm": ">=0.28.3"
+  },
+  "devDependencies": {
+    "drizzle-orm": "^0.45.1"
+  }
+}

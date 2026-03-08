@@ -105,9 +105,9 @@ const SCHEMA_CONTEXT_MODEL_PATH = PLAYGROUND_CONTEXT_FILE_URI;
 const SCHEMA_PROVIDER_MODEL_PATH = PLAYGROUND_DB_PROVIDER_FILE_URI;
 const SCHEMA_REDIS_PROVIDER_MODEL_PATH = PLAYGROUND_REDIS_PROVIDER_FILE_URI;
 const SCHEMA_GENERATED_MODEL_PATH = PLAYGROUND_GENERATED_DB_FILE_URI;
-const SCHEMA_DDL_MODEL_PATH = "inmemory://sqlql/schema.ddl.sql";
-const DOWNSTREAM_DDL_MODEL_PATH = "inmemory://sqlql/downstream-schema.ddl.sql";
-const SQL_MODEL_PATH = "inmemory://sqlql/query.sql";
+const SCHEMA_DDL_MODEL_PATH = "inmemory://tupl/schema.ddl.sql";
+const DOWNSTREAM_DDL_MODEL_PATH = "inmemory://tupl/downstream-schema.ddl.sql";
+const SQL_MODEL_PATH = "inmemory://tupl/query.sql";
 const CUSTOM_SCENARIO_ID = "__custom_scenario__";
 const EXPANDED_QUERY_EDITOR_PADDING_Y_PX = 16;
 const EXPANDED_QUERY_EDITOR_DEFAULT_HEIGHT_PX = 120;
@@ -140,7 +140,7 @@ interface EditableStructureColumn {
 }
 
 function executedOperationSqlModelPath(index: number): string {
-  return `inmemory://sqlql/executed-operation-${index}.sql`;
+  return `inmemory://tupl/executed-operation-${index}.sql`;
 }
 
 function escapeRegExp(value: string): string {
@@ -1531,7 +1531,7 @@ export function App(): React.JSX.Element {
     }
 
     if (!schemaParse.ok || !schemaParse.schema) {
-      monaco.editor.setModelMarkers(model, "sqlql", [
+      monaco.editor.setModelMarkers(model, "tupl", [
         {
           severity: monaco.MarkerSeverity.Error,
           message: "Fix schema TypeScript before validating SQL.",
@@ -1579,23 +1579,23 @@ export function App(): React.JSX.Element {
         if (!compileResult.ok) {
           const messages =
             compileResult.issues.length > 0 ? compileResult.issues : ["Invalid SQL."];
-          monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers(messages));
+          monaco.editor.setModelMarkers(model, "tupl", buildErrorMarkers(messages));
           return;
         }
 
         if (runtimeError) {
-          monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([runtimeError]));
+          monaco.editor.setModelMarkers(model, "tupl", buildErrorMarkers([runtimeError]));
           return;
         }
 
-        monaco.editor.setModelMarkers(model, "sqlql", []);
+        monaco.editor.setModelMarkers(model, "tupl", []);
       })
       .catch((error: unknown) => {
         if (sqlMarkerRequestIdRef.current !== requestId) {
           return;
         }
         const message = error instanceof Error ? error.message : "Invalid SQL.";
-        monaco.editor.setModelMarkers(model, "sqlql", buildErrorMarkers([message]));
+        monaco.editor.setModelMarkers(model, "tupl", buildErrorMarkers([message]));
       });
   }, [rowsJsonText, runtimeError, schemaCodeText, schemaParse, schemaProgramModules, sqlText]);
 
@@ -2311,12 +2311,12 @@ export function App(): React.JSX.Element {
                 </TabsTrigger>
                 <TabsTrigger
                   value="schema"
-                  title="sqlql schema"
-                  aria-label="sqlql schema"
+                  title="tupl schema"
+                  aria-label="tupl schema"
                   className="px-2.5"
                 >
                   <Table2 className="h-4 w-4" />
-                  <span className="sr-only">sqlql schema</span>
+                  <span className="sr-only">tupl schema</span>
                 </TabsTrigger>
                 <TabsTrigger value="query" title="Query" aria-label="Query" className="px-2.5">
                   <SearchCode className="h-4 w-4" />

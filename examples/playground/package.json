@@ -1,5 +1,5 @@
 {
-  "name": "@sqlql/example-playground",
+  "name": "@tupl/example-playground",
   "version": "0.0.0",
   "private": true,
   "license": "MIT",
@@ -20,8 +20,8 @@
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
-    "@sqlql/ioredis": "workspace:*",
-    "@sqlql/drizzle": "workspace:*",
+    "@tupl/provider-drizzle": "workspace:*",
+    "@tupl/provider-ioredis": "workspace:*",
     "@xyflow/react": "^12.9.0",
     "better-result": "^2.7.0",
     "class-variance-authority": "^0.7.1",
@@ -34,7 +34,7 @@
     "nuqs": "^2.8.9",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "sqlql": "workspace:*",
+    "tupl": "workspace:*",
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.9.2",
@@ -50,6 +50,7 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "vite": "^7.1.3",
+    "vite-tsconfig-paths": "^5.1.4",
     "vitest": "latest"
   }
 }

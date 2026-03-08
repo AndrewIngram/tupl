@@ -1,7 +1,7 @@
 import { Kysely, SqliteDialect } from "kysely";
-import { createKyselyProvider } from "@sqlql/kysely";
-import { createSeededSqliteDatabase, type DemoContext } from "@sqlql/example-shared";
-import { createSchemaBuilder, createExecutableSchema } from "sqlql";
+import { createKyselyProvider } from "@tupl/provider-kysely";
+import { createSeededSqliteDatabase, type DemoContext } from "@tupl/example-shared";
+import { createSchemaBuilder, createExecutableSchema } from "tupl";
 
 type Db = {
   orders_raw: {

@@ -49,7 +49,7 @@ const db = drizzle(sqlite);
 
 ```ts
 import { and, eq } from "drizzle-orm";
-import { createDrizzleProvider } from "@sqlql/drizzle";
+import { createDrizzleProvider } from "@tupl/provider-drizzle";
 
 type QueryContext = { orgId: string; userId: string; db: typeof db };
 
@@ -74,7 +74,7 @@ const dbProvider = createDrizzleProvider<QueryContext>({
 ### 3) Build facade schema with `createSchemaBuilder(...)`
 
 ```ts
-import { createExecutableSchema, createSchemaBuilder } from "sqlql";
+import { createExecutableSchema, createSchemaBuilder } from "tupl";
 
 const builder = createSchemaBuilder<QueryContext>();
 

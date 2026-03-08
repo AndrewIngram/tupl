@@ -2,7 +2,7 @@
 
 This guide covers lookup-first systems such as Redis, KV stores, document stores, and index-backed adapters.
 
-For a concrete lookup-only Redis implementation, see `@sqlql/ioredis` in this repo.
+For a concrete lookup-only Redis implementation, see `@tupl/provider-ioredis` in this repo.
 To expose those entities in a facade schema, use `createSchemaBuilder(...)` and finish with
 `createExecutableSchema(builder)`.
 
@@ -21,7 +21,7 @@ import type {
   ProviderCapabilityAtom,
   QueryRow,
   TableScanRequest,
-} from "sqlql";
+} from "tupl";
 
 type KvContext = {
   namespace: string;
@@ -223,7 +223,7 @@ Use capability diagnostics to explain the decision:
 - route family
 - estimate fields when available
 
-Default `sqlql` behavior allows local fallback with diagnostics, but providers should tighten this when the cost profile is unacceptable.
+Default `tupl` behavior allows local fallback with diagnostics, but providers should tighten this when the cost profile is unacceptable.
 
 Useful policy knobs:
 

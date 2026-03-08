@@ -15,20 +15,23 @@ export const SLOW_PLAYGROUND_TEST_FILES = [
 export default defineConfig({
   resolve: {
     alias: {
-      sqlql: resolve(rootDir, "src/index.ts"),
+      tupl: resolve(rootDir, "src/index.ts"),
+      "@tupl/core": resolve(rootDir, "packages/core/src/index.ts"),
+      "@tupl/provider-drizzle": resolve(rootDir, "packages/provider-drizzle/src/index.ts"),
+      "@tupl/provider-ioredis": resolve(rootDir, "packages/provider-ioredis/src/index.ts"),
+      "@tupl/provider-objection": resolve(rootDir, "packages/provider-objection/src/index.ts"),
+      "@tupl/provider-kysely": resolve(rootDir, "packages/provider-kysely/src/index.ts"),
     },
   },
   test: {
     include: [
       "src/**/__tests__/**/*.test.ts",
       "packages/*/src/**/__tests__/**/*.test.ts",
-      "test/compliance/*.test.ts",
-      "test/query/*.test.ts",
       "test/providers/*.test.ts",
       "examples/playground/test/**/*.test.ts",
     ],
     exclude: [
-      "test/compliance/standards-gaps.todo.test.ts",
+      "packages/core/src/runtime/__tests__/compliance/standards-gaps.todo.test.ts",
     ],
     coverage: {
       reporter: ["text", "html"],

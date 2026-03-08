@@ -1,6 +1,6 @@
 # Incremental SQL Standards Roadmap
 
-This roadmap defines how `sqlql` expands SQL support while keeping the user-facing API stable:
+This roadmap defines how `tupl` expands SQL support while keeping the user-facing API stable:
 
 1. Define providers.
 2. Build an executable schema from provider-owned entities.
@@ -151,18 +151,18 @@ Design reservation only:
 
 Performance is important but not the primary goal.
 
-- `sqlql` should avoid obvious inefficiencies and over-fetching.
+- `tupl` should avoid obvious inefficiencies and over-fetching.
 - It should exploit available capabilities in underlying methods (`scan`, `lookup`, `aggregate`) for practical efficiency.
 - It is not intended to compete with database engines on optimizer sophistication.
 - If a workload needs deep cost-based optimization, push computation to the backing store or specialized engine.
 
 ## Security Boundary
 
-`sqlql` is a query/planning/runtime layer, not an authorization system.
+`tupl` is a query/planning/runtime layer, not an authorization system.
 
 - The underlying domain/storage methods are responsible for enforcing security guarantees.
 - Tenant scoping, row/column access control, and sensitive-data restrictions must be implemented in domain logic.
-- `sqlql` should not be treated as the source of truth for authorization correctness.
+- `tupl` should not be treated as the source of truth for authorization correctness.
 
 ## Compatibility Matrix
 
@@ -197,7 +197,7 @@ Each milestone is complete only when all are true:
 
 - Parser acceptance tests for supported syntax and clear unsupported errors.
 - Planner tests showing step graph and pushdown decisions.
-- Dual-engine integration parity tests (`sqlql` vs SQLite) for supported shapes.
+- Dual-engine integration parity tests (`tupl` vs SQLite) for supported shapes.
 - `explain(...)` output updated to reflect new plan decisions.
 
 Compliance test locations:

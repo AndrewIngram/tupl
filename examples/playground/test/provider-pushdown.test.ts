@@ -121,8 +121,8 @@ describe("playground/provider-pushdown", () => {
     }
 
     const customRedisProviderCode = `
-import type { RedisLike } from "@sqlql/ioredis";
-import { createIoredisProvider, playgroundIoredisRuntime } from "@playground/ioredis-provider-core";
+import type { RedisLike } from "@tupl/provider-ioredis";
+import { createIoredisProvider, playgroundIoredisRuntime } from "@playground/provider-ioredis-provider-core";
 
 type QueryContext = {
   orgId: string;

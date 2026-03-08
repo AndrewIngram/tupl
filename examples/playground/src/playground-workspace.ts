@@ -73,19 +73,25 @@ function mapVirtualFiles(
   return out;
 }
 
-const SQLQL_SOURCE_IMPORTS = import.meta.glob("../../../src/**/*.ts", {
+const TUPL_SOURCE_IMPORTS = import.meta.glob("../../../src/**/*.ts", {
   eager: true,
   import: "default",
   query: "?raw",
 }) as Record<string, string>;
 
-const DRIZZLE_SOURCE_IMPORTS = import.meta.glob("../../../packages/drizzle/src/**/*.ts", {
+const CORE_SOURCE_IMPORTS = import.meta.glob("../../../packages/core/src/**/*.ts", {
   eager: true,
   import: "default",
   query: "?raw",
 }) as Record<string, string>;
 
-const IOREDIS_SOURCE_IMPORTS = import.meta.glob("../../../packages/ioredis/src/**/*.ts", {
+const DRIZZLE_SOURCE_IMPORTS = import.meta.glob("../../../packages/provider-drizzle/src/**/*.ts", {
+  eager: true,
+  import: "default",
+  query: "?raw",
+}) as Record<string, string>;
+
+const IOREDIS_SOURCE_IMPORTS = import.meta.glob("../../../packages/provider-ioredis/src/**/*.ts", {
   eager: true,
   import: "default",
   query: "?raw",
@@ -119,22 +125,28 @@ const BETTER_RESULT_DECLARATION_IMPORTS = {
   }),
 } as Record<string, string>;
 
-const SQLQL_SOURCE_FILES = mapVirtualFiles(
-  SQLQL_SOURCE_IMPORTS,
+const TUPL_SOURCE_FILES = mapVirtualFiles(
+  TUPL_SOURCE_IMPORTS,
   "/src/",
-  `${NODE_MODULES_ROOT_PATH}/sqlql`,
+  `${NODE_MODULES_ROOT_PATH}/tupl`,
+);
+
+const CORE_SOURCE_FILES = mapVirtualFiles(
+  CORE_SOURCE_IMPORTS,
+  "/packages/core/src/",
+  `${NODE_MODULES_ROOT_PATH}/@tupl/core`,
 );
 
 const DRIZZLE_SOURCE_FILES = mapVirtualFiles(
   DRIZZLE_SOURCE_IMPORTS,
-  "/packages/drizzle/src/",
-  `${NODE_MODULES_ROOT_PATH}/@sqlql/drizzle`,
+  "/packages/provider-drizzle/src/",
+  `${NODE_MODULES_ROOT_PATH}/@tupl/provider-drizzle`,
 );
 
 const IOREDIS_SOURCE_FILES = mapVirtualFiles(
   IOREDIS_SOURCE_IMPORTS,
-  "/packages/ioredis/src/",
-  `${NODE_MODULES_ROOT_PATH}/@sqlql/ioredis`,
+  "/packages/provider-ioredis/src/",
+  `${NODE_MODULES_ROOT_PATH}/@tupl/provider-ioredis`,
 );
 
 const DRIZZLE_DECLARATION_FILES = mapVirtualFiles(
@@ -160,7 +172,7 @@ const BETTER_RESULT_DECLARATION_FILES: Record<string, string> = {
 
 const HOST_PACKAGE_DECLARATION_FILES: Record<string, string> = {
   [`${NODE_MODULES_ROOT_PATH}/@playground/runtime/index.d.ts`]: `
-import type { IoredisProviderOperation, RedisLike } from "@sqlql/ioredis";
+import type { IoredisProviderOperation, RedisLike } from "@tupl/provider-ioredis";
 
 export interface PlaygroundIoredisRuntime {
   redis: RedisLike;
@@ -172,8 +184,8 @@ export declare function getPlaygroundIoredisRuntime(): PlaygroundIoredisRuntime;
 };
 
 const HOST_PACKAGE_SOURCE_FILES: Record<string, string> = {
-  [`${NODE_MODULES_ROOT_PATH}/@playground/ioredis-provider-core/index.ts`]: `
-export * from "@sqlql/ioredis";
+  [`${NODE_MODULES_ROOT_PATH}/@playground/provider-ioredis-provider-core/index.ts`]: `
+export * from "@tupl/provider-ioredis";
 
 import { getPlaygroundIoredisRuntime } from "@playground/runtime";
 
@@ -186,7 +198,8 @@ const PGLITE_ROOT_DECLARATION_FILES: Record<string, string> = {
 };
 
 const STATIC_SOURCE_FILES = {
-  ...SQLQL_SOURCE_FILES,
+  ...TUPL_SOURCE_FILES,
+  ...CORE_SOURCE_FILES,
   ...DRIZZLE_SOURCE_FILES,
   ...IOREDIS_SOURCE_FILES,
   ...HOST_PACKAGE_SOURCE_FILES,

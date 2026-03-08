@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createIoredisProvider } from "../../../packages/ioredis/src";
+import { createIoredisProvider } from "../../../packages/provider-ioredis/src";
 import { SCENARIO_PRESETS } from "../src/examples";
 import { getPlaygroundRedisRuntime, reseedDownstreamDatabase } from "../src/pglite-runtime";
 

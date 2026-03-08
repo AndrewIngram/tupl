@@ -1,6 +1,6 @@
 # Parser Notes (In-House SQLite Parser)
 
-`sqlql` now uses an in-house SQL parser focused on the SQLite read-query subset that `sqlql`
+`tupl` now uses an in-house SQL parser focused on the SQLite read-query subset that `tupl`
 supports.
 
 This document tracks parser-specific behavior and known gaps so support decisions remain explicit.
@@ -15,7 +15,7 @@ This document tracks parser-specific behavior and known gaps so support decision
 
 ## 1) Coverage is intentionally subset-based, not full SQLite grammar
 
-The parser is designed around `sqlql`'s supported surface area, not full SQLite syntax.
+The parser is designed around `tupl`'s supported surface area, not full SQLite syntax.
 Queries outside the supported subset should fail fast with clear errors.
 
 Current examples of intentionally unsupported syntax:

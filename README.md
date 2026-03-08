@@ -1,21 +1,21 @@
-# sqlql
+# tupl
 
-`sqlql` lets you expose a controlled SQL facade over one or more underlying data systems.
+`tupl` lets you expose a controlled SQL facade over one or more underlying data systems.
 
 ## What
 
-`sqlql` is a provider-first query runtime:
+`tupl` is a provider-first query runtime:
 
 - You define one or more providers (Drizzle/Kysely/Objection/custom).
 - Providers expose normalized entities that represent physical sources.
 - You build an executable logical SQL-facing schema from those entities.
-- `sqlql` plans query fragments across providers and local logical operators.
+- `tupl` plans query fragments across providers and local logical operators.
 
 The facade stays relational (`SELECT` over tables/views), while providers can be relational or non-relational.
 
 ## Why
 
-Typical reasons to use `sqlql`:
+Typical reasons to use `tupl`:
 
 - enforce a safer query boundary than direct DB access
 - expose only an allowlisted, user-facing data model
@@ -28,8 +28,8 @@ Typical reasons to use `sqlql`:
 
 ```ts
 import { and, eq } from "drizzle-orm";
-import { createDrizzleProvider } from "@sqlql/drizzle";
-import { createExecutableSchema, createSchemaBuilder } from "sqlql";
+import { createDrizzleProvider } from "@tupl/provider-drizzle";
+import { createExecutableSchema, createSchemaBuilder } from "tupl";
 
 type QueryContext = { orgId: string; userId: string; db: typeof db };
 
@@ -138,8 +138,8 @@ If your runtime handle is static, `db` can still be passed directly instead of u
 ### Example B: Non-Relational Mapping Pattern
 
 ```ts
-import { createIoredisProvider, type RedisLike } from "@sqlql/ioredis";
-import { createExecutableSchema, createSchemaBuilder } from "sqlql";
+import { createIoredisProvider, type RedisLike } from "@tupl/provider-ioredis";
+import { createExecutableSchema, createSchemaBuilder } from "tupl";
 
 type QueryContext = {
   userId: string;
@@ -202,9 +202,9 @@ Execution behavior notes:
 
 | Adapter               | scan/filter/sort/limit | lookupMany | single-query rel pushdown (core join/aggregate) | advanced rel pushdown (with/set-op/window) | local fallback when unsupported | explicit shape rejection |
 | --------------------- | ---------------------- | ---------- | ----------------------------------------------- | ------------------------------------------ | ------------------------------- | ------------------------ |
-| `@sqlql/drizzle`      | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
-| `@sqlql/kysely`       | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
-| `@sqlql/objection`    | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
+| `@tupl/provider-drizzle`      | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
+| `@tupl/provider-kysely`       | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
+| `@tupl/provider-objection`    | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
 | Custom non-relational | Custom                 | Custom     | Custom                                          | Custom                                     | Yes                             | Yes                      |
 
 ## Guides

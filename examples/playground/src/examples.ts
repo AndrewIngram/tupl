@@ -294,7 +294,7 @@ function dedent(text: string): string {
 
 export const DEFAULT_CONTEXT_CODE = dedent(`
   import { drizzle } from "drizzle-orm/pglite";
-  import type { RedisLike } from "@sqlql/ioredis";
+  import type { RedisLike } from "@tupl/provider-ioredis";
 
   export type QueryContext = {
     orgId: string;
@@ -377,7 +377,7 @@ export const DEFAULT_GENERATED_DB_FILE_CODE = dedent(`
 
 export const DEFAULT_DB_PROVIDER_CODE = dedent(`
   import { and, eq } from "drizzle-orm";
-  import { createDrizzleProvider } from "@sqlql/drizzle";
+  import { createDrizzleProvider } from "@tupl/provider-drizzle";
   import type { QueryContext } from "${CONTEXT_MODULE_ID}";
   import { tables } from "${GENERATED_DB_MODULE_ID}";
 
@@ -428,7 +428,7 @@ export const DEFAULT_REDIS_PROVIDER_CODE = dedent(`
   import {
     createIoredisProvider,
     playgroundIoredisRuntime,
-  } from "@playground/ioredis-provider-core";
+  } from "@playground/provider-ioredis-provider-core";
   import type { QueryContext } from "${CONTEXT_MODULE_ID}";
 
   export const redisProvider = createIoredisProvider<QueryContext>({
@@ -462,7 +462,7 @@ export const DEFAULT_REDIS_PROVIDER_CODE = dedent(`
 `);
 
 export const DEFAULT_FACADE_SCHEMA_CODE = dedent(`
-  import { createExecutableSchema, createSchemaBuilder } from "sqlql";
+  import { createExecutableSchema, createSchemaBuilder } from "tupl";
   import type { QueryContext } from "${CONTEXT_MODULE_ID}";
   import { dbProvider } from "${DB_PROVIDER_MODULE_ID}";
   import { redisProvider } from "${REDIS_PROVIDER_MODULE_ID}";
