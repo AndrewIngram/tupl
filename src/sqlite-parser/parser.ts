@@ -14,7 +14,7 @@ import type {
   WindowOverAst,
   WindowSpecificationAst,
 } from "./ast";
-import { SqlqlParseError, type SqlqlResult } from "../errors";
+import { SqlqlParseError } from "../errors";
 import { tokenizeSql, type Token } from "./lexer";
 
 type BinaryOperatorSpec =
@@ -55,7 +55,7 @@ export function parseSqliteSelectAst(sql: string): SelectAst {
   return result.value;
 }
 
-export function parseSqliteSelectAstResult(sql: string): SqlqlResult<SelectAst> {
+export function parseSqliteSelectAstResult(sql: string) {
   return Result.try({
     try: () => parseSqliteSelectAstOrThrow(sql),
     catch: (error) =>

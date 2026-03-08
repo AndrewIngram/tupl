@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { Result } from "better-result";
 import {
-  unwrapProviderOperationResult,
   type ProviderFragment,
 } from "sqlql";
 import {
@@ -155,7 +154,7 @@ describe("ioredis adapter", () => {
       },
     });
 
-    const rows = unwrapProviderOperationResult(
+    const rows = (
       await provider.lookupMany!(
         {
           table: "product_view_counts",
@@ -165,8 +164,8 @@ describe("ioredis adapter", () => {
           where: [{ op: "gt", column: "view_count", value: 5 }],
         },
         { tenant: "acme" },
-      ),
-    );
+      )
+    ).unwrap();
 
     expect(rows).toEqual([{ product_id: "p1", view_count: 8 }]);
   });

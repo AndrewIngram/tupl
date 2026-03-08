@@ -1,6 +1,6 @@
-import { Result } from "better-result";
+import { Result, type Result as BetterResult } from "better-result";
 
-import { SqlqlPlanningError, type SqlqlResult } from "./errors";
+import { SqlqlPlanningError } from "./errors";
 import type {
   FromEntryAst,
   OrderByTermAst,
@@ -305,7 +305,7 @@ function nextRelId(prefix: string): string {
   return `${prefix}_${relIdCounter}`;
 }
 
-function toSqlqlPlanningError(error: unknown, operation: string): SqlqlPlanningError {
+function toSqlqlPlanningError(error: unknown, operation: string) {
   if (SqlqlPlanningError.is(error)) {
     return error;
   }
@@ -328,7 +328,7 @@ export function lowerSqlToRel(sql: string, schema: SchemaDefinition): RelLowerin
 export function lowerSqlToRelResult(
   sql: string,
   schema: SchemaDefinition,
-): SqlqlResult<RelLoweringResult> {
+) {
   return Result.gen(function* () {
     const ast = yield* parseSqliteSelectAstResult(sql);
     return Result.try({
@@ -599,7 +599,7 @@ export function expandRelViewsResult<TContext>(
   rel: RelNode,
   schema: SchemaDefinition,
   context?: TContext,
-): SqlqlResult<RelNode> {
+) {
   return Result.try({
     try: () => expandRelViewsInternal(rel, schema, context).node,
     catch: (error) => toSqlqlPlanningError(error, "expand relational views"),
@@ -626,7 +626,7 @@ export async function planPhysicalQueryResult<TContext>(
   providers: ProvidersMap<TContext>,
   context: TContext,
   _sql: string,
-): Promise<SqlqlResult<PhysicalPlan>> {
+) {
   return Result.gen(async function* () {
     const expandedRel = yield* expandRelViewsResult(rel, schema, context);
     const plannedRel = assignConventions(expandedRel, schema);
@@ -650,7 +650,7 @@ async function planPhysicalNodeResult<TContext>(
   providers: ProvidersMap<TContext>,
   context: TContext,
   state: { steps: PhysicalStep[] },
-): Promise<SqlqlResult<string>> {
+): Promise<BetterResult<string, SqlqlPlanningError>> {
   return Result.gen(async function* () {
     const remoteStepId = yield* Result.await(
       tryPlanRemoteFragmentResult(node, schema, providers, context, state),
@@ -1616,7 +1616,7 @@ async function tryPlanRemoteFragmentResult<TContext>(
   providers: ProvidersMap<TContext>,
   context: TContext,
   state: { steps: PhysicalStep[] },
-): Promise<SqlqlResult<string | null>> {
+): Promise<BetterResult<string | null, SqlqlPlanningError>> {
   const provider = resolveSingleProvider(node, schema);
   if (!provider) {
     return Result.ok(null);
@@ -1679,7 +1679,7 @@ export function buildProviderFragmentForRelResult<TContext = unknown>(
   node: RelNode,
   schema: SchemaDefinition,
   context?: TContext,
-): SqlqlResult<ProviderFragment | null> {
+) {
   return Result.gen(function* () {
     const expanded = yield* expandRelViewsResult(node, schema, context);
     const provider = resolveSingleProvider(expanded, schema);
@@ -1695,7 +1695,7 @@ function buildProviderFragmentForNodeResult(
   node: RelNode,
   schema: SchemaDefinition,
   provider: string,
-): SqlqlResult<ProviderFragment> {
+) {
   return Result.try({
     try: () => buildProviderFragmentForNode(node, schema, provider),
     catch: (error) => toSqlqlPlanningError(error, "build provider fragment"),

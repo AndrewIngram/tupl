@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  unwrapProviderOperationResult,
   type ProviderFragment,
   type QueryRow,
   type RelNode,
@@ -325,10 +324,8 @@ describe("objection adapter", () => {
       } satisfies TableScanRequest,
     };
     const scanContext = { orgId: "org_1", knex };
-    const scanPlan = unwrapProviderOperationResult(
-      await provider.compile(scanFragment, scanContext),
-    );
-    const rows = unwrapProviderOperationResult(await provider.execute(scanPlan, scanContext));
+    const scanPlan = (await provider.compile(scanFragment, scanContext)).unwrap();
+    const rows = (await provider.execute(scanPlan, scanContext)).unwrap();
     expect(rows).toEqual([{ id: "o1", user_id: "u1" }]);
 
     if (!provider.lookupMany) {
@@ -367,7 +364,7 @@ describe("objection adapter", () => {
       },
     });
 
-    const plan = unwrapProviderOperationResult(
+    const plan = (
       await provider.compile(
         {
           kind: "scan",
@@ -379,11 +376,11 @@ describe("objection adapter", () => {
           },
         },
         {},
-      ),
-    );
+      )
+    ).unwrap();
 
     await expect(
-      Promise.resolve(provider.execute(plan, {})).then(unwrapProviderOperationResult),
+      Promise.resolve(provider.execute(plan, {})).then((result) => result.unwrap()),
     ).rejects.toThrow(
       "Objection provider runtime binding did not resolve to a valid knex instance.",
     );
@@ -441,10 +438,8 @@ describe("objection adapter", () => {
       provider: "dbProvider",
       rel: buildJoinProjectRel(),
     };
-    const plan = unwrapProviderOperationResult(
-      await provider.compile(relFragment, { orgId: "org_1" }),
-    );
-    const rows = unwrapProviderOperationResult(await provider.execute(plan, { orgId: "org_1" }));
+    const plan = (await provider.compile(relFragment, { orgId: "org_1" })).unwrap();
+    const rows = (await provider.execute(plan, { orgId: "org_1" })).unwrap();
 
     expect(rows).toEqual([{ id: "o2", email: "ada@example.com", total_cents: 3000 }]);
     expect(calls.executeCount).toBe(1);
