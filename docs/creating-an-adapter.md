@@ -104,7 +104,9 @@ function compileScanRequest(request: TableScanRequest): CompiledScanPlan {
     orderBy.length > 0 ? `order by ${orderBy}` : "",
     request.limit != null ? `limit ${request.limit}` : "",
     request.offset != null ? `offset ${request.offset}` : "",
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return {
     kind: "scan",
@@ -114,10 +116,7 @@ function compileScanRequest(request: TableScanRequest): CompiledScanPlan {
   };
 }
 
-function toSqlWhereClause(
-  clause: TableScanRequest["where"][number],
-  params: unknown[],
-): string {
+function toSqlWhereClause(clause: TableScanRequest["where"][number], params: unknown[]): string {
   switch (clause.op) {
     case "eq":
       params.push(clause.value);
@@ -183,9 +182,7 @@ Once an adapter exposes typed `entities`, the current schema API is:
 Example:
 
 ```ts
-import {
-  createDataEntityHandle,
-} from "@tupl/core";
+import { createDataEntityHandle } from "@tupl/core";
 import { createExecutableSchema, createSchemaBuilder } from "@tupl/schema";
 
 const ordersEntity = createDataEntityHandle<"id" | "total_cents" | "created_at">({
@@ -203,17 +200,13 @@ const myOrders = builder.table("myOrders", ordersEntity, {
   }),
 });
 
-builder.view(
-  "recentOrders",
-  ({ scan }) => scan(myOrders),
-  {
-    columns: ({ col }) => ({
-      id: col.id(myOrders, "id"),
-      totalCents: col.integer(myOrders, "totalCents", { nullable: false }),
-      createdAt: col.timestamp(myOrders, "createdAt", { nullable: false }),
-    }),
-  },
-);
+builder.view("recentOrders", ({ scan }) => scan(myOrders), {
+  columns: ({ col }) => ({
+    id: col.id(myOrders, "id"),
+    totalCents: col.integer(myOrders, "totalCents", { nullable: false }),
+    createdAt: col.timestamp(myOrders, "createdAt", { nullable: false }),
+  }),
+});
 
 const executableSchema = createExecutableSchema(builder);
 ```
@@ -463,18 +456,23 @@ If your backend cannot compile computed projections yet, reject them in `canExec
 Minimum coverage:
 
 1. scan tests
+
 - filter, sort, projection, limit/offset
 
 2. capability tests
+
 - unsupported fragments return stable missing atoms and reasons
 
 3. fallback tests
+
 - unsupported pushdown still produces correct local results when fallback is allowed
 
 4. rejection tests
+
 - expensive or forbidden fallback fails with diagnostics
 
 5. conformance tests
+
 - parity with other first-party adapters for shared atoms
 
 ## Related Docs

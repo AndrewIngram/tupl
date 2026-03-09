@@ -41,9 +41,7 @@ type CompiledKvPlan =
       request: ProviderLookupManyRequest;
     };
 
-const declaredAtoms: readonly ProviderCapabilityAtom[] = [
-  "lookup.bulk",
-];
+const declaredAtoms: readonly ProviderCapabilityAtom[] = ["lookup.bulk"];
 
 export function createExampleKvAdapter(rows: KvRecord[]): ProviderAdapter<KvContext> {
   return {
@@ -103,9 +101,7 @@ export function createExampleKvAdapter(rows: KvRecord[]): ProviderAdapter<KvCont
 
     async lookupMany(request, _context): Promise<QueryRow[]> {
       const keys = new Set(request.keys.map(String));
-      return rows
-        .filter((row) => keys.has(row.key))
-        .map(materializeRow);
+      return rows.filter((row) => keys.has(row.key)).map(materializeRow);
     },
   };
 }

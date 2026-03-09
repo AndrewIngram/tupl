@@ -96,7 +96,7 @@ export const SLOW_PLAYGROUND_TEST_FILES = [
 
 export const sharedCoverageConfig = {
   provider: "v8" as const,
-  reporter: ["text", "html", "lcov"] as const,
+  reporter: ["text", "html", "lcov", "json-summary"] as const,
   reportsDirectory: "coverage",
 };
 

@@ -167,30 +167,30 @@ Performance is important but not the primary goal.
 
 ## Compatibility Matrix
 
-| Feature                             | Parser              | Planner             | Executor              | Resolver method           |
-| ----------------------------------- | ------------------- | ------------------- | --------------------- | ------------------------- |
-| Basic select/join/filter            | done                | done                | done                  | `scan`, optional `lookup` |
-| Offset/null checks                  | done                | done                | done                  | `scan`                    |
-| Aggregates/group by                 | done                | done                | done                  | `aggregate` (preferred)   |
-| Non-recursive CTE                   | done                | done                | done                  | none new                  |
-| OR/NOT                              | done                | done                | done                  | `scan`                    |
-| HAVING                              | done                | done                | done                  | `aggregate`/local         |
-| Set ops (`UNION ALL`/`UNION`)       | done                | done                | done                  | none new                  |
-| Set ops (`INTERSECT`/`EXCEPT`)      | done                | done                | done                  | none new                  |
-| DISTINCT                            | done                | done                | done                  | none new                  |
-| Outer joins (`LEFT`/`RIGHT`/`FULL`) | done                | done                | done                  | none new                  |
-| Subqueries (uncorrelated)           | done                | done                | done                  | none new                  |
-| Subqueries (correlated/from)        | planned             | planned             | planned               | none new                  |
-| Window functions (core set)         | done                | done                | done                  | none new                  |
-| Branch-level parallel execution     | n/a                 | done                | done                  | none new                  |
-| Step-by-step query session API      | n/a                 | done                | done                  | none new                  |
-| Schema PK/FK/UNIQUE metadata        | done                | n/a                 | done (DDL)            | none new                  |
-| Schema CHECK/enum metadata          | done                | n/a                 | done (DDL)            | none new                  |
-| Column capability/pushdown hints    | deferred            | deferred            | deferred              | none                      |
+| Feature                             | Parser              | Planner             | Executor              | Resolver method             |
+| ----------------------------------- | ------------------- | ------------------- | --------------------- | --------------------------- |
+| Basic select/join/filter            | done                | done                | done                  | `scan`, optional `lookup`   |
+| Offset/null checks                  | done                | done                | done                  | `scan`                      |
+| Aggregates/group by                 | done                | done                | done                  | `aggregate` (preferred)     |
+| Non-recursive CTE                   | done                | done                | done                  | none new                    |
+| OR/NOT                              | done                | done                | done                  | `scan`                      |
+| HAVING                              | done                | done                | done                  | `aggregate`/local           |
+| Set ops (`UNION ALL`/`UNION`)       | done                | done                | done                  | none new                    |
+| Set ops (`INTERSECT`/`EXCEPT`)      | done                | done                | done                  | none new                    |
+| DISTINCT                            | done                | done                | done                  | none new                    |
+| Outer joins (`LEFT`/`RIGHT`/`FULL`) | done                | done                | done                  | none new                    |
+| Subqueries (uncorrelated)           | done                | done                | done                  | none new                    |
+| Subqueries (correlated/from)        | planned             | planned             | planned               | none new                    |
+| Window functions (core set)         | done                | done                | done                  | none new                    |
+| Branch-level parallel execution     | n/a                 | done                | done                  | none new                    |
+| Step-by-step query session API      | n/a                 | done                | done                  | none new                    |
+| Schema PK/FK/UNIQUE metadata        | done                | n/a                 | done (DDL)            | none new                    |
+| Schema CHECK/enum metadata          | done                | n/a                 | done (DDL)            | none new                    |
+| Column capability/pushdown hints    | deferred            | deferred            | deferred              | none                        |
 | Planner pushdown hooks              | n/a                 | done                | done                  | `planScan/Lookup/Aggregate` |
-| Constraint runtime validation       | n/a                 | n/a                 | done (off/warn/error) | none new                  |
-| Index metadata/planning hints       | deferred            | deferred            | deferred              | none                      |
-| Writes (`INSERT/UPDATE/DELETE`)     | explicit no-support | explicit no-support | explicit no-support   | none                      |
+| Constraint runtime validation       | n/a                 | n/a                 | done (off/warn/error) | none new                    |
+| Index metadata/planning hints       | deferred            | deferred            | deferred              | none                        |
+| Writes (`INSERT/UPDATE/DELETE`)     | explicit no-support | explicit no-support | explicit no-support   | none                        |
 
 ## Release Gate for Each Milestone
 
