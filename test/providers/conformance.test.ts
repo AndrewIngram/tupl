@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   type ProviderAdapter,
   type ProviderFragment,
-  type QueryRow,
   type RelNode,
 } from "@tupl/core";
+import type { QueryRow } from "@tupl/core/schema";
 import { createDrizzleProvider, type DrizzleQueryExecutor } from "../../packages/provider-drizzle/src";
 import { createKyselyProvider } from "../../packages/provider-kysely/src";
 import {

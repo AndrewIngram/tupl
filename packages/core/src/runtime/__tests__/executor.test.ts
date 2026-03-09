@@ -2,14 +2,16 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import {
-  executeRelWithProvidersResult,
   type ProviderAdapter,
   type ProviderFragment,
-  type QueryRow,
   type RelNode,
+} from "@tupl/core";
+import {
+  type QueryRow,
   type ScanFilterClause,
   type TableScanRequest,
-} from "@tupl/core";
+} from "@tupl/core/schema";
+import { executeRelWithProvidersResult } from "../executor";
 import { finalizeProviders } from "../../testing/executable-schema";
 import { buildSchema, buildEntitySchema } from "../../testing/schema-builder";
 

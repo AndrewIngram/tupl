@@ -12,12 +12,14 @@ import {
   type ProviderCapabilityReport,
   type ProviderCompiledPlan,
   type ProviderRuntimeBinding,
-  type QueryRow,
+} from "@tupl/core";
+import type { QueryRow } from "@tupl/core/schema";
+import {
   buildLookupOnlyUnsupportedReport,
   filterLookupRows,
   projectLookupRow,
   validateLookupRequest,
-} from "@tupl/core";
+} from "@tupl/core/provider-shapes";
 
 export interface RedisPipelineResult {
   hgetall: [Error | null, Record<string, string>];

@@ -14,6 +14,21 @@
       "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.mts",
+      "import": "./dist/schema/index.mjs",
+      "require": "./dist/schema/index.cjs"
+    },
+    "./planner": {
+      "types": "./dist/planner/index.d.mts",
+      "import": "./dist/planner/index.mjs",
+      "require": "./dist/planner/index.cjs"
+    },
+    "./provider-shapes": {
+      "types": "./dist/provider-shapes/index.d.mts",
+      "import": "./dist/provider-shapes/index.mjs",
+      "require": "./dist/provider-shapes/index.cjs"
     }
   },
   "publishConfig": {
@@ -25,7 +40,7 @@
     "directory": "packages/core"
   },
   "scripts": {
-    "build": "tsdown src/index.ts --format esm,cjs --sourcemap --clean --dts --unbundle",
+    "build": "tsdown src/index.ts src/schema/index.ts src/planner/index.ts src/provider-shapes/index.ts --format esm,cjs --sourcemap --clean --dts --unbundle",
     "prepublishOnly": "pnpm run build",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },

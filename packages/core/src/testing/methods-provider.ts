@@ -1,20 +1,22 @@
 import { Result } from "better-result";
 import { aggregateArrayRows, scanArrayRows } from "../schema/array-methods";
 import {
-  type AggregatePlanDecision,
   bindAdapterEntities,
   type ConstraintValidationOptions,
   createDataEntityHandle,
-  createSchemaBuilder,
   createExecutableSchema,
-  type LookupPlanDecision,
-  type PlannedAggregateRequest,
-  type PlannedLookupRequest,
-  type PlannedScanRequest,
   type QueryGuardrails,
   type QuerySessionOptions,
   type ProviderAdapter,
   type ProviderFragment,
+} from "@tupl/core";
+import {
+  createSchemaBuilder,
+  type AggregatePlanDecision,
+  type LookupPlanDecision,
+  type PlannedAggregateRequest,
+  type PlannedLookupRequest,
+  type PlannedScanRequest,
   type QueryRow,
   type ScanPlanDecision,
   type ScanFilterClause,
@@ -25,7 +27,7 @@ import {
   type TableLookupRequest,
   type TableMethodsMap,
   type TableScanRequest,
-} from "@tupl/core";
+} from "@tupl/core/schema";
 
 function toEntityColumns(schema: SchemaDefinition, tableName: string) {
   const table = schema.tables[tableName];

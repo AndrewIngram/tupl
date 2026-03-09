@@ -17,10 +17,10 @@ import {
   type ProviderCapabilityReport,
   type ProviderFragment,
   type ProviderRuntimeBinding,
-  type QueryRow,
   type RelNode,
-  type ScanFilterClause,
-  type TableScanRequest,
+} from "@tupl/core";
+import type { QueryRow, ScanFilterClause, TableScanRequest } from "@tupl/core/schema";
+import {
   UnsupportedRelationalPlanError,
   buildSingleQueryPlan as buildRelationalSingleQueryPlan,
   canCompileBasicRel,
@@ -36,7 +36,7 @@ import {
   type RelationalScanBindingBase,
   type RelationalSemiJoinStep,
   type RelationalSingleQueryPlan,
-} from "@tupl/core";
+} from "@tupl/core/provider-shapes";
 
 export type KyselyQueryBuilderLike = {
   select: (...args: any[]) => KyselyQueryBuilderLike;

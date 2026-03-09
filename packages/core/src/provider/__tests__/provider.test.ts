@@ -3,14 +3,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   createDataEntityHandle,
-  getNormalizedTableBinding,
-  validateProviderBindingsResult,
   type ProviderAdapter,
   type ProviderFragment,
+} from "@tupl/core";
+import {
+  getNormalizedTableBinding,
+  validateProviderBindingsResult,
   type QueryRow,
   type ScanFilterClause,
   type TableScanRequest,
-} from "@tupl/core";
+} from "@tupl/core/schema";
 import { createExecutableSchemaFromProviders } from "../../testing/executable-schema";
 import { buildSchema, buildEntitySchema } from "../../testing/schema-builder";
 

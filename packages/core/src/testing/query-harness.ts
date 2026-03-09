@@ -2,15 +2,20 @@ import Database from "better-sqlite3";
 
 import { Result } from "better-result";
 import {
+  getNormalizedTableBinding,
+  registerNormalizedSchema,
   toSqlDDL,
-  type ProviderAdapter,
-  type ProviderFragment,
-  type ProvidersMap,
+  type NormalizedTableBinding,
   type QueryRow,
   type ScanFilterClause,
   type SchemaDefinition,
   type TableName,
   type TableScanRequest,
+} from "@tupl/core/schema";
+import {
+  type ProviderAdapter,
+  type ProviderFragment,
+  type ProvidersMap,
 } from "@tupl/core";
 import { createExecutableSchemaFromProviders } from "./executable-schema";
 
@@ -134,11 +139,13 @@ function ensureSchemaProviders<TSchema extends SchemaDefinition>(
   schema: TSchema,
   provider: string,
 ): TSchema {
+  let changed = false;
   const tables = Object.fromEntries(
     Object.entries(schema.tables).map(([tableName, table]) => {
       if (table.provider && table.provider.length > 0) {
         return [tableName, table];
       }
+      changed = true;
       return [
         tableName,
         {
@@ -149,10 +156,26 @@ function ensureSchemaProviders<TSchema extends SchemaDefinition>(
     }),
   ) as TSchema["tables"];
 
-  return {
+  if (!changed) {
+    return schema;
+  }
+
+  const nextSchema = {
     ...schema,
     tables,
   };
+  const normalizedTables: Record<string, NormalizedTableBinding> = {};
+  for (const tableName of Object.keys(schema.tables)) {
+    const binding = getNormalizedTableBinding(schema, tableName);
+    if (binding) {
+      normalizedTables[tableName] = binding;
+    }
+  }
+  if (Object.keys(normalizedTables).length > 0) {
+    registerNormalizedSchema(nextSchema, normalizedTables);
+  }
+
+  return nextSchema;
 }
 
 function createMemoryProvider<TContext>(

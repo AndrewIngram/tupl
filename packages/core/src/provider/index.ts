@@ -16,7 +16,7 @@ import type {
   ScanFilterClause,
   TableAggregateRequest,
   TableScanRequest,
-} from "../model/primitives";
+} from "../schema/definition";
 import type { RelExpr, RelNode } from "../model/rel";
 
 export type {

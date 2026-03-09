@@ -8,7 +8,7 @@ import {
   type ProviderOperationResult,
   type ProviderCapabilityReport,
 } from "..";
-import type { QueryRow, ScanFilterClause } from "../../model/primitives";
+import type { QueryRow, ScanFilterClause } from "../../schema/definition";
 
 export interface LookupEntityBinding<TColumns extends string = string> {
   lookupKey: TColumns;
