@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { type ProviderAdapter, type ProviderFragment, type RelNode } from "@tupl/core";
-import type { QueryRow } from "@tupl/core/schema";
 import {
-  createDrizzleProvider,
-  type DrizzleQueryExecutor,
-} from "../../packages/provider-drizzle/src";
+  type FragmentProviderAdapter,
+  type ProviderFragment,
+} from "@tupl/core/provider";
+import type { RelNode } from "@tupl/core/model/rel";
+import type { QueryRow } from "@tupl/core/schema";
+import { createDrizzleProvider, type DrizzleQueryExecutor } from "../../packages/provider-drizzle/src";
 import { createKyselyProvider } from "../../packages/provider-kysely/src";
 import {
   createObjectionProvider,
@@ -390,7 +391,7 @@ function createMockObjectionKnex(rowsByJoin: Map<string, QueryRow[]>): KnexLike 
 
 async function runRelFragment(
   providerName: string,
-  provider: ProviderAdapter<object>,
+  provider: FragmentProviderAdapter<object>,
 ): Promise<Array<Record<string, unknown>>> {
   const rel = buildRel();
   const fragment: ProviderFragment = {

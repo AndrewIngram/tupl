@@ -1,5 +1,5 @@
+import { type RelNode } from "@tupl/core/model/rel";
 import { defaultSqlAstParser, lowerSqlToRel } from "@tupl/core/planner";
-import type { RelNode } from "@tupl/core";
 import type { SchemaDefinition } from "@tupl/schema";
 
 import type {

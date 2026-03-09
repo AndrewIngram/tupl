@@ -1,10 +1,11 @@
+export * from "./schema";
 export {
   DEFAULT_QUERY_FALLBACK_POLICY,
   DEFAULT_QUERY_GUARDRAILS,
   TuplDiagnosticError,
   createExecutableSchema,
   createExecutableSchemaResult,
-} from "./runtime/query";
+} from "@tupl-internal/runtime";
 export type {
   ExecutableSchema,
   ExecutableSchemaQueryInput,
@@ -25,9 +26,23 @@ export type {
   QueryStepState,
   QueryStepStatus,
   QuerySqlOrigin,
-} from "./runtime/query";
-export * from "./runtime/constraints";
-export * from "./runtime/errors";
+} from "@tupl-internal/runtime";
+export {
+  type ConstraintValidationOptions,
+  type ConstraintViolation,
+  type ConstraintViolationType,
+  type ValidateTableConstraintsInput,
+  validateTableConstraintRows,
+} from "@tupl-internal/runtime";
+export { type ConstraintValidationMode, executeRelWithProvidersResult } from "@tupl-internal/runtime";
 export * from "./provider";
-export * from "./model/data-entity";
 export * from "./model/rel";
+export * from "./provider/shapes";
+export {
+  defaultSqlAstParser,
+  lowerSqlToRel,
+  lowerSqlToRelResult,
+  planPhysicalQuery,
+  planPhysicalQueryResult,
+} from "./planner";
+export type { PhysicalPlan, PhysicalStep, RelLoweringResult, SqlAstParser } from "./planner";

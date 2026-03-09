@@ -6,20 +6,19 @@ import {
   type DataEntityHandle,
   type DataEntityShape,
   type InferDataEntityShapeMetadata,
+  type LookupProviderAdapter,
   type MaybePromise,
-  type ProviderAdapter,
   type ProviderCapabilityAtom,
   type ProviderCapabilityReport,
-  type ProviderCompiledPlan,
   type ProviderRuntimeBinding,
-} from "@tupl/core";
+} from "@tupl/core/provider";
 import type { QueryRow } from "@tupl/core/schema";
 import {
   buildLookupOnlyUnsupportedReport,
   filterLookupRows,
   projectLookupRow,
   validateLookupRequest,
-} from "@tupl/core/provider-shapes";
+} from "@tupl/core/provider/shapes";
 
 export interface RedisPipelineResult {
   hgetall: [Error | null, Record<string, string>];
@@ -68,12 +67,7 @@ export interface IoredisEntityConfig<
 
 type IoredisEntityMap<TContext> = Record<
   string,
-  IoredisEntityConfig<
-    TContext,
-    string,
-    Record<string, unknown>,
-    DataEntityShape<string> | undefined
-  >
+  IoredisEntityConfig<TContext, string, Record<string, unknown>, DataEntityShape<string> | undefined>
 >;
 
 type InferIoredisProviderContext<TEntities extends IoredisEntityMap<any>> = {
@@ -161,21 +155,12 @@ function getEntityConfigOrThrow<TContext>(
 }
 
 function inferEntityHandle<
-  TConfig extends IoredisEntityConfig<
-    any,
-    string,
-    Record<string, unknown>,
-    DataEntityShape<string> | undefined
-  >,
+  TConfig extends IoredisEntityConfig<any, string, Record<string, unknown>, DataEntityShape<string> | undefined>,
 >(
   config: TConfig,
   provider: string,
-  adapter: ProviderAdapter<any>,
-): DataEntityHandle<
-  InferEntityColumns<TConfig>,
-  InferEntityRow<TConfig>,
-  InferEntityShape<TConfig>
-> {
+  adapter: LookupProviderAdapter<any>,
+): DataEntityHandle<InferEntityColumns<TConfig>, InferEntityRow<TConfig>, InferEntityShape<TConfig>> {
   return createDataEntityHandle({
     entity: config.entity,
     provider,
@@ -199,7 +184,7 @@ export function createIoredisProvider<
   const TEntities extends IoredisEntityMap<TContext> = IoredisEntityMap<TContext>,
 >(
   options: CreateIoredisProviderOptions<TContext, TEntities>,
-): ProviderAdapter<TContext> & {
+): LookupProviderAdapter<TContext> & {
   entities: {
     [K in keyof TEntities]: DataEntityHandle<
       InferEntityColumns<TEntities[K]>,
@@ -214,7 +199,7 @@ export function createIoredisProvider<
   TContext = InferIoredisProviderContext<TEntities>,
 >(
   options: CreateIoredisProviderOptions<TContext, TEntities>,
-): ProviderAdapter<TContext> & {
+): LookupProviderAdapter<TContext> & {
   entities: {
     [K in keyof TEntities]: DataEntityHandle<
       InferEntityColumns<TEntities[K]>,
@@ -256,20 +241,6 @@ export function createIoredisProvider<
             "Ioredis provider is lookup-only in v1 and does not support relational pushdown.",
           );
       }
-    },
-    async compile(fragment) {
-      return AdapterResult.err(
-        new Error(
-          `Ioredis provider does not compile ${fragment.kind} fragments in v1. Use lookupMany-backed plans instead.`,
-        ),
-      );
-    },
-    async execute(plan: ProviderCompiledPlan) {
-      return AdapterResult.err(
-        new Error(
-          `Ioredis provider does not execute compiled ${plan.kind} plans in v1. Use lookupMany-backed plans instead.`,
-        ),
-      );
     },
     async lookupMany(request, context) {
       const entity = getEntityConfigOrThrow(entitiesByName, request.table);
@@ -335,7 +306,7 @@ export function createIoredisProvider<
 
       return AdapterResult.ok(filtered.map((row) => projectLookupRow(row, request.select)));
     },
-  } satisfies ProviderAdapter<TContext> & {
+  } satisfies LookupProviderAdapter<TContext> & {
     entities: {
       [K in keyof TEntities]: DataEntityHandle<
         InferEntityColumns<TEntities[K]>,

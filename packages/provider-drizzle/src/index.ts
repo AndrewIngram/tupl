@@ -23,31 +23,23 @@ import {
   collectCapabilityAtomsForFragment,
   createDataEntityHandle,
   inferRouteFamilyForFragment,
-  isRelProjectColumnMapping,
   normalizeDataEntityShape,
   type DataEntityColumnMetadata,
   type DataEntityShape,
   type DataEntityHandle,
   type DataEntityReadMetadataMap,
+  type FragmentProviderAdapter,
   type InferDataEntityShapeMetadata,
+  type LookupProviderAdapter,
   type MaybePromise,
-  type ProviderAdapter,
   type ProviderCapabilityAtom,
   type ProviderCapabilityReport,
   type ProviderCompiledPlan,
   type ProviderFragment,
   type ProviderLookupManyRequest,
   type ProviderRuntimeBinding,
-  type RelExpr,
-  type RelNode,
-} from "@tupl/core";
-import type {
-  QueryRow,
-  ScanFilterClause,
-  ScanOrderBy,
-  SqlScalarType,
-  TableScanRequest,
-} from "@tupl/core/schema";
+} from "@tupl/core/provider";
+import { isRelProjectColumnMapping, type RelExpr, type RelNode } from "@tupl/core/model/rel";
 import {
   UnsupportedRelationalPlanError,
   canCompileBasicRel,
@@ -64,7 +56,14 @@ import {
   type RelationalScanBindingBase,
   type RelationalSemiJoinStep,
   type RelationalSingleQueryPlan,
-} from "@tupl/core/provider-shapes";
+} from "@tupl/core/provider/shapes";
+import type {
+  QueryRow,
+  ScanFilterClause,
+  ScanOrderBy,
+  SqlScalarType,
+  TableScanRequest,
+} from "@tupl/core/schema";
 
 export type DrizzleColumnMap<TColumn extends string = string> = Record<TColumn, AnyColumn>;
 
@@ -263,7 +262,8 @@ export function createDrizzleProvider<
   >,
 >(
   options: CreateDrizzleProviderOptions<TContext, TTables>,
-): ProviderAdapter<TContext> & {
+): FragmentProviderAdapter<TContext> &
+  LookupProviderAdapter<TContext> & {
   entities: {
     [K in keyof TTables]: DataEntityHandle<
       InferDrizzleTableColumns<TTables[K]>,
@@ -361,9 +361,7 @@ export function createDrizzleProvider<
         case "rel": {
           const strategy = resolveDrizzleRelCompileStrategy(fragment.rel, tableConfigs);
           if (!strategy) {
-            return AdapterResult.err(
-              new Error("Unsupported relational fragment for drizzle provider."),
-            );
+            return AdapterResult.err(new Error("Unsupported relational fragment for drizzle provider."));
           }
           const db = await resolveDrizzleDb(options, context);
           if (!isStrategyAvailableOnDrizzleDb(strategy, db)) {
@@ -403,7 +401,8 @@ export function createDrizzleProvider<
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
-  } satisfies ProviderAdapter<TContext> & {
+  } satisfies FragmentProviderAdapter<TContext> &
+    LookupProviderAdapter<TContext> & {
     entities: {
       [K in keyof TTables]: DataEntityHandle<
         InferDrizzleTableColumns<TTables[K]>,
@@ -879,7 +878,8 @@ function resolveDrizzleRelCompileStrategy(
     basicStrategy: "basic",
     setOpStrategy: "set_op",
     withStrategy: "with",
-    canCompileBasic: (current) => canCompileBasicRel(current, (table) => !!tableConfigs[table]),
+    canCompileBasic: (current) =>
+      canCompileBasicRel(current, (table) => !!tableConfigs[table]),
     validateBasic: (current) =>
       isSupportedRelationalPlan(() => {
         buildSingleQueryPlan(current, tableConfigs);
@@ -887,13 +887,12 @@ function resolveDrizzleRelCompileStrategy(
     canCompileSetOp: (current) =>
       canCompileSetOpRel(
         current,
-        (branch) => (canCompileBasicRel(branch, (table) => !!tableConfigs[table]) ? "basic" : null),
+        (branch) =>
+          canCompileBasicRel(branch, (table) => !!tableConfigs[table]) ? "basic" : null,
         requireColumnProjectMapping,
       ),
     canCompileWith: (current) =>
-      canCompileWithRel(current, (branch) =>
-        resolveDrizzleRelCompileStrategy(branch, tableConfigs),
-      ),
+      canCompileWithRel(current, (branch) => resolveDrizzleRelCompileStrategy(branch, tableConfigs)),
   });
 }
 

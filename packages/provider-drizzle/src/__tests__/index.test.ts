@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { type ProviderFragment, type RelNode } from "@tupl/core";
-import { type QueryRow } from "@tupl/core/schema";
+import {
+  type ProviderFragment,
+} from "@tupl/core/provider";
+import type { RelNode } from "@tupl/core/model/rel";
+import type { QueryRow } from "@tupl/core/schema";
 import {
   createDrizzleProvider,
   impossibleCondition,

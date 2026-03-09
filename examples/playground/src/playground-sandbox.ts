@@ -5,14 +5,11 @@ import * as pgliteModule from "@electric-sql/pglite";
 import * as betterResultModule from "better-result";
 import {
   type ExecutableSchema,
-  type ProviderAdapter,
-  type ProviderFragment,
-  type QueryExecutionPlan,
-  type QuerySession,
-  type QueryStepEvent,
-  type RelNode,
 } from "@tupl/core";
-import { type PhysicalPlan, lowerSqlToRel, planPhysicalQuery } from "@tupl/core/planner";
+import type { FragmentProviderAdapter, ProviderAdapter, ProviderFragment } from "@tupl/core/provider";
+import type { RelNode } from "@tupl/core/model/rel";
+import type { PhysicalPlan } from "@tupl/core/planner";
+import { type QueryExecutionPlan, type QuerySession, type QueryStepEvent } from "@tupl/core";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema";
 
 import { createVirtualModuleRuntime } from "./playground-module-runtime";
@@ -103,13 +100,13 @@ interface ExecutableSchemaModuleExports<TContext> {
 }
 
 interface ProviderModuleExports<TContext> {
-  dbProvider?: ProviderAdapter<TContext>;
+  dbProvider?: FragmentProviderAdapter<TContext>;
   redisProvider?: ProviderAdapter<TContext>;
 }
 
 interface TuplRuntimeModule {
-  lowerSqlToRel: typeof lowerSqlToRel;
-  planPhysicalQuery: typeof planPhysicalQuery;
+  lowerSqlToRel: typeof import("@tupl/core").lowerSqlToRel;
+  planPhysicalQuery: typeof import("@tupl/core").planPhysicalQuery;
 }
 
 interface PlaygroundRuntimeModule {
@@ -123,7 +120,7 @@ interface PlaygroundRuntimeModule {
 interface SandboxProviderRuntime<TContext> {
   tuplModule: TuplRuntimeModule;
   executableSchema: ExecutableSchema<TContext, SchemaDefinition>;
-  dbProvider: ProviderAdapter<TContext>;
+  dbProvider: FragmentProviderAdapter<TContext>;
   redisProvider: ProviderAdapter<TContext>;
   db: PlaygroundRuntimeContext["db"];
   redis: PlaygroundRuntimeContext["redis"];
@@ -188,9 +185,7 @@ function readProviderExportOrThrow<TContext>(
     !provider ||
     typeof provider !== "object" ||
     typeof provider.name !== "string" ||
-    typeof provider.canExecute !== "function" ||
-    typeof provider.compile !== "function" ||
-    typeof provider.execute !== "function"
+    typeof provider.canExecute !== "function"
   ) {
     throw new Error(
       `[SCHEMA_EXEC_ERROR] ${moduleId} must export ${exportName} as a provider adapter.`,
@@ -269,7 +264,7 @@ function createProviderRuntime<TContext>(
   const dbProviderModule = runtime.executeModule(PLAYGROUND_DB_PROVIDER_FILE_PATH);
   const redisProviderModule = runtime.executeModule(PLAYGROUND_REDIS_PROVIDER_FILE_PATH);
   const tuplModule = runtime.executeModule(
-    `${workspace.rootPath}/node_modules/@tupl/core/planner/index.ts`,
+    `${workspace.rootPath}/node_modules/@tupl/core/index.ts`,
   ) as unknown as TuplRuntimeModule;
   const playgroundRuntimeModule = externalModules["@playground/runtime"] as
     | PlaygroundRuntimeModule
@@ -296,7 +291,7 @@ function createProviderRuntime<TContext>(
       PLAYGROUND_DB_PROVIDER_FILE_PATH,
       dbProviderModule,
       "dbProvider",
-    ),
+    ) as FragmentProviderAdapter<TContext>,
     redisProvider: readProviderExportOrThrow<TContext>(
       PLAYGROUND_REDIS_PROVIDER_FILE_PATH,
       redisProviderModule,
