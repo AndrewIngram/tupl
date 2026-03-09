@@ -1,6 +1,4 @@
-import {
-  createDataEntityHandle,
-} from "@tupl/core";
+import { createDataEntityHandle } from "@tupl/core";
 import {
   createSchemaBuilder,
   type SchemaBuilder,

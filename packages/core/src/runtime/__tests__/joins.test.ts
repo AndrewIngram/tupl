@@ -102,9 +102,7 @@ describe("query/joins", () => {
           ]);
         } else {
           const teamsCall = calls.find((call) => call.table === "teams");
-          expect(teamsCall?.request.select).toEqual(
-            expect.arrayContaining(["id", "name", "tier"]),
-          );
+          expect(teamsCall?.request.select).toEqual(expect.arrayContaining(["id", "name", "tier"]));
           expect(teamsCall?.request.where).toEqual(
             expect.arrayContaining([{ op: "eq", column: "tier", value: "enterprise" }]),
           );

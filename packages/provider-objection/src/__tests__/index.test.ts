@@ -6,11 +6,7 @@ import {
   type RelNode,
   type TableScanRequest,
 } from "@tupl/core";
-import {
-  createObjectionProvider,
-  type KnexLike,
-  type KnexLikeQueryBuilder,
-} from "../index";
+import { createObjectionProvider, type KnexLike, type KnexLikeQueryBuilder } from "../index";
 
 interface ObjectionCalls {
   where: unknown[][];

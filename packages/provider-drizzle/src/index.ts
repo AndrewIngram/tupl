@@ -361,7 +361,9 @@ export function createDrizzleProvider<
         case "rel": {
           const strategy = resolveDrizzleRelCompileStrategy(fragment.rel, tableConfigs);
           if (!strategy) {
-            return AdapterResult.err(new Error("Unsupported relational fragment for drizzle provider."));
+            return AdapterResult.err(
+              new Error("Unsupported relational fragment for drizzle provider."),
+            );
           }
           const db = await resolveDrizzleDb(options, context);
           if (!isStrategyAvailableOnDrizzleDb(strategy, db)) {
@@ -877,8 +879,7 @@ function resolveDrizzleRelCompileStrategy(
     basicStrategy: "basic",
     setOpStrategy: "set_op",
     withStrategy: "with",
-    canCompileBasic: (current) =>
-      canCompileBasicRel(current, (table) => !!tableConfigs[table]),
+    canCompileBasic: (current) => canCompileBasicRel(current, (table) => !!tableConfigs[table]),
     validateBasic: (current) =>
       isSupportedRelationalPlan(() => {
         buildSingleQueryPlan(current, tableConfigs);
@@ -886,12 +887,13 @@ function resolveDrizzleRelCompileStrategy(
     canCompileSetOp: (current) =>
       canCompileSetOpRel(
         current,
-        (branch) =>
-          canCompileBasicRel(branch, (table) => !!tableConfigs[table]) ? "basic" : null,
+        (branch) => (canCompileBasicRel(branch, (table) => !!tableConfigs[table]) ? "basic" : null),
         requireColumnProjectMapping,
       ),
     canCompileWith: (current) =>
-      canCompileWithRel(current, (branch) => resolveDrizzleRelCompileStrategy(branch, tableConfigs)),
+      canCompileWithRel(current, (branch) =>
+        resolveDrizzleRelCompileStrategy(branch, tableConfigs),
+      ),
   });
 }
 

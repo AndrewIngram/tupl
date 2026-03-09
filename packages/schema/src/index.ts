@@ -1,7 +1,4 @@
-export {
-  createExecutableSchema,
-  createExecutableSchemaResult,
-} from "@tupl/core";
+export { createExecutableSchema, createExecutableSchemaResult } from "@tupl/core";
 export type {
   ExecutableSchema,
   ExecutableSchemaQueryInput,

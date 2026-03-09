@@ -1,10 +1,11 @@
-import type {
-  DataEntityColumnMetadata,
-  DataEntityReadMetadataMap,
-} from "../model/data-entity";
+import type { DataEntityColumnMetadata, DataEntityReadMetadataMap } from "../model/data-entity";
 import type { RelExpr } from "../model/rel";
 import { getDataEntityAdapter } from "../provider";
-import { registerNormalizedSchema, type NormalizedColumnBinding, type NormalizedTableBinding } from "./normalize";
+import {
+  registerNormalizedSchema,
+  type NormalizedColumnBinding,
+  type NormalizedTableBinding,
+} from "./normalize";
 import { finalizeSchemaDefinition } from "./validate";
 import type {
   ColumnDefinition,

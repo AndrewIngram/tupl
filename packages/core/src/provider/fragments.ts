@@ -227,7 +227,11 @@ function maybeRejectFallbackResult<TContext>(
     Number.isFinite(effectivePolicy.maxJoinExpansionRisk) &&
     resolution.report.estimatedCost > effectivePolicy.maxJoinExpansionRisk;
 
-  if (!effectivePolicy.allowFallback || effectivePolicy.rejectOnMissingAtom || exceedsEstimatedCost) {
+  if (
+    !effectivePolicy.allowFallback ||
+    effectivePolicy.rejectOnMissingAtom ||
+    exceedsEstimatedCost
+  ) {
     const diagnostics =
       resolution.diagnostics.length > 0
         ? resolution.diagnostics
@@ -408,26 +412,26 @@ export async function maybeExecuteProviderFragmentResult<TContext>(
     rel: input.rel,
     provider: resolution.provider,
     fragment: resolution.fragment,
-    ...(input.constraintValidation
-      ? { constraintValidation: input.constraintValidation }
-      : {}),
+    ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
   });
 }
 
-export async function executeProviderFragmentResult<TContext>(
-  input: {
-    schema: SchemaDefinition;
-    context: TContext;
-    rel: RelNode;
-    provider: ProviderAdapter<TContext>;
-    fragment: ProviderFragment;
-    constraintValidation?: ConstraintValidationOptions;
-  },
-): Promise<BetterResult<QueryRow[], TuplPlanningError | TuplExecutionError | TuplDiagnosticError>> {
-  const compiledResult = await tryExecutionStepAsync("compile provider fragment", () =>
-    Promise.resolve(input.provider.compile(input.fragment, input.context)).then(
-      unwrapProviderOperationResult,
-    ) as Promise<ProviderCompiledPlan>,
+export async function executeProviderFragmentResult<TContext>(input: {
+  schema: SchemaDefinition;
+  context: TContext;
+  rel: RelNode;
+  provider: ProviderAdapter<TContext>;
+  fragment: ProviderFragment;
+  constraintValidation?: ConstraintValidationOptions;
+}): Promise<
+  BetterResult<QueryRow[], TuplPlanningError | TuplExecutionError | TuplDiagnosticError>
+> {
+  const compiledResult = await tryExecutionStepAsync(
+    "compile provider fragment",
+    () =>
+      Promise.resolve(input.provider.compile(input.fragment, input.context)).then(
+        unwrapProviderOperationResult,
+      ) as Promise<ProviderCompiledPlan>,
   );
   if (Result.isError(compiledResult)) {
     return compiledResult;
@@ -468,10 +472,8 @@ export async function executeProviderFragmentResult<TContext>(
         physicalBinding,
         tableDefinition,
         {
-          enforceNotNull:
-            !input.constraintValidation || input.constraintValidation.mode === "off",
-          enforceEnum:
-            !input.constraintValidation || input.constraintValidation.mode === "off",
+          enforceNotNull: !input.constraintValidation || input.constraintValidation.mode === "off",
+          enforceEnum: !input.constraintValidation || input.constraintValidation.mode === "off",
         },
       );
     });
@@ -587,7 +589,9 @@ function buildAggregateProviderFragment(
       ...(normalizedScan.where?.length ? { where: normalizedScan.where } : {}),
       ...(node.groupBy.length
         ? {
-            groupBy: node.groupBy.map((column) => mapColumnRefForAlias(column, aliasToSource).column),
+            groupBy: node.groupBy.map(
+              (column) => mapColumnRefForAlias(column, aliasToSource).column,
+            ),
           }
         : {}),
       metrics: node.metrics.map((metric) => ({
@@ -604,9 +608,7 @@ function buildAggregateProviderFragment(
   };
 }
 
-function extractAggregateProviderInput(
-  node: RelNode,
-): {
+function extractAggregateProviderInput(node: RelNode): {
   scan: RelScanNode;
   where: ScanFilterClause[];
 } | null {
@@ -854,7 +856,9 @@ function normalizeScanForProvider(node: RelScanNode, schema: SchemaDefinition): 
         ? createPhysicalBindingFromEntity(node.entity)
         : null;
 
-  const table = schema.tables[node.table] ?? (node.entity ? createTableDefinitionFromEntity(node.entity) : null);
+  const table =
+    schema.tables[node.table] ??
+    (node.entity ? createTableDefinitionFromEntity(node.entity) : null);
   if (!physicalBinding || !table) {
     return node;
   }
@@ -938,7 +942,10 @@ function collectAliasToSourceMappings(node: RelNode, schema: SchemaDefinition): 
         if (binding?.kind === "physical") {
           aliasToSource.set(current.alias ?? current.table, binding.columnToSource);
         } else if (current.entity) {
-          aliasToSource.set(current.alias ?? current.table, createPhysicalBindingFromEntity(current.entity).columnToSource);
+          aliasToSource.set(
+            current.alias ?? current.table,
+            createPhysicalBindingFromEntity(current.entity).columnToSource,
+          );
         }
         return;
       }

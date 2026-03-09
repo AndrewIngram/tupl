@@ -306,7 +306,9 @@ export function createObjectionProvider<
       switch (fragment.kind) {
         case "scan":
           if (!entityConfigs[fragment.table]) {
-            return AdapterResult.err(new Error(`Unknown Objection entity config: ${fragment.table}`));
+            return AdapterResult.err(
+              new Error(`Unknown Objection entity config: ${fragment.table}`),
+            );
           }
           return AdapterResult.ok({
             provider: providerName,
@@ -316,7 +318,9 @@ export function createObjectionProvider<
         case "rel": {
           const strategy = resolveObjectionRelCompileStrategy(fragment.rel, entityConfigs);
           if (!strategy) {
-            return AdapterResult.err(new Error("Unsupported relational fragment for Objection provider."));
+            return AdapterResult.err(
+              new Error("Unsupported relational fragment for Objection provider."),
+            );
           }
           return AdapterResult.ok({
             provider: providerName,
@@ -354,7 +358,9 @@ export function createObjectionProvider<
           });
         }
         default:
-          return AdapterResult.err(new Error(`Unsupported Objection compiled plan kind: ${plan.kind}`));
+          return AdapterResult.err(
+            new Error(`Unsupported Objection compiled plan kind: ${plan.kind}`),
+          );
       }
     },
     async lookupMany(request, context) {

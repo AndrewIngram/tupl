@@ -17,7 +17,7 @@ import {
 } from "@tupl/core/schema";
 
 type Equal<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Expect<T extends true> = T;
 
 const builder = createSchemaBuilder<Record<string, never>>();
@@ -33,10 +33,7 @@ type _createExecutableSchemaResultStaysExplicit = Expect<
 declare const executableSchema: ExecutableSchema<Record<string, never>, SchemaDefinition>;
 
 type _queryResultStaysExplicit = Expect<
-  Equal<
-    ReturnType<typeof executableSchema.queryResult>,
-    Promise<TuplResult<QueryRow[]>>
-  >
+  Equal<ReturnType<typeof executableSchema.queryResult>, Promise<TuplResult<QueryRow[]>>>
 >;
 
 type _createSessionResultStaysExplicit = Expect<

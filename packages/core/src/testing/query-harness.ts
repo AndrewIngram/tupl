@@ -12,11 +12,7 @@ import {
   type TableName,
   type TableScanRequest,
 } from "@tupl/core/schema";
-import {
-  type ProviderAdapter,
-  type ProviderFragment,
-  type ProvidersMap,
-} from "@tupl/core";
+import { type ProviderAdapter, type ProviderFragment, type ProvidersMap } from "@tupl/core";
 import { createExecutableSchemaFromProviders } from "./executable-schema";
 
 export type RowsByTable<TSchema extends SchemaDefinition> = {

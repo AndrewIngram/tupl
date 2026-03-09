@@ -1,11 +1,7 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import {
-  createDataEntityHandle,
-  type ProviderAdapter,
-  type ProviderFragment,
-} from "@tupl/core";
+import { createDataEntityHandle, type ProviderAdapter, type ProviderFragment } from "@tupl/core";
 import {
   getNormalizedTableBinding,
   validateProviderBindingsResult,

@@ -209,8 +209,10 @@ export interface FilterClauseBase<TColumn extends string = string> {
   op: ScanFilterOperator;
 }
 
-export interface ScalarFilterClause<TColumn extends string = string, TValue = unknown>
-  extends FilterClauseBase<TColumn> {
+export interface ScalarFilterClause<
+  TColumn extends string = string,
+  TValue = unknown,
+> extends FilterClauseBase<TColumn> {
   op:
     | "eq"
     | "neq"
@@ -225,13 +227,17 @@ export interface ScalarFilterClause<TColumn extends string = string, TValue = un
   value: TValue;
 }
 
-export interface SetFilterClause<TColumn extends string = string, TValue = unknown>
-  extends FilterClauseBase<TColumn> {
+export interface SetFilterClause<
+  TColumn extends string = string,
+  TValue = unknown,
+> extends FilterClauseBase<TColumn> {
   op: "in" | "not_in";
   values: TValue[];
 }
 
-export interface NullFilterClause<TColumn extends string = string> extends FilterClauseBase<TColumn> {
+export interface NullFilterClause<
+  TColumn extends string = string,
+> extends FilterClauseBase<TColumn> {
   op: "is_null" | "is_not_null";
 }
 

@@ -115,14 +115,20 @@ export function createMethodsProvider<TContext>(
         return Result.ok([]);
       }
 
-      return Result.ok(await executePlannedLookup(method, {
-        table: request.table,
-        ...(request.alias ? { alias: request.alias } : {}),
-        key: request.key,
-        values: request.keys,
-        select: request.select,
-        ...(request.where ? { where: request.where } : {}),
-      }, context));
+      return Result.ok(
+        await executePlannedLookup(
+          method,
+          {
+            table: request.table,
+            ...(request.alias ? { alias: request.alias } : {}),
+            key: request.key,
+            values: request.keys,
+            select: request.select,
+            ...(request.where ? { where: request.where } : {}),
+          },
+          context,
+        ),
+      );
     },
   };
 
@@ -327,8 +333,12 @@ function splitScanRequest(
       select: request.select,
       ...(remoteWhere && remoteWhere.length > 0 ? { where: remoteWhere } : {}),
       ...(remoteOrderBy && remoteOrderBy.length > 0 ? { orderBy: remoteOrderBy } : {}),
-      ...(decision.limitOffset !== "residual" && request.limit != null ? { limit: request.limit } : {}),
-      ...(decision.limitOffset !== "residual" && request.offset != null ? { offset: request.offset } : {}),
+      ...(decision.limitOffset !== "residual" && request.limit != null
+        ? { limit: request.limit }
+        : {}),
+      ...(decision.limitOffset !== "residual" && request.offset != null
+        ? { offset: request.offset }
+        : {}),
     },
     ...((residualWhere && residualWhere.length > 0) ||
     (residualOrderBy && residualOrderBy.length > 0) ||
@@ -378,7 +388,9 @@ function splitLookupRequest(
       id: `where_${index}`,
       clause,
     })) ?? [];
-  const remoteWhere = plannedWhere.filter((term) => whereIds.has(term.id)).map((term) => term.clause);
+  const remoteWhere = plannedWhere
+    .filter((term) => whereIds.has(term.id))
+    .map((term) => term.clause);
   const residualWhere = plannedWhere
     .filter((term) => !whereIds.has(term.id))
     .map((term) => term.clause);
@@ -543,7 +555,9 @@ function splitAggregateRequest(
               ? { groupBy: request.groupBy }
               : {}),
             ...(residualMetrics.length ? { metrics: residualMetrics } : {}),
-            ...(decision.limit === "residual" && request.limit != null ? { limit: request.limit } : {}),
+            ...(decision.limit === "residual" && request.limit != null
+              ? { limit: request.limit }
+              : {}),
           },
         }
       : {}),
