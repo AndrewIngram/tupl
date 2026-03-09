@@ -84,7 +84,14 @@ jobs:
             ${{ runner.os }}-vitest-fast-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Run fast tests
-        run: pnpm test:fast
+        run: pnpm exec vitest run --config vitest.fast.config.ts --coverage --reporter=default --reporter=blob --outputFile.blob=.vitest-reports/test-fast.json
+
+      - name: Upload fast Vitest blob report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-blob-fast
+          path: .vitest-reports/test-fast.json
+          if-no-files-found: error
 
   test-playground-slow:
     name: Test (Playground Slow)
@@ -115,4 +122,62 @@ jobs:
             ${{ runner.os }}-vitest-playground-slow-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Run slow playground tests
-        run: pnpm test:playground:slow
+        run: pnpm exec vitest run --config vitest.playground-slow.config.ts --coverage --reporter=default --reporter=blob --outputFile.blob=.vitest-reports/test-playground-slow.json
+
+      - name: Upload slow Vitest blob report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-blob-playground-slow
+          path: .vitest-reports/test-playground-slow.json
+          if-no-files-found: error
+
+  coverage-report:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs:
+      - test-fast
+      - test-playground-slow
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download fast Vitest blob report
+        uses: actions/download-artifact@v4
+        with:
+          name: vitest-blob-fast
+          path: .vitest-reports
+
+      - name: Download slow Vitest blob report
+        uses: actions/download-artifact@v4
+        with:
+          name: vitest-blob-playground-slow
+          path: .vitest-reports
+
+      - name: Merge reports and generate coverage output
+        run: pnpm exec vitest --merge-reports=.vitest-reports --reporter=default --coverage
+
+      - name: Append coverage summary
+        run: |
+          echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "HTML report artifact: \`coverage-report\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "LCOV file: \`coverage/lcov.info\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+          if-no-files-found: error

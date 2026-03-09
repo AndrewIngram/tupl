@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@tupl-internal/foundation": "workspace:*",
+    "@tupl-internal/planner": "workspace:*",
     "@tupl-internal/provider": "workspace:*",
     "@tupl-internal/schema": "workspace:*",
-    "@tupl-internal/planner": "workspace:*",
     "better-result": "^2.7.0"
   }
 }

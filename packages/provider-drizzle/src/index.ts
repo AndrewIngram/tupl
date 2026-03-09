@@ -264,14 +264,14 @@ export function createDrizzleProvider<
   options: CreateDrizzleProviderOptions<TContext, TTables>,
 ): FragmentProviderAdapter<TContext> &
   LookupProviderAdapter<TContext> & {
-  entities: {
-    [K in keyof TTables]: DataEntityHandle<
-      InferDrizzleTableColumns<TTables[K]>,
-      InferDrizzleEntityRow<TTables[K]>,
-      InferDrizzleEntityColumnMetadata<TTables[K]>
-    >;
-  };
-} {
+    entities: {
+      [K in keyof TTables]: DataEntityHandle<
+        InferDrizzleTableColumns<TTables[K]>,
+        InferDrizzleEntityRow<TTables[K]>,
+        InferDrizzleEntityColumnMetadata<TTables[K]>
+      >;
+    };
+  } {
   const declaredAtoms: readonly ProviderCapabilityAtom[] = [
     "scan.project",
     "scan.filter.basic",
@@ -361,7 +361,9 @@ export function createDrizzleProvider<
         case "rel": {
           const strategy = resolveDrizzleRelCompileStrategy(fragment.rel, tableConfigs);
           if (!strategy) {
-            return AdapterResult.err(new Error("Unsupported relational fragment for drizzle provider."));
+            return AdapterResult.err(
+              new Error("Unsupported relational fragment for drizzle provider."),
+            );
           }
           const db = await resolveDrizzleDb(options, context);
           if (!isStrategyAvailableOnDrizzleDb(strategy, db)) {
@@ -403,14 +405,14 @@ export function createDrizzleProvider<
     },
   } satisfies FragmentProviderAdapter<TContext> &
     LookupProviderAdapter<TContext> & {
-    entities: {
-      [K in keyof TTables]: DataEntityHandle<
-        InferDrizzleTableColumns<TTables[K]>,
-        InferDrizzleEntityRow<TTables[K]>,
-        InferDrizzleEntityColumnMetadata<TTables[K]>
-      >;
+      entities: {
+        [K in keyof TTables]: DataEntityHandle<
+          InferDrizzleTableColumns<TTables[K]>,
+          InferDrizzleEntityRow<TTables[K]>,
+          InferDrizzleEntityColumnMetadata<TTables[K]>
+        >;
+      };
     };
-  };
   for (const tableName of Object.keys(options.tables) as Array<Extract<keyof TTables, string>>) {
     const tableConfig = options.tables[tableName];
     if (!tableConfig) {
@@ -878,8 +880,7 @@ function resolveDrizzleRelCompileStrategy(
     basicStrategy: "basic",
     setOpStrategy: "set_op",
     withStrategy: "with",
-    canCompileBasic: (current) =>
-      canCompileBasicRel(current, (table) => !!tableConfigs[table]),
+    canCompileBasic: (current) => canCompileBasicRel(current, (table) => !!tableConfigs[table]),
     validateBasic: (current) =>
       isSupportedRelationalPlan(() => {
         buildSingleQueryPlan(current, tableConfigs);
@@ -887,12 +888,13 @@ function resolveDrizzleRelCompileStrategy(
     canCompileSetOp: (current) =>
       canCompileSetOpRel(
         current,
-        (branch) =>
-          canCompileBasicRel(branch, (table) => !!tableConfigs[table]) ? "basic" : null,
+        (branch) => (canCompileBasicRel(branch, (table) => !!tableConfigs[table]) ? "basic" : null),
         requireColumnProjectMapping,
       ),
     canCompileWith: (current) =>
-      canCompileWithRel(current, (branch) => resolveDrizzleRelCompileStrategy(branch, tableConfigs)),
+      canCompileWithRel(current, (branch) =>
+        resolveDrizzleRelCompileStrategy(branch, tableConfigs),
+      ),
   });
 }
 

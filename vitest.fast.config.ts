@@ -2,7 +2,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-import { SLOW_PLAYGROUND_TEST_FILES } from "./vitest.config";
+import { sharedCoverageConfig, SLOW_PLAYGROUND_TEST_FILES } from "./vitest.config";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 const workspaceAliases = [
@@ -107,8 +107,6 @@ export default defineConfig({
       ...SLOW_PLAYGROUND_TEST_FILES,
       "test/compliance/standards-gaps.todo.test.ts",
     ],
-    coverage: {
-      reporter: ["text", "html"],
-    },
+    coverage: sharedCoverageConfig,
   },
 });

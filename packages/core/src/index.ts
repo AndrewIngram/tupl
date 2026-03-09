@@ -34,7 +34,10 @@ export {
   type ValidateTableConstraintsInput,
   validateTableConstraintRows,
 } from "@tupl-internal/runtime";
-export { type ConstraintValidationMode, executeRelWithProvidersResult } from "@tupl-internal/runtime";
+export {
+  type ConstraintValidationMode,
+  executeRelWithProvidersResult,
+} from "@tupl-internal/runtime";
 export * from "./provider";
 export * from "./model/rel";
 export * from "./provider/shapes";

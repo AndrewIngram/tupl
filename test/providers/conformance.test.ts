@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  type FragmentProviderAdapter,
-  type ProviderFragment,
-} from "@tupl/core/provider";
+import { type FragmentProviderAdapter, type ProviderFragment } from "@tupl/core/provider";
 import type { RelNode } from "@tupl/core/model/rel";
 import type { QueryRow } from "@tupl/core/schema";
-import { createDrizzleProvider, type DrizzleQueryExecutor } from "../../packages/provider-drizzle/src";
+import {
+  createDrizzleProvider,
+  type DrizzleQueryExecutor,
+} from "../../packages/provider-drizzle/src";
 import { createKyselyProvider } from "../../packages/provider-kysely/src";
 import {
   createObjectionProvider,
