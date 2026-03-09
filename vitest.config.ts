@@ -94,6 +94,12 @@ export const SLOW_PLAYGROUND_TEST_FILES = [
   "examples/playground/test/workspace-typecheck.test.ts",
 ];
 
+export const sharedCoverageConfig = {
+  provider: "v8" as const,
+  reporter: ["text", "html", "lcov", "json-summary"] as const,
+  reportsDirectory: "coverage",
+};
+
 export default defineConfig({
   resolve: {
     alias: workspaceAliases,
@@ -105,11 +111,7 @@ export default defineConfig({
       "test/providers/*.test.ts",
       "examples/playground/test/**/*.test.ts",
     ],
-    exclude: [
-      "packages/core/src/runtime/__tests__/compliance/standards-gaps.todo.test.ts",
-    ],
-    coverage: {
-      reporter: ["text", "html"],
-    },
+    exclude: ["packages/core/src/runtime/__tests__/compliance/standards-gaps.todo.test.ts"],
+    coverage: sharedCoverageConfig,
   },
 });

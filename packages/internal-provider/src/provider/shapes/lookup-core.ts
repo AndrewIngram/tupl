@@ -54,10 +54,7 @@ export function validateLookupRequest<TColumns extends string>(
   return Result.ok(undefined);
 }
 
-export function filterLookupRows(
-  rows: QueryRow[],
-  clauses?: ScanFilterClause[],
-): QueryRow[] {
+export function filterLookupRows(rows: QueryRow[], clauses?: ScanFilterClause[]): QueryRow[] {
   return (clauses ?? []).reduce(
     (current, clause) => current.filter((row) => matchesLookupClause(row, clause)),
     rows,

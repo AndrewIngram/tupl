@@ -1,7 +1,4 @@
-import {
-  type ConstraintValidationOptions,
-  validateTableConstraintRows,
-} from "./constraints";
+import { type ConstraintValidationOptions, validateTableConstraintRows } from "./constraints";
 import { Result, type Result as BetterResult } from "better-result";
 import {
   TuplDiagnosticError,
@@ -326,20 +323,14 @@ function tryQueryStep<T>(operation: string, fn: () => T): BetterResult<T, TuplEr
   }) as BetterResult<T, TuplError>;
 }
 
-async function tryQueryStepAsync<T>(
-  operation: string,
-  fn: () => Promise<T>,
-) {
+async function tryQueryStepAsync<T>(operation: string, fn: () => Promise<T>) {
   return Result.tryPromise({
     try: fn,
     catch: (error) => toTuplRuntimeError(error, operation),
   });
 }
 
-function enforceExecutionRowLimitResult(
-  rows: QueryRow[],
-  guardrails: QueryGuardrails,
-) {
+function enforceExecutionRowLimitResult(rows: QueryRow[], guardrails: QueryGuardrails) {
   if (rows.length > guardrails.maxExecutionRows) {
     return Result.err(
       new TuplGuardrailError({
@@ -671,17 +662,15 @@ async function maybeExecuteWholeQueryFragmentResult<TContext>(
   if (resolution.fragment.kind === "scan" && rel.kind === "scan") {
     const binding = getNormalizedTableBinding(input.schema, rel.table);
     const mappedRows = mapProviderRowsToLogical(
-        rows,
-        rel.select,
-        binding?.kind === "physical" ? binding : null,
-        input.schema.tables[rel.table],
-        {
-          enforceNotNull:
-            !input.constraintValidation || input.constraintValidation.mode === "off",
-          enforceEnum:
-            !input.constraintValidation || input.constraintValidation.mode === "off",
-        },
-      );
+      rows,
+      rel.select,
+      binding?.kind === "physical" ? binding : null,
+      input.schema.tables[rel.table],
+      {
+        enforceNotNull: !input.constraintValidation || input.constraintValidation.mode === "off",
+        enforceEnum: !input.constraintValidation || input.constraintValidation.mode === "off",
+      },
+    );
     validateTableConstraintRows({
       schema: input.schema,
       tableName: rel.table,
@@ -694,10 +683,7 @@ async function maybeExecuteWholeQueryFragmentResult<TContext>(
   return Result.ok(rows);
 }
 
-function enforcePlannerNodeLimitResult(
-  plannerNodeCount: number,
-  guardrails: QueryGuardrails,
-) {
+function enforcePlannerNodeLimitResult(plannerNodeCount: number, guardrails: QueryGuardrails) {
   if (plannerNodeCount > guardrails.maxPlannerNodes) {
     return Result.err(
       new TuplGuardrailError({
@@ -800,7 +786,9 @@ function createProviderFragmentSession<TContext>(
     };
 
     const compiledResult = await tryQueryStepAsync("compile provider fragment", async () =>
-      unwrapProviderOperationResult(await Promise.resolve(provider.compile(fragment, input.context))),
+      unwrapProviderOperationResult(
+        await Promise.resolve(provider.compile(fragment, input.context)),
+      ),
     );
     if (Result.isError(compiledResult)) {
       state = setFailedStepState(state, compiledResult.error, Date.now());
@@ -1138,7 +1126,9 @@ function buildRelExecutionPlan<TContext>(
       case "column":
         return [];
       case "function":
-        return [...new Set(expr.args.flatMap((arg) => visitExprSubqueries(arg, owner, parentScopeId)))];
+        return [
+          ...new Set(expr.args.flatMap((arg) => visitExprSubqueries(arg, owner, parentScopeId))),
+        ];
       case "subquery": {
         const scopeId = nextId("scope_subquery");
         const label =
@@ -1886,7 +1876,8 @@ async function queryInternalResult<TContext>(
     const remoteRows = yield* Result.await(
       withTimeoutResult(
         "execute whole provider fragment",
-        () => maybeExecuteWholeQueryFragmentResult(resolvedInput, expandedRel).then(unwrapQueryResult),
+        () =>
+          maybeExecuteWholeQueryFragmentResult(resolvedInput, expandedRel).then(unwrapQueryResult),
         guardrails.timeoutMs,
       ),
     );

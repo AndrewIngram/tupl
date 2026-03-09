@@ -10,6 +10,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint
@@ -84,7 +87,14 @@ jobs:
             ${{ runner.os }}-vitest-fast-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Run fast tests
-        run: pnpm test:fast
+        run: pnpm exec vitest run --config vitest.fast.config.ts --coverage --reporter=default --reporter=blob --outputFile.blob=.vitest-reports/test-fast.json
+
+      - name: Upload fast Vitest blob report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-blob-fast
+          path: .vitest-reports/test-fast.json
+          if-no-files-found: error
 
   test-playground-slow:
     name: Test (Playground Slow)
@@ -115,4 +125,255 @@ jobs:
             ${{ runner.os }}-vitest-playground-slow-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Run slow playground tests
-        run: pnpm test:playground:slow
+        run: pnpm exec vitest run --config vitest.playground-slow.config.ts --coverage --reporter=default --reporter=blob --outputFile.blob=.vitest-reports/test-playground-slow.json
+
+      - name: Upload slow Vitest blob report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-blob-playground-slow
+          path: .vitest-reports/test-playground-slow.json
+          if-no-files-found: error
+
+  coverage-report:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs:
+      - test-fast
+      - test-playground-slow
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download fast Vitest blob report
+        uses: actions/download-artifact@v4
+        with:
+          name: vitest-blob-fast
+          path: .vitest-reports
+
+      - name: Download slow Vitest blob report
+        uses: actions/download-artifact@v4
+        with:
+          name: vitest-blob-playground-slow
+          path: .vitest-reports
+
+      - name: Merge reports and generate coverage output
+        run: pnpm exec vitest --merge-reports=.vitest-reports --reporter=default --coverage
+
+      - name: Append coverage summary
+        run: |
+          echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "HTML report artifact: \`coverage-report\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "LCOV file: \`coverage/lcov.info\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage HTML report
+        id: upload_coverage_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+          if-no-files-found: error
+
+      - name: Find latest main coverage baseline
+        id: baseline
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const workflowId = 'ci.yml';
+            const artifactName = 'coverage-report';
+            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflowId,
+              branch: 'main',
+              event: 'push',
+              status: 'success',
+              per_page: 100,
+            });
+
+            let baselineRunId = null;
+            for (const run of runs) {
+              const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: run.id,
+                per_page: 100,
+              });
+              const coverageArtifact = artifacts.find(
+                (artifact) => artifact.name === artifactName && !artifact.expired,
+              );
+              if (coverageArtifact) {
+                baselineRunId = run.id;
+                break;
+              }
+            }
+
+            core.setOutput('found', baselineRunId ? 'true' : 'false');
+            if (baselineRunId) {
+              core.setOutput('run-id', String(baselineRunId));
+            }
+
+      - name: Download main coverage baseline
+        if: steps.baseline.outputs.found == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: baseline-coverage
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.baseline.outputs.run-id }}
+
+      - name: Build coverage comment
+        if: github.event_name == 'pull_request'
+        env:
+          COVERAGE_ARTIFACT_URL: ${{ steps.upload_coverage_artifact.outputs.artifact-url }}
+          BASELINE_FOUND: ${{ steps.baseline.outputs.found }}
+        run: |
+          node <<'EOF'
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const marker = "<!-- coverage-report -->";
+          const currentSummaryPath = path.join("coverage", "coverage-summary.json");
+
+          function readSummary(summaryPath) {
+            const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+            return summary.total;
+          }
+
+          function findBaselineSummaryPath() {
+            const stack = ["baseline-coverage"];
+            while (stack.length > 0) {
+              const currentPath = stack.pop();
+              if (!currentPath || !fs.existsSync(currentPath)) {
+                continue;
+              }
+              const stat = fs.statSync(currentPath);
+              if (stat.isDirectory()) {
+                for (const entry of fs.readdirSync(currentPath)) {
+                  stack.push(path.join(currentPath, entry));
+                }
+                continue;
+              }
+              if (path.basename(currentPath) === "coverage-summary.json") {
+                return currentPath;
+              }
+            }
+            return null;
+          }
+
+          function formatMetric(metric) {
+            return `${metric.pct.toFixed(2)}% (${metric.covered}/${metric.total})`;
+          }
+
+          function formatDelta(currentMetric, baselineMetric) {
+            const delta = currentMetric.pct - baselineMetric.pct;
+            return `${delta >= 0 ? "+" : ""}${delta.toFixed(2)} pp`;
+          }
+
+          const current = readSummary(currentSummaryPath);
+          const baselineSummaryPath =
+            process.env.BASELINE_FOUND === "true" ? findBaselineSummaryPath() : null;
+          const baseline = baselineSummaryPath ? readSummary(baselineSummaryPath) : null;
+          const metrics = ["lines", "statements", "functions", "branches"];
+          const coverageUrl =
+            process.env.COVERAGE_ARTIFACT_URL ||
+            `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+
+          const lines = [
+            marker,
+            "## Coverage Report",
+            "",
+            `Artifact: [coverage-report](${coverageUrl})`,
+            "",
+          ];
+
+          if (baseline) {
+            lines.push("| Metric | PR | main | Delta |");
+            lines.push("| --- | --- | --- | --- |");
+            for (const metric of metrics) {
+              lines.push(
+                `| ${metric} | ${formatMetric(current[metric])} | ${formatMetric(
+                  baseline[metric],
+                )} | ${formatDelta(current[metric], baseline[metric])} |`,
+              );
+            }
+          } else {
+            lines.push("| Metric | PR |");
+            lines.push("| --- | --- |");
+            for (const metric of metrics) {
+              lines.push(`| ${metric} | ${formatMetric(current[metric])} |`);
+            }
+            lines.push("");
+            lines.push(
+              "Baseline coverage from the latest successful `main` run was not available, so no delta is shown.",
+            );
+          }
+
+          lines.push("");
+          lines.push("_Same-repo pull requests only. Fork and Dependabot pull requests do not receive this comment because their workflow token is read-only._");
+          lines.push("");
+
+          fs.writeFileSync(path.join("coverage", "pr-comment.md"), `${lines.join("\n")}\n`);
+          EOF
+
+      - name: Append PR coverage delta to job summary
+        if: github.event_name == 'pull_request'
+        run: cat coverage/pr-comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upsert PR coverage comment
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- coverage-report -->';
+            const body = fs.readFileSync('coverage/pr-comment.md', 'utf8');
+            const issueNumber = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+            const existingComment = comments.find(
+              (comment) =>
+                comment.user?.login === 'github-actions[bot]' &&
+                typeof comment.body === 'string' &&
+                comment.body.includes(marker),
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body,
+              });
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body,
+            });

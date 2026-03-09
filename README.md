@@ -200,12 +200,12 @@ Execution behavior notes:
 
 ## Adapter support matrix
 
-| Adapter               | scan/filter/sort/limit | lookupMany | single-query rel pushdown (core join/aggregate) | advanced rel pushdown (with/set-op/window) | local fallback when unsupported | explicit shape rejection |
-| --------------------- | ---------------------- | ---------- | ----------------------------------------------- | ------------------------------------------ | ------------------------------- | ------------------------ |
-| `@tupl/provider-drizzle`      | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
-| `@tupl/provider-kysely`       | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
-| `@tupl/provider-objection`    | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
-| Custom non-relational | Custom                 | Custom     | Custom                                          | Custom                                     | Yes                             | Yes                      |
+| Adapter                    | scan/filter/sort/limit | lookupMany | single-query rel pushdown (core join/aggregate) | advanced rel pushdown (with/set-op/window) | local fallback when unsupported | explicit shape rejection |
+| -------------------------- | ---------------------- | ---------- | ----------------------------------------------- | ------------------------------------------ | ------------------------------- | ------------------------ |
+| `@tupl/provider-drizzle`   | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
+| `@tupl/provider-kysely`    | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
+| `@tupl/provider-objection` | Yes                    | Yes        | Yes                                             | Partial                                    | Yes                             | Yes                      |
+| Custom non-relational      | Custom                 | Custom     | Custom                                          | Custom                                     | Yes                             | Yes                      |
 
 ## Guides
 

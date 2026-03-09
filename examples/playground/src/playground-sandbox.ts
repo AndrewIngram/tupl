@@ -3,10 +3,12 @@ import * as drizzlePgCoreModule from "drizzle-orm/pg-core";
 import * as drizzlePgliteModule from "drizzle-orm/pglite";
 import * as pgliteModule from "@electric-sql/pglite";
 import * as betterResultModule from "better-result";
-import {
-  type ExecutableSchema,
-} from "@tupl/core";
-import type { FragmentProviderAdapter, ProviderAdapter, ProviderFragment } from "@tupl/core/provider";
+import { type ExecutableSchema } from "@tupl/core";
+import type {
+  FragmentProviderAdapter,
+  ProviderAdapter,
+  ProviderFragment,
+} from "@tupl/core/provider";
 import type { RelNode } from "@tupl/core/model/rel";
 import type { PhysicalPlan } from "@tupl/core/planner";
 import { type QueryExecutionPlan, type QuerySession, type QueryStepEvent } from "@tupl/core";

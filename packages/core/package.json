@@ -4,6 +4,11 @@
   "description": "Core runtime and schema APIs for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/core#readme",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AndrewIngram/tupl.git",
+    "directory": "packages/core"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.cjs",
@@ -53,11 +58,6 @@
   },
   "publishConfig": {
     "access": "public"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/AndrewIngram/tupl.git",
-    "directory": "packages/core"
   },
   "scripts": {
     "build": "tsdown src/index.ts src/schema/index.ts src/provider/index.ts src/provider/shapes/index.ts src/provider-shapes/index.ts src/planner/index.ts src/model/rel.ts src/runtime/executor.ts --format esm,cjs --sourcemap --clean --dts",

@@ -11,6 +11,15 @@ For any non-trivial code change, always run:
 
 Do this before finalizing the work unless the user explicitly asks not to.
 
+## Code coverage
+
+When code coverage is needed:
+
+- run `pnpm test:coverage` locally
+- expect terminal coverage output plus `coverage/index.html` and `coverage/lcov.info`
+- in GitHub Actions, coverage is produced by the `Coverage Report` job in `.github/workflows/ci.yml`
+- the CI job merges coverage from the existing fast and slow Vitest jobs and uploads the `coverage-report` artifact
+
 ## Reporting
 
 If any verification step fails:
