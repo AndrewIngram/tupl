@@ -11,6 +11,10 @@ const workspaceAliases = [
     replacement: resolve(rootDir, "../../packages/core/src/provider/shapes/index.ts"),
   },
   {
+    find: /^@tupl\/core\/provider-shapes$/,
+    replacement: resolve(rootDir, "../../packages/core/src/provider-shapes/index.ts"),
+  },
+  {
     find: /^@tupl\/core\/provider$/,
     replacement: resolve(rootDir, "../../packages/core/src/provider/index.ts"),
   },

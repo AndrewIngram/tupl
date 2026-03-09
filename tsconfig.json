@@ -16,6 +16,7 @@
       "@tupl/core/schema": ["./packages/core/src/schema/index.ts"],
       "@tupl/core/provider": ["./packages/core/src/provider/index.ts"],
       "@tupl/core/provider/shapes": ["./packages/core/src/provider/shapes/index.ts"],
+      "@tupl/core/provider-shapes": ["./packages/core/src/provider-shapes/index.ts"],
       "@tupl/core/planner": ["./packages/core/src/planner/index.ts"],
       "@tupl/core/model/rel": ["./packages/core/src/model/rel.ts"],
       "@tupl/core/runtime/executor": ["./packages/core/src/runtime/executor.ts"],
