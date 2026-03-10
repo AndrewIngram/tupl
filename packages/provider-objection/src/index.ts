@@ -332,11 +332,12 @@ export function createObjectionProvider<
             } satisfies ObjectionRelCompiledPlan,
           });
         }
-        default:
+        default: {
           const fragmentKind = formatUnknownValue((fragment as { kind?: unknown }).kind);
           return AdapterResult.err(
             new Error(`Unsupported Objection fragment kind: ${fragmentKind}`),
           );
+        }
       }
     },
     async execute(plan, context) {

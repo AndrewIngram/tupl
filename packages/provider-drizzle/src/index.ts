@@ -383,9 +383,10 @@ export function createDrizzleProvider<
             } satisfies DrizzleRelCompiledPlan,
           });
         }
-        default:
+        default: {
           const fragmentKind = formatUnknownValue((fragment as { kind?: unknown }).kind);
           return AdapterResult.err(new Error(`Unsupported drizzle fragment kind: ${fragmentKind}`));
+        }
       }
     },
     async execute(plan, context) {
