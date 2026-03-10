@@ -12,7 +12,7 @@ import {
   resolveTableProviderResult,
   type QueryRow,
   type SchemaDefinition,
-} from "@tupl/core/schema";
+} from "@tupl/schema";
 import { createExecutableSchemaFromProviders } from "../../testing/executable-schema";
 import { buildEntitySchema, buildSchema } from "../../testing/schema-builder";
 

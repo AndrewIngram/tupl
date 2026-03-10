@@ -38,9 +38,13 @@ import {
   type ProviderFragment,
   type ProviderLookupManyRequest,
   type ProviderRuntimeBinding,
-} from "@tupl/core/provider";
-import { stringifyUnknownValue } from "@tupl/core";
-import { isRelProjectColumnMapping, type RelExpr, type RelNode } from "@tupl/core/model/rel";
+} from "@tupl/provider-kit";
+import {
+  isRelProjectColumnMapping,
+  stringifyUnknownValue,
+  type RelExpr,
+  type RelNode,
+} from "@tupl/foundation";
 import {
   UnsupportedRelationalPlanError,
   canCompileBasicRel,
@@ -57,14 +61,14 @@ import {
   type RelationalScanBindingBase,
   type RelationalSemiJoinStep,
   type RelationalSingleQueryPlan,
-} from "@tupl/core/provider/shapes";
+} from "@tupl/provider-kit/shapes";
 import type {
   QueryRow,
   ScanFilterClause,
   ScanOrderBy,
   SqlScalarType,
   TableScanRequest,
-} from "@tupl/core/schema";
+} from "@tupl/schema";
 
 export type DrizzleColumnMap<TColumn extends string = string> = Record<TColumn, AnyColumn>;
 

@@ -1,1 +1,1 @@
-export * from "@tupl-internal/provider/shapes";
+export * from "../../../../provider-kit/src/shapes/index.ts";

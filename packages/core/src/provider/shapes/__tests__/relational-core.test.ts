@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isRelProjectColumnMapping, type RelNode } from "@tupl/core/model/rel";
+import { isRelProjectColumnMapping, type RelNode } from "@tupl/foundation";
 import {
   buildSingleQueryPlan,
   canCompileBasicRel,
@@ -10,7 +10,7 @@ import {
   isSupportedRelationalPlan,
   resolveRelationalStrategy,
   type RelationalScanBindingBase,
-} from "@tupl/core/provider/shapes";
+} from "@tupl/provider-kit/shapes";
 
 interface Binding extends RelationalScanBindingBase {
   table: string;

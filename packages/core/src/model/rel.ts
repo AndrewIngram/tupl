@@ -11,4 +11,4 @@ export {
   type RelProjectNode,
   type RelScanNode,
   type RelWindowFunction,
-} from "@tupl-internal/foundation";
+} from "../../../foundation/src/index.ts";

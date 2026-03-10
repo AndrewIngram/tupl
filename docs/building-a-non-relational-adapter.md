@@ -19,7 +19,7 @@ import type {
   ProviderCompiledPlan,
   ProviderLookupManyRequest,
   ProviderCapabilityAtom,
-} from "@tupl/core";
+} from "@tupl/provider-kit";
 import type { QueryRow, TableScanRequest } from "@tupl/schema";
 
 type KvContext = {

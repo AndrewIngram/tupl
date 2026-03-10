@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { QueryRow, SchemaDefinition } from "@tupl/core/schema";
+import type { QueryRow, SchemaDefinition } from "@tupl/schema";
 import { withQueryHarness, type RowsByTable } from "./query-harness";
 
 export interface ComplianceCase {

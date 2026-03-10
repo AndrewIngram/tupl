@@ -1,1 +1,1 @@
-export * from "@tupl-internal/provider";
+export * from "../../../provider-kit/src/index.ts";

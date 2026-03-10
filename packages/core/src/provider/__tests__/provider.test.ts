@@ -8,7 +8,7 @@ import {
   type QueryRow,
   type ScanFilterClause,
   type TableScanRequest,
-} from "@tupl/core/schema";
+} from "@tupl/schema";
 import { createExecutableSchemaFromProviders } from "../../testing/executable-schema";
 import { buildSchema, buildEntitySchema } from "../../testing/schema-builder";
 

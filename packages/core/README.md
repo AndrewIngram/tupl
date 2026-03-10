@@ -1,16 +1,9 @@
 # `@tupl/core`
 
-Core runtime APIs for tupl.
+Temporary workspace-only package retained during the package reorganization.
 
-Use this package when you need the full tupl surface, including query execution, planning, provider contracts, and lower-level runtime types.
+Do not use this package for new code. Application code should use `@tupl/schema`, and adapter code should use `@tupl/provider-kit` plus the lower-level semantic packages it actually needs.
 
 ## Install
 
-```bash
-pnpm add @tupl/core
-```
-
-## Docs
-
-- Repository: <https://github.com/AndrewIngram/tupl>
-- Schema-focused API: [`@tupl/schema`](https://github.com/AndrewIngram/tupl/tree/main/packages/schema)
+This package is not published as part of the canonical public surface.

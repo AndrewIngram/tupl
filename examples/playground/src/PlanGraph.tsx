@@ -12,7 +12,7 @@ import {
   type NodeProps,
   type NodeTypes,
 } from "@xyflow/react";
-import type { QueryExecutionPlanScope, QueryExecutionPlanStep, QueryStepState } from "@tupl/core";
+import type { QueryExecutionPlanScope, QueryExecutionPlanStep, QueryStepState } from "@tupl/schema";
 
 import { cn } from "@/lib/utils";
 import {

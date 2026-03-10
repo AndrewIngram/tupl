@@ -10,7 +10,7 @@ import {
   resolveSchemaLinkedEnums,
   resolveTableColumnDefinition,
   toSqlDDL,
-} from "@tupl/core/schema";
+} from "@tupl/schema";
 import { buildSchema, buildEntitySchema } from "../../testing/schema-builder";
 
 describe("createSchemaBuilder", () => {

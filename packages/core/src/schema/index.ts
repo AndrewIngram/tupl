@@ -1,1 +1,1 @@
-export * from "@tupl-internal/schema";
+export * from "../../../schema-model/src/index.ts";

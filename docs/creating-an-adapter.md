@@ -19,7 +19,7 @@ import type {
   ProviderCapabilityReport,
   ProviderCompiledPlan,
   ProviderFragment,
-} from "@tupl/core";
+} from "@tupl/provider-kit";
 import type { QueryRow, TableScanRequest } from "@tupl/schema";
 
 type DbContext = {
@@ -182,7 +182,7 @@ Once an adapter exposes typed `entities`, the current schema API is:
 Example:
 
 ```ts
-import { createDataEntityHandle } from "@tupl/core";
+import { createDataEntityHandle } from "@tupl/provider-kit";
 import { createExecutableSchema, createSchemaBuilder } from "@tupl/schema";
 
 const ordersEntity = createDataEntityHandle<"id" | "total_cents" | "created_at">({

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { queryWithMethods } from "../../testing/methods-provider";
 
 import type { ConstraintViolation } from "@tupl/core";
-import { defineTableMethods } from "@tupl/core/schema";
+import { defineTableMethods } from "@tupl/schema";
 import { buildEntitySchema } from "../../testing/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;

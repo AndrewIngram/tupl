@@ -5,7 +5,7 @@ export {
   TuplDiagnosticError,
   createExecutableSchema,
   createExecutableSchemaResult,
-} from "@tupl-internal/runtime";
+} from "../../runtime/src/index.ts";
 export type {
   ExecutableSchema,
   ExecutableSchemaQueryInput,
@@ -26,22 +26,22 @@ export type {
   QueryStepState,
   QueryStepStatus,
   QuerySqlOrigin,
-} from "@tupl-internal/runtime";
+} from "../../runtime/src/index.ts";
 export {
   type ConstraintValidationOptions,
   type ConstraintViolation,
   type ConstraintViolationType,
   type ValidateTableConstraintsInput,
   validateTableConstraintRows,
-} from "@tupl-internal/runtime";
+} from "../../runtime/src/index.ts";
 export {
   type ConstraintValidationMode,
   executeRelWithProvidersResult,
-} from "@tupl-internal/runtime";
+} from "../../runtime/src/index.ts";
 export * from "./provider";
 export * from "./model/rel";
 export * from "./provider/shapes";
-export { stringifyUnknownValue } from "@tupl-internal/foundation";
+export { stringifyUnknownValue } from "../../foundation/src/index.ts";
 export {
   defaultSqlAstParser,
   lowerSqlToRel,

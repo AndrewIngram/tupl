@@ -15,9 +15,8 @@ import {
   type ProviderCapabilityReport,
   type ProviderFragment,
   type ProviderRuntimeBinding,
-} from "@tupl/core/provider";
-import { stringifyUnknownValue } from "@tupl/core";
-import { isRelProjectColumnMapping, type RelNode } from "@tupl/core/model/rel";
+} from "@tupl/provider-kit";
+import { isRelProjectColumnMapping, stringifyUnknownValue, type RelNode } from "@tupl/foundation";
 import {
   UnsupportedRelationalPlanError,
   buildSingleQueryPlan as buildRelationalSingleQueryPlan,
@@ -34,8 +33,8 @@ import {
   type RelationalScanBindingBase,
   type RelationalSemiJoinStep,
   type RelationalSingleQueryPlan,
-} from "@tupl/core/provider/shapes";
-import type { QueryRow, ScanFilterClause, TableScanRequest } from "@tupl/core/schema";
+} from "@tupl/provider-kit/shapes";
+import type { QueryRow, ScanFilterClause, TableScanRequest } from "@tupl/schema";
 
 export type KnexLikeQueryBuilder = {
   clone?: (...args: any[]) => KnexLikeQueryBuilder;

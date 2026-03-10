@@ -6,7 +6,7 @@ import {
   defineTableMethods,
   type TableMethodsForSchema,
   type TableScanRequest,
-} from "@tupl/core/schema";
+} from "@tupl/schema";
 import { buildEntitySchema } from "../../testing/schema-builder";
 
 const EMPTY_CONTEXT = {} as const;

@@ -1,6 +1,6 @@
-import type { ProviderFragment } from "@tupl/core/provider";
-import type { RelNode } from "@tupl/core/model/rel";
-import { defaultSqlAstParser, lowerSqlToRel, type PhysicalPlan } from "@tupl/core/planner";
+import type { ProviderFragment } from "@tupl/provider-kit";
+import type { RelNode } from "@tupl/foundation";
+import { defaultSqlAstParser, lowerSqlToRel, type PhysicalPlan } from "@tupl/planner";
 import {
   resolveSchemaLinkedEnums,
   resolveTableColumnDefinition,
@@ -8,7 +8,7 @@ import {
   type QuerySession,
   type QueryStepEvent,
   type QueryStepState,
-} from "@tupl/core";
+} from "@tupl/schema";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema";
 
 import { DOWNSTREAM_ROWS_SCHEMA } from "./downstream-model";

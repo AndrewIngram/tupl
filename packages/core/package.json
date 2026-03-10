@@ -1,7 +1,8 @@
 {
   "name": "@tupl/core",
   "version": "0.7.0",
-  "description": "Core runtime and schema APIs for tupl",
+  "private": true,
+  "description": "Temporary workspace-only compatibility package pending removal",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/core#readme",
   "license": "MIT",
   "repository": {
@@ -56,20 +57,17 @@
       "require": "./dist/runtime/executor.cjs"
     }
   },
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "build": "tsdown src/index.ts src/schema/index.ts src/provider/index.ts src/provider/shapes/index.ts src/provider-shapes/index.ts src/planner/index.ts src/model/rel.ts src/runtime/executor.ts --format esm,cjs --sourcemap --clean --dts",
     "prepublishOnly": "pnpm run build",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@tupl-internal/foundation": "workspace:*",
-    "@tupl-internal/planner": "workspace:*",
-    "@tupl-internal/provider": "workspace:*",
-    "@tupl-internal/runtime": "workspace:*",
-    "@tupl-internal/schema": "workspace:*",
+    "@tupl/foundation": "workspace:*",
+    "@tupl/planner": "workspace:*",
+    "@tupl/provider-kit": "workspace:*",
+    "@tupl/runtime": "workspace:*",
+    "@tupl/schema-model": "workspace:*",
     "better-result": "^2.7.0"
   }
 }

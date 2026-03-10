@@ -3,16 +3,21 @@ import * as drizzlePgCoreModule from "drizzle-orm/pg-core";
 import * as drizzlePgliteModule from "drizzle-orm/pglite";
 import * as pgliteModule from "@electric-sql/pglite";
 import * as betterResultModule from "better-result";
-import { type ExecutableSchema } from "@tupl/core";
 import type {
   FragmentProviderAdapter,
   ProviderAdapter,
   ProviderFragment,
-} from "@tupl/core/provider";
-import type { RelNode } from "@tupl/core/model/rel";
-import type { PhysicalPlan } from "@tupl/core/planner";
-import { type QueryExecutionPlan, type QuerySession, type QueryStepEvent } from "@tupl/core";
-import type { QueryRow, SchemaDefinition } from "@tupl/schema";
+} from "@tupl/provider-kit";
+import type { RelNode } from "@tupl/foundation";
+import { lowerSqlToRel, planPhysicalQuery, type PhysicalPlan } from "@tupl/planner";
+import type {
+  ExecutableSchema,
+  QueryExecutionPlan,
+  QuerySession,
+  QueryStepEvent,
+  QueryRow,
+  SchemaDefinition,
+} from "@tupl/schema";
 
 import { createVirtualModuleRuntime } from "./playground-module-runtime";
 import {
@@ -107,8 +112,8 @@ interface ProviderModuleExports<TContext> {
 }
 
 interface TuplRuntimeModule {
-  lowerSqlToRel: typeof import("@tupl/core").lowerSqlToRel;
-  planPhysicalQuery: typeof import("@tupl/core").planPhysicalQuery;
+  lowerSqlToRel: typeof lowerSqlToRel;
+  planPhysicalQuery: typeof planPhysicalQuery;
 }
 
 interface PlaygroundRuntimeModule {
@@ -266,7 +271,7 @@ function createProviderRuntime<TContext>(
   const dbProviderModule = runtime.executeModule(PLAYGROUND_DB_PROVIDER_FILE_PATH);
   const redisProviderModule = runtime.executeModule(PLAYGROUND_REDIS_PROVIDER_FILE_PATH);
   const tuplModule = runtime.executeModule(
-    `${workspace.rootPath}/node_modules/@tupl/core/index.ts`,
+    `${workspace.rootPath}/node_modules/@tupl/planner/index.ts`,
   ) as unknown as TuplRuntimeModule;
   const playgroundRuntimeModule = externalModules["@playground/runtime"] as
     | PlaygroundRuntimeModule

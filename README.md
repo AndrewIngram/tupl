@@ -212,3 +212,4 @@ Execution behavior notes:
 - [Building a schema (executable schema, Drizzle example)](./docs/building-a-schema.md)
 - [Creating a new adapter (progressive path)](./docs/creating-an-adapter.md)
 - [Building a non-relational adapter (Redis-style)](./docs/building-a-non-relational-adapter.md)
+- [Package architecture and allowed dependency directions](./docs/package-architecture.md)

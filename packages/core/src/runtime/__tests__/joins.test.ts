@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { stringifyUnknownValue } from "@tupl-internal/foundation";
+import { stringifyUnknownValue } from "@tupl/foundation";
 import { createMethodsProvider } from "../../testing/methods-provider";
 import { createArrayTableMethods, scanArrayRows } from "../../schema/array-methods";
 
-import {
-  defineTableMethods,
-  type TableLookupRequest,
-  type TableScanRequest,
-} from "@tupl/core/schema";
+import { defineTableMethods, type TableLookupRequest, type TableScanRequest } from "@tupl/schema";
 import { commerceRows, commerceSchema } from "../../testing/commerce-fixture";
 import { withQueryHarness } from "../../testing/query-harness";
 import { buildEntitySchema } from "../../testing/schema-builder";

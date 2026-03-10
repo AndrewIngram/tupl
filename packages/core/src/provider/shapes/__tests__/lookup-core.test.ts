@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { Result } from "better-result";
 
-import type { ProviderFragment } from "@tupl/core/provider";
+import type { ProviderFragment } from "@tupl/provider-kit";
 import {
   buildLookupOnlyUnsupportedReport,
   filterLookupRows,
   projectLookupRow,
   validateLookupRequest,
-} from "@tupl/core/provider/shapes";
+} from "@tupl/provider-kit/shapes";
 
 describe("lookup provider core", () => {
   it("builds a standard unsupported report for non-lookup fragments", () => {

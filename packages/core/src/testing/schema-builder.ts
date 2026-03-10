@@ -5,7 +5,7 @@ import {
   type SchemaDefinition,
   type TableColumnDefinition,
   type TableConstraints,
-} from "@tupl/core/schema";
+} from "@tupl/schema";
 
 export function buildSchema<TContext = Record<string, never>>(
   register: (builder: SchemaBuilder<TContext>) => void,

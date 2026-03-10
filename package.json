@@ -13,9 +13,9 @@
     "url": "git+https://github.com/AndrewIngram/tupl.git"
   },
   "scripts": {
-    "build": "pnpm --filter @tupl-internal/foundation build && pnpm --filter @tupl-internal/provider build && pnpm --filter @tupl-internal/schema build && pnpm --filter @tupl-internal/planner build && pnpm --filter @tupl-internal/runtime build && pnpm --filter @tupl/core build && pnpm --filter @tupl/schema build && pnpm -r --filter @tupl/provider-drizzle --filter @tupl/provider-ioredis --filter @tupl/provider-kysely --filter @tupl/provider-objection build",
+    "build": "pnpm --filter @tupl/foundation build && pnpm --filter @tupl/provider-kit build && pnpm --filter @tupl/schema-model build && pnpm --filter @tupl/planner build && pnpm --filter @tupl/runtime build && pnpm --filter @tupl/schema build && pnpm -r --filter @tupl/provider-drizzle --filter @tupl/provider-ioredis --filter @tupl/provider-kysely --filter @tupl/provider-objection build",
     "build:public": "pnpm run build",
-    "clean": "rm -rf packages/core/dist packages/schema/dist packages/provider-*/dist examples/basic/dist",
+    "clean": "rm -rf packages/core/dist packages/foundation/dist packages/provider-kit/dist packages/schema-model/dist packages/planner/dist packages/runtime/dist packages/schema/dist packages/provider-*/dist examples/basic/dist",
     "typecheck": "tsgo --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -37,8 +37,8 @@
     "example:playground:build": "pnpm --dir examples/playground build",
     "example:playground:start": "pnpm --dir examples/playground start",
     "example:playground:dev": "pnpm --dir examples/playground dev",
-    "publish:public": "pnpm --filter @tupl/core publish --access public && pnpm --filter @tupl/schema publish --access public && pnpm -r --filter @tupl/provider-drizzle --filter @tupl/provider-ioredis --filter @tupl/provider-kysely --filter @tupl/provider-objection publish --access public",
-    "publish:public:dry-run": "pnpm --filter @tupl/core publish --access public --dry-run && pnpm --filter @tupl/schema publish --access public --dry-run && pnpm -r --filter @tupl/provider-drizzle --filter @tupl/provider-ioredis --filter @tupl/provider-kysely --filter @tupl/provider-objection publish --access public --dry-run"
+    "publish:public": "pnpm --filter @tupl/foundation publish --access public && pnpm --filter @tupl/provider-kit publish --access public && pnpm --filter @tupl/schema-model publish --access public && pnpm --filter @tupl/planner publish --access public && pnpm --filter @tupl/runtime publish --access public && pnpm --filter @tupl/schema publish --access public && pnpm -r --filter @tupl/provider-drizzle --filter @tupl/provider-ioredis --filter @tupl/provider-kysely --filter @tupl/provider-objection publish --access public",
+    "publish:public:dry-run": "pnpm --filter @tupl/foundation publish --access public --dry-run && pnpm --filter @tupl/provider-kit publish --access public --dry-run && pnpm --filter @tupl/schema-model publish --access public --dry-run && pnpm --filter @tupl/planner publish --access public --dry-run && pnpm --filter @tupl/runtime publish --access public --dry-run && pnpm --filter @tupl/schema publish --access public --dry-run && pnpm -r --filter @tupl/provider-drizzle --filter @tupl/provider-ioredis --filter @tupl/provider-kysely --filter @tupl/provider-objection publish --access public --dry-run"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

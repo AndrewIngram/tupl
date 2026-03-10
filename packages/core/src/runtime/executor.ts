@@ -1,1 +1,1 @@
-export * from "@tupl-internal/runtime/executor";
+export * from "../../../runtime/src/executor.ts";

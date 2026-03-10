@@ -1,4 +1,4 @@
-import { stringifyUnknownValue } from "@tupl-internal/foundation";
+import { stringifyUnknownValue } from "../../../foundation/src/index.ts";
 
 import type {
   AggregateFunction,

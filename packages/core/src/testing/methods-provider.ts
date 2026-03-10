@@ -27,7 +27,7 @@ import {
   type TableLookupRequest,
   type TableMethodsMap,
   type TableScanRequest,
-} from "@tupl/core/schema";
+} from "@tupl/schema";
 
 function toEntityColumns(schema: SchemaDefinition, tableName: string) {
   const table = schema.tables[tableName];

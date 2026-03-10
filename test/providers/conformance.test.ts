@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { stringifyUnknownValue } from "@tupl/core";
-import { type FragmentProviderAdapter, type ProviderFragment } from "@tupl/core/provider";
-import type { RelNode } from "@tupl/core/model/rel";
-import type { QueryRow } from "@tupl/core/schema";
+import { stringifyUnknownValue, type RelNode } from "@tupl/foundation";
+import { type FragmentProviderAdapter, type ProviderFragment } from "@tupl/provider-kit";
+import type { QueryRow } from "@tupl/schema";
 import {
   createDrizzleProvider,
   type DrizzleQueryExecutor,

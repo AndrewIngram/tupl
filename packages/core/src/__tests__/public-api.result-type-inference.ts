@@ -1,20 +1,19 @@
 import type { Result as BetterResult } from "better-result";
 
 import {
-  AdapterResult,
   createExecutableSchemaResult,
   type ExecutableSchema,
-  type ProviderOperationResult,
   type QuerySession,
-  type TuplProviderBindingError,
   type TuplResult,
-} from "@tupl/core";
+  type TuplProviderBindingError,
+} from "@tupl/schema";
+import { AdapterResult, type ProviderOperationResult } from "@tupl/provider-kit";
 import {
   createSchemaBuilder,
   resolveTableProviderResult,
   type QueryRow,
   type SchemaDefinition,
-} from "@tupl/core/schema";
+} from "@tupl/schema";
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;

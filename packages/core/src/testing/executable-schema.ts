@@ -1,5 +1,5 @@
-import { type DataEntityColumnMap } from "@tupl-internal/foundation";
-import { createExecutableSchema } from "@tupl-internal/runtime";
+import { type DataEntityColumnMap } from "../../../foundation/src/index.ts";
+import { createExecutableSchema } from "../../../runtime/src/index.ts";
 import {
   createSchemaBuilder,
   getNormalizedTableBinding,

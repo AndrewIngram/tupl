@@ -48,6 +48,19 @@ If a verification step cannot be run, state that explicitly and explain why.
 - the ADR/task that tracks its removal
 - Default stance across the app: delete old-state compatibility code rather than carrying it forward.
 
+## Package boundaries
+
+- Keep the canonical package layering acyclic:
+  - `@tupl/foundation`
+  - `@tupl/provider-kit`
+  - `@tupl/schema-model`
+  - `@tupl/planner`
+  - `@tupl/runtime`
+  - `@tupl/schema`
+- Within those six packages, only import downward along that layering.
+- Application-facing docs and examples should use `@tupl/schema` plus first-party provider packages unless a lower-level package is explicitly required for adapter-authoring or internal tooling.
+- Do not introduce new `@tupl/core` or `@tupl-internal/*` references.
+
 ## Skills
 
 ### Available skills

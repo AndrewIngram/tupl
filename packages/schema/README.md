@@ -13,4 +13,4 @@ pnpm add @tupl/schema
 ## Docs
 
 - Repository: <https://github.com/AndrewIngram/tupl>
-- Full runtime API: [`@tupl/core`](https://github.com/AndrewIngram/tupl/tree/main/packages/core)
+- Lower-level execution APIs: [`@tupl/runtime`](https://github.com/AndrewIngram/tupl/tree/main/packages/runtime)

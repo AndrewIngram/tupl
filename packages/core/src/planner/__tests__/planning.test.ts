@@ -8,7 +8,7 @@ import {
   lowerSqlToRelResult,
   planPhysicalQuery,
   planPhysicalQueryResult,
-} from "@tupl/core/planner";
+} from "@tupl/planner";
 import { buildSchema, buildEntitySchema } from "../../testing/schema-builder";
 import { finalizeProviders } from "../../testing/executable-schema";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stringifyUnknownValue } from "@tupl-internal/foundation";
+import { stringifyUnknownValue } from "@tupl/foundation";
 
 import { commerceRows, commerceSchema } from "../../testing/commerce-fixture";
 import { withQueryHarness } from "../../testing/query-harness";

@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 
 import { Result } from "better-result";
-import { stringifyUnknownValue } from "@tupl-internal/foundation";
+import { stringifyUnknownValue } from "../../../foundation/src/index.ts";
 import {
   getNormalizedTableBinding,
   registerNormalizedSchema,
@@ -12,7 +12,7 @@ import {
   type SchemaDefinition,
   type TableName,
   type TableScanRequest,
-} from "@tupl/core/schema";
+} from "@tupl/schema";
 import { type ProviderAdapter, type ProviderFragment, type ProvidersMap } from "@tupl/core";
 import { createExecutableSchemaFromProviders } from "./executable-schema";
 
