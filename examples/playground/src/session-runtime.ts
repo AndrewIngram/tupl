@@ -6,9 +6,8 @@ import type {
   QueryStepEvent,
   QueryStepState,
 } from "@tupl/runtime";
-import { resolveTableColumnDefinition } from "@tupl/schema";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema";
-import { resolveSchemaLinkedEnums } from "@tupl/schema-model";
+import { resolveSchemaLinkedEnums, resolveTableColumnDefinition } from "@tupl/schema-model";
 
 import { DOWNSTREAM_ROWS_SCHEMA } from "./downstream-model";
 import { requestSandboxWorker } from "./playground-sandbox-client";

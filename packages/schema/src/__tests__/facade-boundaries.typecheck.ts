@@ -10,6 +10,9 @@ import {
 // @ts-expect-error schema facade should not expose normalization helpers
 import { getNormalizedTableBinding as _schemaFacadeBinding } from "@tupl/schema";
 
+// @ts-expect-error schema facade should not expose low-level schema resolution helpers
+import { resolveTableColumnDefinition as _schemaFacadeResolveTableColumnDefinition } from "@tupl/schema";
+
 // @ts-expect-error schema facade should not expose planning split types
 import type { PlannedScanRequest as _schemaFacadePlannedScanRequest } from "@tupl/schema";
 

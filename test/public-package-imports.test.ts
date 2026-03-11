@@ -42,6 +42,7 @@ describe("public package imports", () => {
     expect(typeof schema.createSchemaBuilder).toBe("function");
     expect(typeof schema.createExecutableSchema).toBe("function");
     expect("resolveTableProviderResult" in schema).toBe(false);
+    expect("resolveTableColumnDefinition" in schema).toBe(false);
     expect("getNormalizedTableBinding" in schema).toBe(false);
     expect("isNormalizedSourceColumnBinding" in schema).toBe(false);
     expect("mapProviderRowsToLogical" in schema).toBe(false);

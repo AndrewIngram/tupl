@@ -6,7 +6,6 @@ export {
   asIso8601Timestamp,
   createSchemaBuilder,
   defineTableMethods,
-  resolveTableColumnDefinition,
   toSqlDDL,
 } from "@tupl/schema-model";
 export type {
