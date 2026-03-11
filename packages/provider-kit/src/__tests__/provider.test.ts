@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createDataEntityHandle,
+  type FragmentProviderAdapter,
+  type LookupProviderAdapter,
   type QueryRow,
   type ProviderAdapter,
   type ProviderFragment,
@@ -12,6 +14,9 @@ import {
 import { getNormalizedTableBinding, validateProviderBindingsResult } from "@tupl/schema-model";
 import { createExecutableSchemaFromProviders } from "@tupl/test-support/runtime";
 import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
+
+type TestProvider = Omit<FragmentProviderAdapter, "name"> &
+  Partial<Pick<LookupProviderAdapter, "lookupMany">>;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -196,7 +201,7 @@ describe("query/provider runtime", () => {
           executeCalls += 1;
           return Result.ok([{ id: "o2" }]);
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -246,7 +251,7 @@ describe("query/provider runtime", () => {
         async execute() {
           return Result.ok([{ id: "o1" }]);
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -314,7 +319,7 @@ describe("query/provider runtime", () => {
         async execute() {
           return Result.ok([{ id: "o1" }]);
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -394,7 +399,7 @@ describe("query/provider runtime", () => {
             },
           ]);
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -462,7 +467,7 @@ describe("query/provider runtime", () => {
           }
           return Result.ok(scanRows(ordersRows, fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
       users_provider: {
         canExecute(fragment: ProviderFragment) {
           return fragment.kind === "scan";
@@ -496,7 +501,7 @@ describe("query/provider runtime", () => {
               }),
           );
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -565,7 +570,7 @@ describe("query/provider runtime", () => {
           }
           return Result.ok(scanRows(ordersRows, fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
       users_provider: {
         canExecute() {
           return true;
@@ -588,7 +593,7 @@ describe("query/provider runtime", () => {
           const keys = new Set(request.keys);
           return Result.ok(usersRows.filter((row) => keys.has(row.id)));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     await expect(
@@ -651,7 +656,7 @@ describe("query/provider runtime", () => {
           }
           return Result.ok(scanRows(ordersRows, fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
       users_provider: {
         canExecute(fragment: ProviderFragment) {
           return fragment.kind === "scan";
@@ -684,7 +689,7 @@ describe("query/provider runtime", () => {
               }),
           );
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -766,7 +771,7 @@ describe("query/provider runtime", () => {
             ),
           );
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -845,7 +850,7 @@ describe("query/provider runtime", () => {
             ),
           );
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -911,7 +916,7 @@ describe("query/provider runtime", () => {
             },
           ]);
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -974,7 +979,7 @@ describe("query/provider runtime", () => {
             },
           ]);
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -1053,7 +1058,7 @@ describe("query/provider runtime", () => {
 
         return Result.ok([]);
       },
-    } satisfies Omit<ProviderAdapter, "name">;
+    } satisfies TestProvider;
 
     const ordersEntity = createDataEntityHandle({
       entity: "orders_raw",
@@ -1243,7 +1248,7 @@ describe("query/provider runtime", () => {
 
           return Result.ok(scanRows(rowsByTable[fragment.table] ?? [], fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -1405,7 +1410,7 @@ describe("query/provider runtime", () => {
 
           return Result.ok(scanRows(rowsByTable[fragment.table] ?? [], fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -1502,7 +1507,7 @@ describe("query/provider runtime", () => {
             ),
           );
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
       kv: {
         canExecute(fragment: ProviderFragment) {
           return fragment.kind === "scan";
@@ -1522,7 +1527,7 @@ describe("query/provider runtime", () => {
 
           return Result.ok(scanRows([{ product_id: "p1", view_count: 12 }], fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -1650,7 +1655,7 @@ describe("query/provider runtime", () => {
             ),
           );
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
       kv: {
         canExecute(fragment: ProviderFragment) {
           return fragment.kind === "scan";
@@ -1672,7 +1677,7 @@ describe("query/provider runtime", () => {
             request.keys.includes("p1") ? [{ product_id: "p1", view_count: 12 }] : [],
           );
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({
@@ -1738,7 +1743,7 @@ describe("query/provider runtime", () => {
           }
           return Result.ok(scanRows([{ id: "o1" }], fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const session = executableSchema.createSession({
@@ -1795,7 +1800,7 @@ describe("query/provider runtime", () => {
             ),
           );
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const explained = executableSchema.explain({
@@ -1854,7 +1859,7 @@ describe("query/provider runtime", () => {
           }
           return Result.ok(scanRows([], fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     await expect(
@@ -1906,7 +1911,7 @@ describe("query/provider runtime", () => {
           await sleep(25);
           return Result.ok(scanRows([{ id: "u1" }], fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     await expect(
@@ -1989,7 +1994,7 @@ describe("query/provider runtime", () => {
             ),
           );
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rows = await executableSchema.query({

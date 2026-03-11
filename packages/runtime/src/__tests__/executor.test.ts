@@ -2,11 +2,18 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import { type RelNode } from "@tupl/foundation";
-import { type ProviderAdapter, type ProviderFragment } from "@tupl/provider-kit";
+import {
+  type FragmentProviderAdapter,
+  type LookupProviderAdapter,
+  type ProviderFragment,
+} from "@tupl/provider-kit";
 import { type QueryRow, type ScanFilterClause, type TableScanRequest } from "@tupl/schema-model";
 import { executeRelWithProvidersResult } from "@tupl/runtime/executor";
 import { finalizeProviders } from "@tupl/test-support/runtime";
 import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
+
+type TestProvider = Omit<FragmentProviderAdapter, "name"> &
+  Partial<Pick<LookupProviderAdapter, "lookupMany">>;
 
 function scanRows(rows: QueryRow[], request: TableScanRequest): QueryRow[] {
   let out = rows.filter((row) => applyFilters(row, request.where ?? []));
@@ -239,7 +246,7 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(ordersRows, fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
       users_provider: {
         canExecute() {
           return true;
@@ -258,7 +265,7 @@ describe("query/local executor", () => {
           const keys = new Set(request.keys);
           return Result.ok(usersRows.filter((row) => keys.has(row.id)));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rel: RelNode = {
@@ -345,7 +352,7 @@ describe("query/local executor", () => {
         async execute() {
           return Result.err(new Error("Downstream provider failed."));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const result = await executeRelWithProvidersResult(
@@ -397,7 +404,7 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows([{ value: "oops" }], fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rel: RelNode = {
@@ -535,7 +542,7 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(rows, fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rel: RelNode = {
@@ -623,7 +630,7 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(tableRows[fragment.table] ?? [], fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rel: RelNode = {
@@ -720,7 +727,7 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(rows, fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rel: RelNode = {
@@ -845,7 +852,7 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(tableRows[fragment.table] ?? [], fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rel: RelNode = {
@@ -939,7 +946,7 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(rows, fragment.request));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const rel: RelNode = {

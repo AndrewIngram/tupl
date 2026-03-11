@@ -425,7 +425,7 @@ export function createMethodsProvider<TContext>(
       entity: tableName,
       provider: providerName,
       adapter,
-      columns: toEntityColumns(schema, tableName),
+      columns: toEntityColumns(schema.tables[tableName]!.columns),
     });
   }
 

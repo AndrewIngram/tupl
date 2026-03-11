@@ -4,10 +4,30 @@ describe("playground sandbox client", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
+    vi.doUnmock("../src/playground-sandbox");
     delete (globalThis as typeof globalThis & { Worker?: typeof Worker }).Worker;
   });
 
   it("falls back to in-process execution when the worker request cannot be posted", async () => {
+    const validateSchemaInSandbox = vi.fn().mockResolvedValue({
+      ok: false,
+      issues: [{ severity: "error", message: "SCHEMA_EXPORT_MISSING" }],
+      diagnostics: [],
+      graph: null,
+      schemaText: "",
+      exports: [],
+    });
+
+    vi.doMock("../src/playground-sandbox", async () => {
+      const actual = await vi.importActual<typeof import("../src/playground-sandbox")>(
+        "../src/playground-sandbox",
+      );
+      return {
+        ...actual,
+        validateSchemaInSandbox,
+      };
+    });
+
     class ThrowingWorker {
       onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
       onerror: ((event: ErrorEvent) => void) | null = null;
@@ -35,6 +55,7 @@ describe("playground sandbox client", () => {
       options: {},
     });
 
+    expect(validateSchemaInSandbox).toHaveBeenCalledWith("", {});
     expect(result.ok).toBe(false);
     expect(result.issues[0]?.message).toContain("SCHEMA_EXPORT_MISSING");
   });

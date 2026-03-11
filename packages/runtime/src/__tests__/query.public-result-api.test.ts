@@ -5,14 +5,18 @@ import { createExecutableSchemaResult } from "@tupl/runtime";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema-model";
 import {
   createDataEntityHandle,
-  type ProviderAdapter,
+  type FragmentProviderAdapter,
+  type LookupProviderAdapter,
   type ProviderFragment,
 } from "@tupl/provider-kit";
 import { createSchemaBuilder, resolveTableProviderResult } from "@tupl/schema-model";
 import { createExecutableSchemaFromProviders } from "@tupl/test-support/runtime";
 import { buildEntitySchema, buildSchema } from "@tupl/test-support/schema";
 
-function createRowsProvider(rows: QueryRow[] = [{ id: "u1" }]): Omit<ProviderAdapter, "name"> {
+type TestProvider = Omit<FragmentProviderAdapter, "name"> &
+  Partial<Pick<LookupProviderAdapter, "lookupMany">>;
+
+function createRowsProvider(rows: QueryRow[] = [{ id: "u1" }]): TestProvider {
   return {
     canExecute(fragment: ProviderFragment) {
       return fragment.kind === "scan";
@@ -116,7 +120,7 @@ describe("public result APIs", () => {
         async execute() {
           return Result.err(new Error("warehouse exploded"));
         },
-      } satisfies Omit<ProviderAdapter, "name">,
+      } satisfies TestProvider,
     });
 
     const result = await executableSchema.queryResult({
@@ -151,7 +155,7 @@ describe("public result APIs", () => {
       async execute() {
         return Result.ok([{ id: "u1" }]);
       },
-    } satisfies ProviderAdapter;
+    } satisfies FragmentProviderAdapter;
 
     const builder = createSchemaBuilder<Record<string, never>>();
     builder.table(
