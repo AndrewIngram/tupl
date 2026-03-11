@@ -115,11 +115,23 @@ const providerRuntimeCache = new Map<
 >();
 let nextSessionId = 1;
 const MAX_PROVIDER_RUNTIME_CACHE_ENTRIES = 8;
+const MAX_SANDBOX_SESSION_ENTRIES = 32;
 
 function makeSessionId(): string {
   const sessionId = `sandbox_session_${nextSessionId}`;
   nextSessionId += 1;
   return sessionId;
+}
+
+function setBoundedSessionStoreEntry(sessionId: string, record: SessionRecord): void {
+  if (!sessionStore.has(sessionId) && sessionStore.size >= MAX_SANDBOX_SESSION_ENTRIES) {
+    const oldestKey = sessionStore.keys().next().value;
+    if (typeof oldestKey === "string") {
+      sessionStore.delete(oldestKey);
+    }
+  }
+
+  sessionStore.set(sessionId, record);
 }
 
 function asErrorMessage(error: unknown): string {
@@ -430,7 +442,7 @@ export async function createSandboxSession(
   const session = sessionResult.value;
 
   const sessionId = makeSessionId();
-  sessionStore.set(sessionId, { session });
+  setBoundedSessionStoreEntry(sessionId, { session });
 
   return {
     ok: true,
@@ -453,6 +465,7 @@ export async function nextSandboxSessionEvent(
   const record = readSessionRecord(sessionId);
   const next = await record.session.next();
   if ("done" in next) {
+    disposeSandboxSession(sessionId);
     return {
       done: true,
       result: next.result,
@@ -470,6 +483,7 @@ export async function runSandboxSessionToCompletion(
   while (true) {
     const next = await record.session.next();
     if ("done" in next) {
+      disposeSandboxSession(sessionId);
       return {
         plan: record.session.getPlan(),
         events,
@@ -498,6 +512,7 @@ export async function replaySandboxSession(
   while (events.length < eventCount) {
     const next = await record.session.next();
     if ("done" in next) {
+      disposeSandboxSession(bundle.sessionId);
       return {
         sessionId: bundle.sessionId,
         plan: record.session.getPlan(),
