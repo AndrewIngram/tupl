@@ -31,7 +31,7 @@ import {
   type ProviderFragment,
   type ProvidersMap,
 } from "@tupl/provider-kit";
-import type { ScanFilterClause, SchemaDefinition, SchemaViewRelNode } from "@tupl/schema-model";
+import type { ScanFilterClause, SchemaDefinition } from "@tupl/schema-model";
 import {
   createPhysicalBindingFromEntity,
   createTableDefinitionFromEntity,
@@ -47,6 +47,7 @@ import {
   type NormalizedColumnBinding,
   type NormalizedPhysicalTableBinding,
 } from "@tupl/schema-model";
+import { compileViewRelForPlanner } from "./view-lowering";
 
 export interface RelLoweringResult {
   rel: RelNode;
@@ -867,27 +868,29 @@ function expandRelViewsInternal<TContext>(
       }
 
       const alias = node.alias ?? node.table;
-      let current = compileViewRelForPlanner(node.table, binding.rel(context as unknown), schema);
+      let current = compileViewRelForPlanner(binding.rel(context as unknown), schema, nextRelId);
       const expandedView = expandRelViewsInternal(current, schema, context);
       current = expandedView.node;
 
       const columnBindings = getNormalizedColumnBindings(binding);
-      const hasCalculatedViewColumns = Object.values(columnBindings).some(
-        (columnBinding) => !isNormalizedSourceColumnBinding(columnBinding),
-      );
-
       let viewAliasMapping: ViewAliasColumnMap;
-      if (hasCalculatedViewColumns) {
+      if (needsPlannerViewProjection(binding)) {
         current = buildPlannerViewProjection(alias, current, binding, expandedView.aliases);
         viewAliasMapping = Object.fromEntries(
           Object.keys(columnBindings).map((column) => [column, { alias, column }]),
         );
       } else {
         viewAliasMapping = {};
-        for (const [logicalColumn, source] of Object.entries(
-          getNormalizedColumnSourceMap(binding),
-        )) {
-          viewAliasMapping[logicalColumn] = resolveViewSourceRef(source, expandedView.aliases);
+        for (const [logicalColumn, source] of Object.entries(columnBindings)) {
+          if (!isNormalizedSourceColumnBinding(source)) {
+            throw new Error(
+              "Planner view projection was skipped for a calculated view column binding.",
+            );
+          }
+          viewAliasMapping[logicalColumn] = resolveViewSourceRef(
+            source.source,
+            expandedView.aliases,
+          );
         }
       }
 
@@ -990,38 +993,12 @@ function expandRelViewsInternal<TContext>(
         ...metric,
         ...(metric.column ? { column: resolveMappedColumnRef(metric.column, input.aliases) } : {}),
       }));
-      const aggregateNode: RelNode = {
-        ...node,
-        input: input.node,
-        groupBy,
-        metrics,
-      };
-
-      const expectedOutputs = node.output.map((column) => column.name);
-      const actualOutputs = [
-        ...groupBy.map((column) => column.column),
-        ...metrics.map((metric) => metric.as),
-      ];
-
-      if (expectedOutputs.every((name, index) => name === actualOutputs[index])) {
-        return {
-          node: aggregateNode,
-          aliases: input.aliases,
-        };
-      }
-
       return {
         node: {
-          id: nextRelId("project"),
-          kind: "project",
-          convention: "local",
-          input: aggregateNode,
-          columns: expectedOutputs.map((output, index) => ({
-            kind: "column" as const,
-            source: { column: actualOutputs[index] ?? output },
-            output,
-          })),
-          output: node.output,
+          ...node,
+          input: input.node,
+          groupBy,
+          metrics,
         },
         aliases: input.aliases,
       };
@@ -1297,6 +1274,15 @@ function buildPlannerViewProjection(
   };
 }
 
+function needsPlannerViewProjection(
+  binding: Parameters<typeof getNormalizedColumnBindings>[0],
+): boolean {
+  const columnBindings = getNormalizedColumnBindings(binding);
+  return Object.values(columnBindings).some(
+    (columnBinding) => !isNormalizedSourceColumnBinding(columnBinding),
+  );
+}
+
 function rewriteViewBindingExprForPlanner(
   expr: RelExpr,
   columnBindings: Record<string, NormalizedColumnBinding>,
@@ -1551,106 +1537,6 @@ function parseRelColumnRef(ref: string): RelColumnRef {
     alias: ref.slice(0, idx),
     column: ref.slice(idx + 1),
   };
-}
-
-function compileViewRelForPlanner(
-  _viewName: string,
-  definition: unknown,
-  schema: SchemaDefinition,
-): RelNode {
-  if (
-    definition &&
-    typeof definition === "object" &&
-    typeof (definition as { kind?: unknown }).kind === "string" &&
-    typeof (definition as { convention?: unknown }).convention === "string"
-  ) {
-    return definition as RelNode;
-  }
-
-  if (
-    !definition ||
-    typeof definition !== "object" ||
-    typeof (definition as { kind?: unknown }).kind !== "string"
-  ) {
-    throw new Error("View returned an unsupported rel definition.");
-  }
-
-  return compileSchemaViewRelForPlanner(definition as SchemaViewRelNode, schema);
-}
-
-function compileSchemaViewRelForPlanner(
-  node: SchemaViewRelNode,
-  schema: SchemaDefinition,
-): RelNode {
-  switch (node.kind) {
-    case "scan": {
-      const table =
-        schema.tables[node.table] ??
-        (node.entity ? createTableDefinitionFromEntity(node.entity) : undefined);
-      if (!table || (node.entity && Object.keys(table.columns).length === 0)) {
-        throw new Error(`Unknown table in view rel scan: ${node.table}`);
-      }
-      const select = Object.keys(table.columns);
-      return {
-        id: nextRelId("view_scan"),
-        kind: "scan",
-        convention: "local",
-        table: node.table,
-        ...(node.entity ? { entity: node.entity } : {}),
-        alias: node.table,
-        select,
-        output: select.map((column) => ({
-          name: `${node.table}.${column}`,
-        })),
-      };
-    }
-    case "join": {
-      const left = compileSchemaViewRelForPlanner(node.left, schema);
-      const right = compileSchemaViewRelForPlanner(node.right, schema);
-      return {
-        id: nextRelId("view_join"),
-        kind: "join",
-        convention: "local",
-        joinType: node.type,
-        left,
-        right,
-        leftKey: parseRelColumnRef(resolveViewRelRef(node.on.left)),
-        rightKey: parseRelColumnRef(resolveViewRelRef(node.on.right)),
-        output: [...left.output, ...right.output],
-      };
-    }
-    case "aggregate": {
-      const input = compileSchemaViewRelForPlanner(node.from, schema);
-      const groupBy = Object.entries(node.groupBy).map(([name, column]) => ({
-        name,
-        ref: parseRelColumnRef(resolveViewRelRef(column)),
-      }));
-      const metrics = Object.entries(node.measures).map(([output, metric]) => ({
-        fn: metric.fn,
-        as: output,
-        ...(metric.column ? { column: parseRelColumnRef(resolveViewRelRef(metric.column)) } : {}),
-      }));
-      return {
-        id: nextRelId("view_aggregate"),
-        kind: "aggregate",
-        convention: "local",
-        input,
-        groupBy: groupBy.map((entry) => entry.ref),
-        metrics,
-        output: [
-          ...groupBy.map((column) => ({ name: column.name })),
-          ...metrics.map((metric) => ({ name: metric.as })),
-        ],
-      };
-    }
-  }
-}
-
-function resolveViewRelRef(ref: { ref?: string }): string {
-  if (!ref.ref) {
-    throw new Error("View rel column reference was not normalized to a string reference.");
-  }
-  return ref.ref;
 }
 
 async function tryPlanRemoteFragmentResult<TContext>(

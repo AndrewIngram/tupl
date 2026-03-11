@@ -455,7 +455,7 @@ describe("query/local executor", () => {
     });
   });
 
-  it("returns tagged execution errors for invalid executable view rels", async () => {
+  it("returns tagged planning errors for invalid view lowering", async () => {
     const schema = buildSchema((builder) => {
       builder.view("broken_view", ({ scan }) => scan("missing_table"), {
         columns: {
@@ -492,9 +492,9 @@ describe("query/local executor", () => {
     }
 
     expect(result.error).toMatchObject({
-      _tag: "TuplExecutionError",
+      _tag: "TuplPlanningError",
       message: "Unknown table in view rel scan: missing_table",
-      operation: "compile executable view rel",
+      operation: "expand relational views",
     });
   });
 

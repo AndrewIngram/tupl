@@ -996,18 +996,29 @@ function buildSelection<TContext>(plan: SingleQueryPlan<TContext>): SelectionEnt
   }
 
   const metricByAs = new Map(plan.pipeline.aggregate.metrics.map((metric) => [metric.as, metric]));
-  const groupByByColumn = new Map(
-    plan.pipeline.aggregate.groupBy.map((groupBy) => [groupBy.column, groupBy] as const),
-  );
+  const groupByByColumn = new Map<string, (typeof plan.pipeline.aggregate.groupBy)[number]>();
+  plan.pipeline.aggregate.groupBy.forEach((groupBy, index) => {
+    groupByByColumn.set(groupBy.column, groupBy);
+    const outputName = plan.pipeline.aggregate!.output[index]?.name ?? groupBy.column;
+    groupByByColumn.set(outputName, groupBy);
+  });
 
   const projection = plan.pipeline.project?.columns ?? [
-    ...plan.pipeline.aggregate.groupBy.map((groupBy) => ({
-      source: { column: groupBy.column },
-      output: groupBy.column,
+    ...plan.pipeline.aggregate.groupBy.map((groupBy, index) => ({
+      source: {
+        column: plan.pipeline.aggregate!.output[index]?.name ?? groupBy.column,
+      },
+      output: plan.pipeline.aggregate!.output[index]?.name ?? groupBy.column,
     })),
-    ...plan.pipeline.aggregate.metrics.map((metric) => ({
-      source: { column: metric.as },
-      output: metric.as,
+    ...plan.pipeline.aggregate.metrics.map((metric, index) => ({
+      source: {
+        column:
+          plan.pipeline.aggregate!.output[plan.pipeline.aggregate!.groupBy.length + index]?.name ??
+          metric.as,
+      },
+      output:
+        plan.pipeline.aggregate!.output[plan.pipeline.aggregate!.groupBy.length + index]?.name ??
+        metric.as,
     })),
   ];
 
@@ -1085,6 +1096,18 @@ function resolveSortRef<TContext>(
     return resolveColumnRef(plan.joinPlan.aliases, {
       ...toRef(term.source.alias ?? term.source.table, term.source.column),
     });
+  }
+
+  if (plan.pipeline.aggregate) {
+    const groupBy = plan.pipeline.aggregate.groupBy.find((entry, index) => {
+      const outputName = plan.pipeline.aggregate!.output[index]?.name ?? entry.column;
+      return outputName === term.source.column || entry.column === term.source.column;
+    });
+    if (groupBy) {
+      return resolveColumnRef(plan.joinPlan.aliases, {
+        ...toRef(groupBy.alias ?? groupBy.table, groupBy.column),
+      });
+    }
   }
 
   return term.source.column;

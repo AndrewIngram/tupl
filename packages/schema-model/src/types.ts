@@ -458,7 +458,7 @@ type SchemaTypedColumnBuilderMethod<
   ): SchemaCalculatedColumnDefinition;
 };
 
-interface SchemaTypedColumnBuilder<
+export interface SchemaTypedColumnBuilder<
   TSourceColumns extends string,
   TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>> =
     DataEntityReadMetadataMap<TSourceColumns, Record<TSourceColumns, unknown>>,

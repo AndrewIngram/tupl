@@ -1,7 +1,8 @@
-import type { Result as BetterResult } from "better-result";
+import { Result, type Result as BetterResult } from "better-result";
 
 import type { ConstraintValidationOptions } from "./constraints";
 import { executeRelLocallyResult, type RelExecutionContext } from "./local-execution";
+import { expandRelViewsResult } from "@tupl/planner";
 import {
   TuplExecutionError,
   TuplGuardrailError,
@@ -42,5 +43,10 @@ export async function executeRelWithProvidersResult<TContext>(
     subqueryResults: new Map<string, unknown>(),
   };
 
-  return executeRelLocallyResult(rel, executionContext);
+  const expandedRelResult = expandRelViewsResult(rel, schema, context);
+  if (Result.isError(expandedRelResult)) {
+    return expandedRelResult;
+  }
+
+  return executeRelLocallyResult(expandedRelResult.value, executionContext);
 }

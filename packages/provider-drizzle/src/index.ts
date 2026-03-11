@@ -1574,9 +1574,10 @@ function resolveSingleQuerySortSource<TContext>(
     return buildAggregateMetricSql(metric, plan.joinPlan.aliases);
   }
 
-  const groupBy = plan.pipeline.aggregate.groupBy.find(
-    (entry) => entry.column === term.source.column,
-  );
+  const groupBy = plan.pipeline.aggregate.groupBy.find((entry, index) => {
+    const outputName = plan.pipeline.aggregate!.output[index]?.name ?? entry.column;
+    return outputName === term.source.column || entry.column === term.source.column;
+  });
   if (groupBy) {
     return resolveColumnRefFromAliasMap(
       plan.joinPlan.aliases,
@@ -1836,20 +1837,27 @@ function buildSingleQuerySelection<TContext>(
   if (plan.pipeline.aggregate) {
     const groupSources = new Map<string, AnyColumn | SQL>();
     const groupSourcesByKey = new Map<string, AnyColumn | SQL>();
-    for (const groupBy of plan.pipeline.aggregate.groupBy) {
+    plan.pipeline.aggregate.groupBy.forEach((groupBy, index) => {
       const source = resolveColumnRefFromAliasMap(
         plan.joinPlan.aliases,
         toAliasColumnRef(groupBy.alias ?? groupBy.table, groupBy.column),
       );
+      const outputName = plan.pipeline.aggregate!.output[index]?.name ?? groupBy.column;
+      groupSources.set(outputName, source);
       groupSources.set(groupBy.column, source);
       const keyAlias = groupBy.alias ?? groupBy.table ?? "";
       groupSourcesByKey.set(`${keyAlias}.${groupBy.column}`, source);
-    }
+    });
 
     const metricSources = new Map<string, SQL>();
-    for (const metric of plan.pipeline.aggregate.metrics) {
-      metricSources.set(metric.as, buildAggregateMetricSql(metric, plan.joinPlan.aliases));
-    }
+    plan.pipeline.aggregate.metrics.forEach((metric, index) => {
+      const outputName =
+        plan.pipeline.aggregate!.output[plan.pipeline.aggregate!.groupBy.length + index]?.name ??
+        metric.as;
+      const source = buildAggregateMetricSql(metric, plan.joinPlan.aliases);
+      metricSources.set(outputName, source);
+      metricSources.set(metric.as, source);
+    });
 
     if (plan.pipeline.project) {
       for (const rawMapping of plan.pipeline.project.columns) {
@@ -1879,12 +1887,22 @@ function buildSingleQuerySelection<TContext>(
       return selection;
     }
 
-    for (const [column, source] of groupSources.entries()) {
-      selection[column] = source;
-    }
-    for (const [metricAlias, metricSource] of metricSources.entries()) {
-      selection[metricAlias] = metricSource.as(metricAlias);
-    }
+    plan.pipeline.aggregate.groupBy.forEach((groupBy, index) => {
+      const outputName = plan.pipeline.aggregate!.output[index]?.name ?? groupBy.column;
+      const source = groupSources.get(outputName);
+      if (source) {
+        selection[outputName] = source;
+      }
+    });
+    plan.pipeline.aggregate.metrics.forEach((metric, index) => {
+      const outputName =
+        plan.pipeline.aggregate!.output[plan.pipeline.aggregate!.groupBy.length + index]?.name ??
+        metric.as;
+      const metricSource = metricSources.get(outputName);
+      if (metricSource) {
+        selection[outputName] = metricSource.as(outputName);
+      }
+    });
     return selection;
   }
 

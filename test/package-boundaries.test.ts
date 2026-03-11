@@ -76,6 +76,19 @@ const DISALLOWED_WRAPPER_TARGETS = [
   "packages/schema-model/src/schema/index.ts",
 ] as const;
 
+const STRUCTURAL_LINE_BUDGETS = {
+  "packages/runtime/src/runtime/local-execution.ts": 300,
+  "packages/runtime/src/runtime/remote-subtree.ts": 800,
+  "packages/runtime/src/runtime/scan-execution.ts": 800,
+  "packages/runtime/src/runtime/lookup-join.ts": 800,
+  "packages/runtime/src/runtime/local-operators.ts": 800,
+  "packages/runtime/src/runtime/window-execution.ts": 800,
+  "packages/runtime/src/runtime/expression-eval.ts": 800,
+  "packages/runtime/src/runtime/subquery-preparation.ts": 800,
+  "packages/runtime/src/runtime/row-ops.ts": 800,
+  "packages/planner/src/planner/view-lowering.ts": 800,
+} as const;
+
 function walkFiles(root: string): string[] {
   const entries = readdirSync(root);
   const out: string[] = [];
@@ -344,6 +357,41 @@ describe("package boundaries", () => {
     expect(() =>
       statSync(join(REPO_ROOT, "packages/runtime/src/runtime/query-runner-core.ts")),
     ).toThrow();
+  });
+
+  it("keeps runtime free of schema-view lowering logic", () => {
+    const offenders: string[] = [];
+
+    for (const file of walkFiles(join(REPO_ROOT, "packages/runtime/src"))) {
+      if (!file.endsWith(".ts")) {
+        continue;
+      }
+
+      const contents = readFileSync(file, "utf8");
+      if (
+        contents.includes("SchemaViewRelNode") ||
+        contents.includes("compileViewRelToExecutableResult") ||
+        contents.includes("compileSchemaViewRelNodeResult") ||
+        contents.includes("rewriteViewBindingExprForExecution")
+      ) {
+        offenders.push(relative(REPO_ROOT, file));
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps planner-owned and runtime-owned modules within structural budgets", () => {
+    const offenders: string[] = [];
+
+    for (const [file, limit] of Object.entries(STRUCTURAL_LINE_BUDGETS)) {
+      const lineCount = readFileSync(join(REPO_ROOT, file), "utf8").split("\n").length;
+      if (lineCount > limit) {
+        offenders.push(`${file} (${lineCount} > ${limit})`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 
   it("keeps workspace tooling off deleted wrapper paths", () => {

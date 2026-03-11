@@ -21,6 +21,12 @@ describe("public package imports", () => {
     expect("mapProviderRowsToLogical" in schema).toBe(false);
     expect("resolveSchemaLinkedEnums" in schema).toBe(false);
     expect("validateProviderBindingsResult" in schema).toBe(false);
+    expect("PlannedScanRequest" in schema).toBe(false);
+    expect("PlannedLookupRequest" in schema).toBe(false);
+    expect("PlannedAggregateRequest" in schema).toBe(false);
+    expect("ScanPlanDecision" in schema).toBe(false);
+    expect("LookupPlanDecision" in schema).toBe(false);
+    expect("AggregatePlanDecision" in schema).toBe(false);
   });
 
   it("exposes adapter-authoring contracts from provider-kit", () => {
