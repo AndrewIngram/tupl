@@ -218,5 +218,12 @@ Execution behavior notes:
 - [Hosted playground](https://tupl-playground.andrewingram.workers.dev/)
 - [Building a schema (executable schema, Drizzle example)](./docs/building-a-schema.md)
 - [Creating a new adapter (progressive path)](./docs/creating-an-adapter.md)
+
+## Verification
+
+- `pnpm typecheck` runs the canonical workspace typecheck across all packages and examples.
+- `pnpm typecheck:root` runs only the root `tsconfig.json` check.
+- `pnpm verify` runs the standard local verification set: lint, workspace typecheck, full test suite, and format.
+- `pnpm verify:ci` runs the closest local approximation of GitHub Actions: lint, workspace typecheck, fast tests, slow playground tests, and `fmt --check`.
 - [Building a non-relational adapter (Redis-style)](./docs/building-a-non-relational-adapter.md)
 - [Package architecture and allowed dependency directions](./docs/package-architecture.md)

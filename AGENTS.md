@@ -11,6 +11,12 @@ For any non-trivial code change, always run:
 
 Do this before finalizing the work unless the user explicitly asks not to.
 
+Notes:
+
+- `pnpm typecheck` is the canonical workspace typecheck and must cover all packages (`pnpm -r typecheck`).
+- use `pnpm typecheck:root` only when you explicitly want the root tsconfig check by itself.
+- when you need local CI parity for verification, run `pnpm verify:ci`.
+
 ## Code coverage
 
 When code coverage is needed:
