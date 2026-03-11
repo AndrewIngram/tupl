@@ -77,6 +77,7 @@ const DISALLOWED_WRAPPER_TARGETS = [
 ] as const;
 
 const STRUCTURAL_LINE_BUDGETS = {
+  "packages/planner/src/planner/planning.ts": 200,
   "packages/runtime/src/runtime/local-execution.ts": 300,
   "packages/runtime/src/runtime/remote-subtree.ts": 800,
   "packages/runtime/src/runtime/scan-execution.ts": 800,
@@ -87,6 +88,8 @@ const STRUCTURAL_LINE_BUDGETS = {
   "packages/runtime/src/runtime/subquery-preparation.ts": 800,
   "packages/runtime/src/runtime/row-ops.ts": 800,
   "packages/planner/src/planner/view-lowering.ts": 800,
+  "packages/schema-model/src/types.ts": 150,
+  "packages/schema-model/src/normalization.ts": 150,
 } as const;
 
 function walkFiles(root: string): string[] {
@@ -147,6 +150,9 @@ describe("package boundaries", () => {
     const schemaIndex = readFileSync(join(REPO_ROOT, "packages/schema/src/index.ts"), "utf8");
     expect(schemaIndex).not.toMatch(/export\s+\*\s+from\s+["']@tupl\/schema-model["']/);
     expect(schemaIndex).not.toMatch(/export\s+\*\s+from\s+["']@tupl\/runtime["']/);
+    expect(schemaIndex).not.toContain("QueryExecutionPlan");
+    expect(schemaIndex).not.toContain("QueryStepEvent");
+    expect(schemaIndex).not.toContain("validateTableConstraintRows");
   });
 
   it("keeps the semantic package graph acyclic and downward-only", () => {
@@ -356,6 +362,9 @@ describe("package boundaries", () => {
     ).toThrow();
     expect(() =>
       statSync(join(REPO_ROOT, "packages/runtime/src/runtime/query-runner-core.ts")),
+    ).toThrow();
+    expect(() =>
+      statSync(join(REPO_ROOT, "packages/planner/src/planner/query-runner-core.ts")),
     ).toThrow();
   });
 

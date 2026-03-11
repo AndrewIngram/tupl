@@ -21,6 +21,14 @@ describe("public package imports", () => {
     expect("mapProviderRowsToLogical" in schema).toBe(false);
     expect("resolveSchemaLinkedEnums" in schema).toBe(false);
     expect("validateProviderBindingsResult" in schema).toBe(false);
+    expect("QueryExecutionPlan" in schema).toBe(false);
+    expect("QueryExecutionPlanScope" in schema).toBe(false);
+    expect("QueryExecutionPlanStep" in schema).toBe(false);
+    expect("QuerySession" in schema).toBe(false);
+    expect("QuerySessionOptions" in schema).toBe(false);
+    expect("QueryStepEvent" in schema).toBe(false);
+    expect("QueryStepState" in schema).toBe(false);
+    expect("validateTableConstraintRows" in schema).toBe(false);
     expect("PlannedScanRequest" in schema).toBe(false);
     expect("PlannedLookupRequest" in schema).toBe(false);
     expect("PlannedAggregateRequest" in schema).toBe(false);

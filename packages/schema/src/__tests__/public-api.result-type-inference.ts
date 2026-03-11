@@ -1,13 +1,8 @@
 import type { Result as BetterResult } from "better-result";
 
-import {
-  createExecutableSchemaResult,
-  type ExecutableSchema,
-  type QuerySession,
-  type TuplResult,
-} from "@tupl/schema";
+import { createExecutableSchemaResult, type ExecutableSchema, type TuplResult } from "@tupl/schema";
 import { AdapterResult, type ProviderOperationResult } from "@tupl/provider-kit";
-import type { TuplProviderBindingError } from "@tupl/runtime";
+import type { QuerySession, TuplProviderBindingError } from "@tupl/runtime";
 import { createSchemaBuilder, type QueryRow, type SchemaDefinition } from "@tupl/schema";
 import { resolveTableProviderResult } from "@tupl/schema-model";
 

@@ -19,6 +19,9 @@ import type { PlannedLookupRequest as _schemaFacadePlannedLookupRequest } from "
 // @ts-expect-error schema facade should not expose planning split types
 import type { PlannedAggregateRequest as _schemaFacadePlannedAggregateRequest } from "@tupl/schema";
 
+// @ts-expect-error schema facade should not expose plan/session graph types
+import type { QueryExecutionPlan as _schemaFacadeQueryExecutionPlan } from "@tupl/schema";
+
 const builder = createSchemaBuilder<Record<string, never>>();
 const executable = createExecutableSchema(builder);
 

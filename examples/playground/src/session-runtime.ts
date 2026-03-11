@@ -1,12 +1,12 @@
 import type { RelNode } from "@tupl/foundation";
 import { defaultSqlAstParser, lowerSqlToRel } from "@tupl/planner";
-import {
-  resolveTableColumnDefinition,
-  type QueryExecutionPlan,
-  type QuerySession,
-  type QueryStepEvent,
-  type QueryStepState,
-} from "@tupl/schema";
+import type {
+  QueryExecutionPlan,
+  QuerySession,
+  QueryStepEvent,
+  QueryStepState,
+} from "@tupl/runtime";
+import { resolveTableColumnDefinition } from "@tupl/schema";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema";
 import { resolveSchemaLinkedEnums } from "@tupl/schema-model";
 

@@ -5,14 +5,8 @@ import * as pgliteModule from "@electric-sql/pglite";
 import * as betterResultModule from "better-result";
 import type { FragmentProviderAdapter, ProviderAdapter } from "@tupl/provider-kit";
 import { lowerSqlToRel, planPhysicalQuery } from "@tupl/planner";
-import type {
-  ExecutableSchema,
-  QueryExecutionPlan,
-  QuerySession,
-  QueryStepEvent,
-  QueryRow,
-  SchemaDefinition,
-} from "@tupl/schema";
+import type { QueryExecutionPlan, QuerySession, QueryStepEvent } from "@tupl/runtime";
+import type { ExecutableSchema, QueryRow, SchemaDefinition } from "@tupl/schema";
 
 import { createVirtualModuleRuntime } from "./playground-module-runtime";
 import {
