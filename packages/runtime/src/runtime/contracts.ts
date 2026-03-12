@@ -1,4 +1,4 @@
-import type { ProvidersMap, QueryFallbackPolicy, TuplDiagnostic } from "@tupl/provider-kit";
+import type { ProviderMap, QueryFallbackPolicy, TuplDiagnostic } from "@tupl/provider-kit";
 import type { RelNode, TuplResult } from "@tupl/foundation";
 
 import type { ConstraintValidationOptions } from "./constraints";
@@ -54,7 +54,7 @@ export const DEFAULT_QUERY_FALLBACK_POLICY: Required<QueryFallbackPolicy> = {
  */
 export interface QueryInput<TContext> {
   schema: SchemaDefinition;
-  providers: ProvidersMap<TContext>;
+  providers: ProviderMap<TContext>;
   context: TContext;
   sql: string;
   queryGuardrails?: Partial<QueryGuardrails>;

@@ -143,7 +143,7 @@ describe("query/planning", () => {
     });
   });
 
-  it("returns tagged planning errors from physical planning when a provider adapter is missing", async () => {
+  it("returns tagged planning errors from physical planning when a provider is missing", async () => {
     const schema = buildEntitySchema({
       users: {
         provider: "warehouse",
@@ -170,7 +170,7 @@ describe("query/planning", () => {
     expect(result.error).toMatchObject({
       _tag: "TuplPlanningError",
       name: "TuplPlanningError",
-      message: "Missing provider adapter: warehouse",
+      message: "Missing provider: warehouse",
     });
   });
 

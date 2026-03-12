@@ -1,12 +1,12 @@
 import {
   AdapterResult,
-  bindAdapterEntities,
+  bindProviderEntities,
   createDataEntityHandle,
   normalizeDataEntityShape,
   type DataEntityHandle,
   type DataEntityShape,
   type InferDataEntityShapeMetadata,
-  type LookupProviderAdapter,
+  type LookupProvider,
   type MaybePromise,
   type ProviderCapabilityAtom,
   type ProviderCapabilityReport,
@@ -169,7 +169,7 @@ function inferEntityHandle<
 >(
   config: TConfig,
   provider: string,
-  adapter: LookupProviderAdapter<any>,
+  providerInstance: LookupProvider<any>,
 ): DataEntityHandle<
   InferEntityColumns<TConfig>,
   InferEntityRow<TConfig>,
@@ -185,7 +185,7 @@ function inferEntityHandle<
           ),
         }
       : {}),
-    adapter,
+    providerInstance,
   }) as unknown as DataEntityHandle<
     InferEntityColumns<TConfig>,
     InferEntityRow<TConfig>,
@@ -198,7 +198,7 @@ export function createIoredisProvider<
   const TEntities extends IoredisEntityMap<TContext> = IoredisEntityMap<TContext>,
 >(
   options: CreateIoredisProviderOptions<TContext, TEntities>,
-): LookupProviderAdapter<TContext> & {
+): LookupProvider<TContext> & {
   entities: {
     [K in keyof TEntities]: DataEntityHandle<
       InferEntityColumns<TEntities[K]>,
@@ -213,7 +213,7 @@ export function createIoredisProvider<
   TContext = InferIoredisProviderContext<TEntities>,
 >(
   options: CreateIoredisProviderOptions<TContext, TEntities>,
-): LookupProviderAdapter<TContext> & {
+): LookupProvider<TContext> & {
   entities: {
     [K in keyof TEntities]: DataEntityHandle<
       InferEntityColumns<TEntities[K]>,
@@ -320,7 +320,7 @@ export function createIoredisProvider<
 
       return AdapterResult.ok(filtered.map((row) => projectLookupRow(row, request.select)));
     },
-  } satisfies LookupProviderAdapter<TContext> & {
+  } satisfies LookupProvider<TContext> & {
     entities: {
       [K in keyof TEntities]: DataEntityHandle<
         InferEntityColumns<TEntities[K]>,
@@ -337,5 +337,5 @@ export function createIoredisProvider<
     entitiesByName.set(config.entity, config as IoredisEntityConfig<TContext, string>);
   }
 
-  return bindAdapterEntities(adapter);
+  return bindProviderEntities(adapter);
 }

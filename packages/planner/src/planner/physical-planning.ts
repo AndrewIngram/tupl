@@ -2,7 +2,7 @@ import { Result } from "better-result";
 
 import type { RelNode } from "@tupl/foundation";
 import type { PhysicalPlan } from "./physical/physical";
-import type { ProvidersMap } from "@tupl/provider-kit";
+import type { ProviderMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
 import { assignConventions } from "./provider/conventions";
 import { createPhysicalPlanningState } from "./physical/physical-plan-state";
@@ -15,7 +15,7 @@ import { expandRelViewsResult } from "./view-expansion";
 export async function planPhysicalQuery<TContext>(
   rel: RelNode,
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
   context: TContext,
   _sql: string,
 ): Promise<PhysicalPlan> {
@@ -29,7 +29,7 @@ export async function planPhysicalQuery<TContext>(
 export async function planPhysicalQueryResult<TContext>(
   rel: RelNode,
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
   context: TContext,
   _sql: string,
 ) {

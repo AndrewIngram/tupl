@@ -3,7 +3,7 @@ import {
   normalizeDataEntityShape,
   type DataEntityColumnMap,
 } from "../entity-handles";
-import type { ProviderAdapter } from "../contracts";
+import type { Provider } from "../contracts";
 import type {
   RelationalProviderAdapterOptions,
   RelationalProviderAdapterOptionsWithLookup,
@@ -24,7 +24,7 @@ export function buildRelationalEntityHandles<
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
 >(
-  adapter: ProviderAdapter<TContext>,
+  provider: Provider<TContext>,
   options: RelationalOptions<TContext, TEntities, TStrategy>,
 ): RelationalProviderHandles<TEntities> {
   const handles = {} as RelationalProviderHandles<TEntities>;
@@ -44,13 +44,13 @@ export function buildRelationalEntityHandles<
       ? createDataEntityHandle({
           entity,
           provider: options.name,
-          adapter,
+          providerInstance: provider,
           columns,
         })
       : createDataEntityHandle({
           entity,
           provider: options.name,
-          adapter,
+          providerInstance: provider,
         });
   }
 

@@ -3,11 +3,11 @@ import { Result } from "better-result";
 import { validateTableConstraintRows } from "../constraints";
 import { TuplExecutionError } from "@tupl/foundation";
 import {
-  getDataEntityAdapter,
+  getDataEntityProvider,
   normalizeCapability,
   supportsFragmentExecution,
   unwrapProviderOperationResult,
-  type ProviderAdapter,
+  type Provider,
   type ProviderFragment,
 } from "@tupl/provider-kit";
 import {
@@ -65,13 +65,13 @@ export async function executeScanResult<TContext>(
   const provider =
     context.providers[providerName] ??
     (scan.entity
-      ? (getDataEntityAdapter(scan.entity) as ProviderAdapter<TContext> | undefined)
+      ? (getDataEntityProvider(scan.entity) as Provider<TContext> | undefined)
       : undefined);
   if (!provider) {
     return Result.err(
       new TuplExecutionError({
         operation: "execute scan",
-        message: `Missing provider adapter: ${providerName}`,
+        message: `Missing provider: ${providerName}`,
       }),
     );
   }

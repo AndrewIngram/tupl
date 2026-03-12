@@ -7,9 +7,9 @@ import type {
   DataEntityShape,
   InferDataEntityShapeMetadata,
 } from "@tupl/foundation";
-import { DATA_ENTITY_ADAPTER_BRAND } from "@tupl/foundation";
+import { DATA_ENTITY_PROVIDER_BRAND } from "@tupl/foundation";
 
-import type { ProviderAdapter } from "./contracts";
+import type { Provider } from "./contracts";
 
 export type {
   DataEntityColumnMap,
@@ -22,8 +22,8 @@ export type {
 } from "@tupl/foundation";
 
 /**
- * Entity handles own the adapter-bound description of a physical data source.
- * Callers should use these helpers instead of depending on the adapter brand details.
+ * Entity handles own the provider-bound description of a physical data source.
+ * Callers should use these helpers instead of depending on the provider brand details.
  */
 export function createDataEntityHandle<
   TColumns extends string = string,
@@ -36,7 +36,7 @@ export function createDataEntityHandle<
   entity: string;
   provider: string;
   columns?: DataEntityColumnMap<TColumns, TRow, TColumnMetadata>;
-  adapter?: ProviderAdapter<any>;
+  providerInstance?: Provider<any>;
 }): DataEntityHandle<TColumns, TRow, TColumnMetadata> {
   const handle = {
     kind: "data_entity",
@@ -45,19 +45,19 @@ export function createDataEntityHandle<
     ...(input.columns ? { columns: input.columns } : {}),
   } as DataEntityHandle<TColumns, TRow, TColumnMetadata>;
 
-  if (input.adapter) {
-    bindDataEntityHandleToAdapter(handle, input.adapter);
+  if (input.providerInstance) {
+    bindDataEntityHandleToProvider(handle, input.providerInstance);
   }
 
   return handle;
 }
 
-export function bindDataEntityHandleToAdapter(
+export function bindDataEntityHandleToProvider(
   handle: DataEntityHandle<string>,
-  adapter: ProviderAdapter<any>,
+  provider: Provider<any>,
 ): DataEntityHandle<string> {
-  Object.defineProperty(handle, DATA_ENTITY_ADAPTER_BRAND, {
-    value: adapter,
+  Object.defineProperty(handle, DATA_ENTITY_PROVIDER_BRAND, {
+    value: provider,
     enumerable: false,
     configurable: true,
     writable: false,
@@ -65,31 +65,29 @@ export function bindDataEntityHandleToAdapter(
   return handle;
 }
 
-export function getDataEntityAdapter(
-  handle: DataEntityHandle<string>,
-): ProviderAdapter<any> | undefined {
-  return handle[DATA_ENTITY_ADAPTER_BRAND] as ProviderAdapter<any> | undefined;
+export function getDataEntityProvider(handle: DataEntityHandle<string>): Provider<any> | undefined {
+  return handle[DATA_ENTITY_PROVIDER_BRAND] as Provider<any> | undefined;
 }
 
-export function bindAdapterEntities<TContext, TAdapter extends ProviderAdapter<TContext>>(
-  adapter: TAdapter,
+export function bindProviderEntities<TContext, TAdapter extends Provider<TContext>>(
+  provider: TAdapter,
 ): TAdapter {
-  const entities = adapter.entities;
+  const entities = provider.entities;
   if (!entities) {
-    return adapter;
+    return provider;
   }
 
   for (const [entityName, handle] of Object.entries(entities)) {
     if (!handle.provider || handle.provider.length === 0) {
-      handle.provider = adapter.name;
+      handle.provider = provider.name;
     }
     if (!handle.entity || handle.entity.length === 0) {
       handle.entity = entityName;
     }
-    bindDataEntityHandleToAdapter(handle, adapter);
+    bindDataEntityHandleToProvider(handle, provider);
   }
 
-  return adapter;
+  return provider;
 }
 
 export function isDataEntityHandle(value: unknown): value is DataEntityHandle<string> {

@@ -1,6 +1,6 @@
 import { Result } from "better-result";
 import { TuplProviderBindingError } from "@tupl/foundation";
-import type { ProvidersMap } from "@tupl/provider-kit";
+import type { ProviderMap } from "@tupl/provider-kit";
 
 import type { SchemaDefinition } from "../contracts/schema-contracts";
 import { getNormalizedTableBinding } from "./schema-finalization";
@@ -56,7 +56,7 @@ export function resolveTableProviderResult(schema: SchemaDefinition, table: stri
 
 export function validateProviderBindings<TContext>(
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
 ): void {
   const result = validateProviderBindingsResult(schema, providers);
   if (Result.isError(result)) {
@@ -66,7 +66,7 @@ export function validateProviderBindings<TContext>(
 
 export function validateProviderBindingsResult<TContext>(
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
 ) {
   for (const tableName of Object.keys(schema.tables)) {
     const normalized = getNormalizedTableBinding(schema, tableName);

@@ -3,7 +3,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import type { RelNode, TuplError } from "@tupl/foundation";
 import {
   normalizeCapability,
-  type ProviderAdapter,
+  type Provider,
   type ProviderCapabilityReport,
   type ProviderFragment,
 } from "@tupl/provider-kit";
@@ -18,7 +18,7 @@ import { isPromiseLike } from "../policy";
  */
 export interface QueryCapabilityResolution<TContext> {
   fragment: ProviderFragment | null;
-  provider: ProviderAdapter<TContext> | null;
+  provider: Provider<TContext> | null;
   report: ProviderCapabilityReport | null;
   diagnostics: TuplDiagnostic[];
 }

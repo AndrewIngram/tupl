@@ -1,5 +1,5 @@
 import type { RelJoinNode, RelNode, RelScanNode } from "@tupl/foundation";
-import { supportsLookupMany, type ProvidersMap } from "@tupl/provider-kit";
+import { supportsLookupMany, type ProviderMap } from "@tupl/provider-kit";
 import {
   getNormalizedTableBinding,
   resolveTableProvider,
@@ -153,7 +153,7 @@ export function assignConventions(
 export function resolveLookupJoinCandidate<TContext>(
   join: RelJoinNode,
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
 ): {
   leftProvider: string;
   rightProvider: string;

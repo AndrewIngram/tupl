@@ -5,11 +5,11 @@ import {
   createDataEntityHandle,
   createRelationalProviderAdapter,
   DEFAULT_RELATIONAL_CAPABILITY_ATOMS,
-  type FragmentProviderAdapter,
-  getDataEntityAdapter,
-  type LookupProviderAdapter,
+  type FragmentProvider,
+  getDataEntityProvider,
+  type LookupProvider,
   type QueryRow,
-  type ProviderAdapter,
+  type Provider,
   type ProviderCapabilityAtom,
   type ProviderFragment,
   type ScanFilterClause,
@@ -24,8 +24,7 @@ import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
 
 import { collectCapabilityAtomsForFragment } from "../provider/capabilities";
 
-type TestProvider = Omit<FragmentProviderAdapter, "name"> &
-  Partial<Pick<LookupProviderAdapter, "lookupMany">>;
+type TestProvider = Omit<FragmentProvider, "name"> & Partial<Pick<LookupProvider, "lookupMany">>;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -211,7 +210,7 @@ describe("query/provider runtime", () => {
       id: { source: "id", type: "text" },
       total_cents: { source: "total_cents", type: "integer" },
     });
-    expect(getDataEntityAdapter(adapter.entities.orders)).toBe(adapter);
+    expect(getDataEntityProvider(adapter.entities.orders)).toBe(adapter);
   });
 
   it("returns structured capability reports for unsupported relational fragments", async () => {
@@ -1415,7 +1414,7 @@ describe("query/provider runtime", () => {
     const ordersEntity = createDataEntityHandle({
       entity: "orders_raw",
       provider: "warehouse",
-      adapter: warehouseProvider as unknown as ProviderAdapter,
+      providerInstance: warehouseProvider as unknown as Provider,
       columns: {
         id: { source: "id", type: "text", nullable: false },
         vendorId: { source: "vendor_id", type: "text", nullable: false },
@@ -1425,7 +1424,7 @@ describe("query/provider runtime", () => {
     const vendorsEntity = createDataEntityHandle({
       entity: "vendors_raw",
       provider: "warehouse",
-      adapter: warehouseProvider as unknown as ProviderAdapter,
+      providerInstance: warehouseProvider as unknown as Provider,
       columns: {
         id: { source: "id", type: "text", nullable: false },
         name: { source: "name", type: "text", nullable: false },

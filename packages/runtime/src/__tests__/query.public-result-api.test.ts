@@ -6,16 +6,15 @@ import { createExecutableSchemaSessionResult } from "@tupl/runtime/session";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema-model";
 import {
   createDataEntityHandle,
-  type FragmentProviderAdapter,
-  type LookupProviderAdapter,
+  type FragmentProvider,
+  type LookupProvider,
   type ProviderFragment,
 } from "@tupl/provider-kit";
 import { createSchemaBuilder, resolveTableProviderResult } from "@tupl/schema-model";
 import { createExecutableSchemaFromProviders } from "@tupl/test-support/runtime";
 import { buildEntitySchema, buildSchema } from "@tupl/test-support/schema";
 
-type TestProvider = Omit<FragmentProviderAdapter, "name"> &
-  Partial<Pick<LookupProviderAdapter, "lookupMany">>;
+type TestProvider = Omit<FragmentProvider, "name"> & Partial<Pick<LookupProvider, "lookupMany">>;
 
 function createRowsProvider(rows: QueryRow[] = [{ id: "u1" }]): TestProvider {
   return {
@@ -141,7 +140,7 @@ describe("public result APIs", () => {
   });
 
   it("returns tagged runtime errors when executable schema provider bindings are inconsistent", () => {
-    const adapter = {
+    const provider = {
       name: "actual",
       canExecute(fragment: ProviderFragment) {
         return fragment.kind === "scan";
@@ -156,7 +155,7 @@ describe("public result APIs", () => {
       async execute() {
         return Result.ok([{ id: "u1" }]);
       },
-    } satisfies FragmentProviderAdapter;
+    } satisfies FragmentProvider;
 
     const builder = createSchemaBuilder<Record<string, never>>();
     builder.table(
@@ -164,7 +163,7 @@ describe("public result APIs", () => {
       createDataEntityHandle({
         entity: "users",
         provider: "warehouse",
-        adapter,
+        providerInstance: provider,
       }),
       {
         columns: {
@@ -183,7 +182,7 @@ describe("public result APIs", () => {
     expect(result.error).toMatchObject({
       _tag: "TuplRuntimeError",
       message:
-        "Table users is bound to provider warehouse, but the attached adapter is named actual.",
+        "Table users is bound to provider warehouse, but the attached provider is named actual.",
     });
   });
 

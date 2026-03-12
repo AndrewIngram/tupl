@@ -1,8 +1,8 @@
 import {
   AdapterResult,
   createSqlRelationalProviderAdapter,
-  type FragmentProviderAdapter,
-  type LookupProviderAdapter,
+  type FragmentProvider,
+  type LookupProvider,
 } from "@tupl/provider-kit";
 
 import { executeLookupMany } from "./execution/lookup-execution";
@@ -38,8 +38,8 @@ export function createKyselyProvider<
   >,
 >(
   options: CreateKyselyProviderOptions<TContext, TEntities>,
-): FragmentProviderAdapter<TContext> &
-  LookupProviderAdapter<TContext> & {
+): FragmentProvider<TContext> &
+  LookupProvider<TContext> & {
     entities: KyselyProviderEntities<TContext, TDatabase, TEntities>;
   } {
   const providerName = options.name ?? "kysely";
@@ -69,8 +69,8 @@ export function createKyselyProvider<
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
-  }) as FragmentProviderAdapter<TContext> &
-    LookupProviderAdapter<TContext> & {
+  }) as FragmentProvider<TContext> &
+    LookupProvider<TContext> & {
       entities: KyselyProviderEntities<TContext, TDatabase, TEntities>;
     };
 }

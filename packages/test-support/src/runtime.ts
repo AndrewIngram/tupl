@@ -4,11 +4,11 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 import { stringifyUnknownValue, type DataEntityColumnMap } from "@tupl/foundation";
 import {
-  bindAdapterEntities,
+  bindProviderEntities,
   createDataEntityHandle,
-  type ProviderAdapter,
+  type Provider,
   type ProviderFragment,
-  type ProvidersMap,
+  type ProviderMap,
 } from "@tupl/provider-kit";
 import {
   type ConstraintValidationOptions,
@@ -68,16 +68,16 @@ type ProviderInput<TContext> = {
 
 export function finalizeProviders<TContext>(
   providers: Record<string, ProviderInput<TContext>>,
-): Record<string, ProviderAdapter<TContext>> {
+): Record<string, Provider<TContext>> {
   for (const [providerName, adapter] of Object.entries(providers)) {
-    const boundAdapter = adapter as ProviderAdapter<TContext>;
+    const boundAdapter = adapter as Provider<TContext>;
     if (!boundAdapter.name) {
       boundAdapter.name = providerName;
     }
-    bindAdapterEntities(boundAdapter);
+    bindProviderEntities(boundAdapter);
   }
 
-  return providers as Record<string, ProviderAdapter<TContext>>;
+  return providers as Record<string, Provider<TContext>>;
 }
 
 function toEntityColumns(
@@ -225,7 +225,7 @@ export function createExecutableSchemaFromProviders<TContext, TSchema extends Sc
   const singleProviderName = providerEntries.length === 1 ? providerEntries[0]?.[0] : undefined;
 
   for (const [providerName, adapter] of providerEntries) {
-    const boundAdapter = adapter as ProviderAdapter<TContext>;
+    const boundAdapter = adapter as Provider<TContext>;
     if (!boundAdapter.name) {
       boundAdapter.name = providerName;
     }
@@ -279,14 +279,14 @@ export function createExecutableSchemaFromProviders<TContext, TSchema extends Sc
     if (!adapter) {
       throw new Error(`No provider registered for table ${tableName}: ${providerName}`);
     }
-    const boundAdapter = adapter as ProviderAdapter<TContext>;
+    const boundAdapter = adapter as Provider<TContext>;
 
     if (!boundAdapter.entities?.[tableName]) {
       boundAdapter.entities ??= {};
       boundAdapter.entities[tableName] = createDataEntityHandle({
         entity: binding?.kind === "physical" ? binding.entity : tableName,
         provider: providerName,
-        adapter: boundAdapter,
+        providerInstance: boundAdapter,
         columns:
           binding?.kind === "physical"
             ? toEntityColumnsFromBindings(binding.columnBindings, tableDefinition.columns)
@@ -294,7 +294,7 @@ export function createExecutableSchemaFromProviders<TContext, TSchema extends Sc
       });
     }
 
-    bindAdapterEntities(boundAdapter);
+    bindProviderEntities(boundAdapter);
 
     builder.table(tableName, boundAdapter.entities[tableName], {
       columns: ({ col }) =>
@@ -354,8 +354,8 @@ export function createMethodsProvider<TContext>(
   schema: SchemaDefinition,
   methods: TableMethodsMap<TContext>,
   providerName = "memory",
-): ProviderAdapter<TContext> {
-  const adapter: ProviderAdapter<TContext> = {
+): Provider<TContext> {
+  const provider: Provider<TContext> = {
     name: providerName,
     entities: {},
     canExecute(fragment) {
@@ -426,15 +426,15 @@ export function createMethodsProvider<TContext>(
   };
 
   for (const tableName of Object.keys(schema.tables)) {
-    adapter.entities![tableName] = createDataEntityHandle({
+    provider.entities![tableName] = createDataEntityHandle({
       entity: tableName,
       provider: providerName,
-      adapter,
+      providerInstance: provider,
       columns: toEntityColumns(schema.tables[tableName]!.columns),
     });
   }
 
-  return bindAdapterEntities(adapter);
+  return bindProviderEntities(provider);
 }
 
 export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDefinition>(
@@ -922,7 +922,7 @@ export function createQueryHarness<
 >(options: {
   schema: TSchema;
   rowsByTable: RowsByTable<TSchema>;
-  providers?: ProvidersMap<TContext>;
+  providers?: ProviderMap<TContext>;
 }): QueryHarness<TSchema, TContext> {
   const schema = options.schema;
   const rowsByTable = options.rowsByTable as Record<string, QueryRow[]>;
@@ -958,7 +958,7 @@ export async function withQueryHarness<
   options: {
     schema: TSchema;
     rowsByTable: RowsByTable<TSchema>;
-    providers?: ProvidersMap<TContext>;
+    providers?: ProviderMap<TContext>;
   },
   fn: (harness: QueryHarness<TSchema, TContext>) => Promise<TResult>,
 ): Promise<TResult> {
@@ -1018,7 +1018,7 @@ function normalizeSqliteValue(value: unknown): unknown {
 
 function createMemoryProvider<TContext>(
   rowsByTable: Record<string, QueryRow[]>,
-): ProviderAdapter<TContext> {
+): Provider<TContext> {
   return {
     name: "memory",
     canExecute(fragment) {

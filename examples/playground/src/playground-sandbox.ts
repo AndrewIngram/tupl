@@ -3,7 +3,7 @@ import * as drizzlePgCoreModule from "drizzle-orm/pg-core";
 import * as drizzlePgliteModule from "drizzle-orm/pglite";
 import * as pgliteModule from "@electric-sql/pglite";
 import * as betterResultModule from "better-result";
-import type { FragmentProviderAdapter, ProviderAdapter } from "@tupl/provider-kit";
+import type { FragmentProvider, Provider } from "@tupl/provider-kit";
 import { lowerSqlToRel, planPhysicalQuery } from "@tupl/planner";
 import {
   createExecutableSchemaSessionResult,
@@ -87,8 +87,8 @@ interface ExecutableSchemaModuleExports<TContext> {
 }
 
 interface ProviderModuleExports<TContext> {
-  dbProvider?: FragmentProviderAdapter<TContext>;
-  redisProvider?: ProviderAdapter<TContext>;
+  dbProvider?: FragmentProvider<TContext>;
+  redisProvider?: Provider<TContext>;
 }
 
 interface TuplRuntimeModule {
@@ -107,8 +107,8 @@ interface PlaygroundRuntimeModule {
 interface SandboxProviderRuntime<TContext> {
   tuplModule: TuplRuntimeModule;
   executableSchema: ExecutableSchema<TContext, SchemaDefinition>;
-  dbProvider: FragmentProviderAdapter<TContext>;
-  redisProvider: ProviderAdapter<TContext>;
+  dbProvider: FragmentProvider<TContext>;
+  redisProvider: Provider<TContext>;
   db: PlaygroundRuntimeContext["db"];
   redis: PlaygroundRuntimeContext["redis"];
 }
@@ -187,7 +187,7 @@ function readProviderExportOrThrow<TContext>(
   moduleId: string,
   exportsRecord: Record<string, unknown>,
   exportName: "dbProvider" | "redisProvider",
-): ProviderAdapter<TContext> {
+): Provider<TContext> {
   const provider = (exportsRecord as ProviderModuleExports<TContext>)[exportName];
   if (
     !provider ||
@@ -195,9 +195,7 @@ function readProviderExportOrThrow<TContext>(
     typeof provider.name !== "string" ||
     typeof provider.canExecute !== "function"
   ) {
-    throw new Error(
-      `[SCHEMA_EXEC_ERROR] ${moduleId} must export ${exportName} as a provider adapter.`,
-    );
+    throw new Error(`[SCHEMA_EXEC_ERROR] ${moduleId} must export ${exportName} as a provider.`);
   }
 
   return provider;
@@ -299,7 +297,7 @@ function createProviderRuntime<TContext>(
       PLAYGROUND_DB_PROVIDER_FILE_PATH,
       dbProviderModule,
       "dbProvider",
-    ) as FragmentProviderAdapter<TContext>,
+    ) as FragmentProvider<TContext>,
     redisProvider: readProviderExportOrThrow<TContext>(
       PLAYGROUND_REDIS_PROVIDER_FILE_PATH,
       redisProviderModule,

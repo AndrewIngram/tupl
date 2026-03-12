@@ -1,6 +1,6 @@
 /**
- * Provider contracts own adapter-facing concepts: entity handles, capability descriptions,
- * adapter interfaces, and operational helpers used across the planner and runtime layers.
+ * Provider contracts own runtime provider interfaces, adapter-authoring helpers, entity handles,
+ * capability descriptions, and operational helpers used across the planner and runtime layers.
  */
 export * from "./entity-handles";
 export * from "./operations";

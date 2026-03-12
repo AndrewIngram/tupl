@@ -1,4 +1,4 @@
-import { bindAdapterEntities } from "../entity-handles";
+import { bindProviderEntities } from "../entity-handles";
 import { AdapterResult } from "../operations";
 import type {
   ProviderCompiledPlan,
@@ -15,10 +15,10 @@ import {
   type RelationalProviderCompileRelArgs,
 } from "./relational-adapter-types";
 import type {
-  RelationalProviderAdapter,
+  RelationalProvider,
   RelationalProviderAdapterOptions,
   RelationalProviderAdapterOptionsWithLookup,
-  RelationalProviderAdapterWithLookup,
+  RelationalProviderWithLookup,
   RelationalProviderEntityConfig,
   RelationalProviderRelCompileStrategy,
 } from "./relational-adapter-types";
@@ -53,14 +53,14 @@ export function createRelationalProviderAdapter<
   TStrategy extends RelationalProviderRelCompileStrategy,
 >(
   options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
-): RelationalProviderAdapter<TContext, TEntities>;
+): RelationalProvider<TContext, TEntities>;
 export function createRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends RelationalProviderRelCompileStrategy,
 >(
   options: RelationalProviderAdapterOptionsWithLookup<TContext, TEntities, TStrategy>,
-): RelationalProviderAdapterWithLookup<TContext, TEntities>;
+): RelationalProviderWithLookup<TContext, TEntities>;
 export function createRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
@@ -69,9 +69,7 @@ export function createRelationalProviderAdapter<
   options:
     | RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>
     | RelationalProviderAdapterOptionsWithLookup<TContext, TEntities, TStrategy>,
-):
-  | RelationalProviderAdapter<TContext, TEntities>
-  | RelationalProviderAdapterWithLookup<TContext, TEntities> {
+): RelationalProvider<TContext, TEntities> | RelationalProviderWithLookup<TContext, TEntities> {
   const adapter = {
     name: options.name,
     routeFamilies: [
@@ -188,5 +186,5 @@ export function createRelationalProviderAdapter<
       : {}),
   };
 
-  return bindAdapterEntities(boundAdapter);
+  return bindProviderEntities(boundAdapter);
 }

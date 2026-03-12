@@ -1,7 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
 
 import { TuplPlanningError, type RelNode } from "@tupl/foundation";
-import { normalizeCapability, type ProvidersMap } from "@tupl/provider-kit";
+import { normalizeCapability, type ProviderMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
 import { resolveSingleProvider } from "../provider/conventions";
@@ -17,7 +17,7 @@ import { recordPhysicalStep, type PhysicalPlanningState } from "./physical-plan-
 export async function tryPlanRemoteFragmentResult<TContext>(
   node: RelNode,
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
 ): Promise<BetterResult<string | null, TuplPlanningError>> {
@@ -26,12 +26,12 @@ export async function tryPlanRemoteFragmentResult<TContext>(
     return Result.ok(null);
   }
 
-  const adapter = providers[provider];
-  if (!adapter) {
+  const remoteProvider = providers[provider];
+  if (!remoteProvider) {
     return Result.err(
       new TuplPlanningError({
         operation: "plan remote fragment",
-        message: `Missing provider adapter: ${provider}`,
+        message: `Missing provider: ${provider}`,
       }),
     );
   }
@@ -42,7 +42,7 @@ export async function tryPlanRemoteFragmentResult<TContext>(
   }
 
   const capabilityResult = await Result.tryPromise({
-    try: () => Promise.resolve(adapter.canExecute(fragmentResult.value, context)),
+    try: () => Promise.resolve(remoteProvider.canExecute(fragmentResult.value, context)),
     catch: (error) => toTuplPlanningError(error, "plan remote fragment"),
   });
   if (Result.isError(capabilityResult)) {

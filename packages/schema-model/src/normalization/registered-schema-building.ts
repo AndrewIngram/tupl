@@ -1,4 +1,4 @@
-import { getDataEntityAdapter } from "@tupl/provider-kit";
+import { getDataEntityProvider } from "@tupl/provider-kit";
 
 import { type SchemaBuilderState } from "../dsl/builder-state";
 import {
@@ -124,7 +124,7 @@ function buildPhysicalTableDefinition<TContext>(
     columns: normalizedColumns,
     ...(rawTable.constraints ? { constraints: rawTable.constraints } : {}),
   };
-  const adapter = getDataEntityAdapter(rawTable.from);
+  const providerInstance = getDataEntityProvider(rawTable.from);
 
   return {
     definition,
@@ -134,7 +134,7 @@ function buildPhysicalTableDefinition<TContext>(
       entity: rawTable.from.entity,
       columnBindings,
       columnToSource: buildColumnSourceMapFromBindings(columnBindings),
-      ...(adapter ? { adapter } : {}),
+      ...(providerInstance ? { providerInstance } : {}),
     },
   };
 }

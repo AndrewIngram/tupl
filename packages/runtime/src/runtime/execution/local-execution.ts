@@ -22,7 +22,7 @@ import {
   type RelNode,
   type TuplPlanningError,
 } from "@tupl/foundation";
-import type { ProvidersMap } from "@tupl/provider-kit";
+import type { ProviderMap } from "@tupl/provider-kit";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema-model";
 
 export interface RelExecutionGuardrails {
@@ -33,7 +33,7 @@ export interface RelExecutionGuardrails {
 
 export interface RelExecutionContext<TContext> {
   schema: SchemaDefinition;
-  providers: ProvidersMap<TContext>;
+  providers: ProviderMap<TContext>;
   context: TContext;
   guardrails: RelExecutionGuardrails;
   constraintValidation?: ConstraintValidationOptions;

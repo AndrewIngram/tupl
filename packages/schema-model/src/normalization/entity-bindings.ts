@@ -1,5 +1,5 @@
 import type { DataEntityColumnMetadata } from "@tupl/foundation";
-import { getDataEntityAdapter } from "@tupl/provider-kit";
+import { getDataEntityProvider } from "@tupl/provider-kit";
 
 import { resolveColumnDefinition } from "../definition";
 import type {
@@ -43,7 +43,7 @@ export function createPhysicalBindingFromEntity(
   entity: SchemaDataEntityHandle<string>,
 ): NormalizedPhysicalTableBinding {
   const tableDefinition = createTableDefinitionFromEntity(entity);
-  const adapter = getDataEntityAdapter(entity);
+  const providerInstance = getDataEntityProvider(entity);
   return {
     kind: "physical",
     provider: entity.provider,
@@ -64,7 +64,7 @@ export function createPhysicalBindingFromEntity(
         resolveEntityColumnSource(columnName, entity),
       ]),
     ),
-    ...(adapter ? { adapter } : {}),
+    ...(providerInstance ? { providerInstance } : {}),
   };
 }
 

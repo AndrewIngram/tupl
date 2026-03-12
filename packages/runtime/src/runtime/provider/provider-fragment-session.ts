@@ -3,7 +3,7 @@ import { Result } from "better-result";
 import { TuplRuntimeError, type RelNode } from "@tupl/foundation";
 import {
   supportsFragmentExecution,
-  type ProviderAdapter,
+  type Provider,
   type ProviderFragment,
 } from "@tupl/provider-kit";
 import { type QueryRow } from "@tupl/schema-model";
@@ -32,7 +32,7 @@ import {
 export function createProviderFragmentSession<TContext>(
   input: QuerySessionInput<TContext>,
   guardrails: QueryGuardrails,
-  provider: ProviderAdapter<TContext>,
+  provider: Provider<TContext>,
   providerName: string,
   fragment: ProviderFragment,
   rel: RelNode,

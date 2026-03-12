@@ -20,7 +20,7 @@ This is the shape to aim for when the backend is naturally keyed and may never o
 
 ```ts
 import type {
-  ProviderAdapter,
+  Provider,
   ProviderCapabilityReport,
   ProviderCompiledPlan,
   ProviderLookupManyRequest,
@@ -50,7 +50,7 @@ type CompiledKvPlan =
 
 const declaredAtoms: readonly ProviderCapabilityAtom[] = ["lookup.bulk"];
 
-export function createExampleKvAdapter(rows: KvRecord[]): ProviderAdapter<KvContext> {
+export function createExampleKvAdapter(rows: KvRecord[]): Provider<KvContext> {
   return {
     name: "example-kv",
     routeFamilies: ["lookup"],

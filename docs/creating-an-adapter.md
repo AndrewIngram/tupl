@@ -20,7 +20,7 @@ This is the minimum useful shape for a relational adapter. It supports `scan` an
 
 ```ts
 import type {
-  ProviderAdapter,
+  Provider,
   ProviderCapabilityAtom,
   ProviderCapabilityReport,
   ProviderCompiledPlan,
@@ -48,7 +48,7 @@ const declaredAtoms: readonly ProviderCapabilityAtom[] = [
   "scan.limit_offset",
 ];
 
-export function createExampleSqlAdapter(): ProviderAdapter<DbContext> {
+export function createExampleSqlAdapter(): Provider<DbContext> {
   return {
     name: "example-sql",
     routeFamilies: ["scan"],

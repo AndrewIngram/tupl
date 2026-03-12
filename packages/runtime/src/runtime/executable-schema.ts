@@ -1,7 +1,7 @@
 import { Result } from "better-result";
 
 import { TuplRuntimeError, type TuplResult } from "@tupl/foundation";
-import { type ProviderAdapter, type ProvidersMap } from "@tupl/provider-kit";
+import { type Provider, type ProviderMap } from "@tupl/provider-kit";
 import {
   finalizeSchemaDefinition,
   getNormalizedTableBinding,
@@ -20,7 +20,7 @@ import { createQuerySessionResult } from "./session/query-session-factory";
  * Executable schema owns schema-to-runtime binding and the public executable facade constructors.
  */
 function collectExecutableProvidersResult<TContext>(schema: SchemaDefinition) {
-  const providers: ProvidersMap<TContext> = {};
+  const providers: ProviderMap<TContext> = {};
 
   for (const [tableName] of Object.entries(schema.tables)) {
     const binding = getNormalizedTableBinding(schema, tableName);
@@ -28,7 +28,7 @@ function collectExecutableProvidersResult<TContext>(schema: SchemaDefinition) {
       continue;
     }
 
-    const provider = binding.adapter as ProviderAdapter<TContext> | undefined;
+    const provider = binding.providerInstance as Provider<TContext> | undefined;
     if (!provider) {
       return Result.err(
         new TuplRuntimeError({
@@ -53,7 +53,7 @@ function collectExecutableProvidersResult<TContext>(schema: SchemaDefinition) {
       return Result.err(
         new TuplRuntimeError({
           operation: "collect executable providers",
-          message: `Table ${tableName} is bound to provider ${binding.provider ?? "<missing>"}, but the attached adapter is named ${provider.name}.`,
+          message: `Table ${tableName} is bound to provider ${binding.provider ?? "<missing>"}, but the attached provider is named ${provider.name}.`,
         }),
       );
     }

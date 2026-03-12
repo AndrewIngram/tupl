@@ -35,8 +35,8 @@ import {
   type RelationalWithBodyWrapper,
 } from "../shapes/relational-core";
 import {
-  type RelationalProviderAdapter,
-  type RelationalProviderAdapterWithLookup,
+  type RelationalProvider,
+  type RelationalProviderWithLookup,
   type RelationalProviderEntityConfig,
 } from "./relational-adapter-types";
 import { createRelationalProviderAdapter } from "./relational-provider";
@@ -405,7 +405,7 @@ export function createSqlRelationalProviderAdapter<
     TRuntime,
     TQuery
   >,
-): RelationalProviderAdapter<TContext, TEntities>;
+): RelationalProvider<TContext, TEntities>;
 export function createSqlRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
@@ -422,7 +422,7 @@ export function createSqlRelationalProviderAdapter<
     TRuntime,
     TQuery
   >,
-): RelationalProviderAdapterWithLookup<TContext, TEntities>;
+): RelationalProviderWithLookup<TContext, TEntities>;
 export function createSqlRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
@@ -448,9 +448,7 @@ export function createSqlRelationalProviderAdapter<
         TRuntime,
         TQuery
       >,
-):
-  | RelationalProviderAdapter<TContext, TEntities>
-  | RelationalProviderAdapterWithLookup<TContext, TEntities> {
+): RelationalProvider<TContext, TEntities> | RelationalProviderWithLookup<TContext, TEntities> {
   const resolveEntity = <TEntityName extends Extract<keyof TEntities, string>>(
     args: SqlRelationalEntityArgs<TEntities, TEntityName>,
   ) => options.resolveEntity(args);
@@ -616,12 +614,12 @@ export function createSqlRelationalProviderAdapter<
           runtime,
         });
       },
-    }) as RelationalProviderAdapterWithLookup<TContext, TEntities>;
+    }) as RelationalProviderWithLookup<TContext, TEntities>;
   }
 
   return createRelationalProviderAdapter<TContext, TEntities, SqlRelationalCompileStrategy>(
     baseOptions,
-  ) as RelationalProviderAdapter<TContext, TEntities>;
+  ) as RelationalProvider<TContext, TEntities>;
 }
 
 export function requireSqlRelationalProjectMapping(

@@ -1,9 +1,9 @@
 import { Result, type Result as BetterResult } from "better-result";
 
 import type {
-  FragmentProviderAdapter,
-  LookupProviderAdapter,
-  ProviderAdapter,
+  FragmentProvider,
+  LookupProvider,
+  Provider,
   ProviderOperationResult,
 } from "./contracts";
 
@@ -26,8 +26,8 @@ export function unwrapProviderOperationResult<T, E>(outcome: ProviderOperationRe
 }
 
 export function supportsFragmentExecution<TContext>(
-  provider: ProviderAdapter<TContext>,
-): provider is FragmentProviderAdapter<TContext> {
+  provider: Provider<TContext>,
+): provider is FragmentProvider<TContext> {
   return (
     "compile" in provider &&
     typeof provider.compile === "function" &&
@@ -37,7 +37,7 @@ export function supportsFragmentExecution<TContext>(
 }
 
 export function supportsLookupMany<TContext>(
-  provider: ProviderAdapter<TContext>,
-): provider is LookupProviderAdapter<TContext> {
+  provider: Provider<TContext>,
+): provider is LookupProvider<TContext> {
   return "lookupMany" in provider && typeof provider.lookupMany === "function";
 }

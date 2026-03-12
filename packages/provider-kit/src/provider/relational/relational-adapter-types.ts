@@ -1,7 +1,7 @@
 import type { DataEntityColumnMap, DataEntityHandle, DataEntityShape } from "../entity-handles";
 import type {
-  FragmentProviderAdapter,
-  LookupProviderAdapter,
+  FragmentProvider,
+  LookupProvider,
   ProviderCompiledPlan,
   ProviderFragment,
   ProviderLookupManyRequest,
@@ -179,17 +179,17 @@ export type RelationalProviderHandles<
   [K in keyof TEntities]: DataEntityHandle<string>;
 };
 
-export type RelationalProviderAdapter<
+export type RelationalProvider<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
-> = FragmentProviderAdapter<TContext> & {
+> = FragmentProvider<TContext> & {
   entities: RelationalProviderHandles<TEntities>;
 };
 
-export type RelationalProviderAdapterWithLookup<
+export type RelationalProviderWithLookup<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
-> = FragmentProviderAdapter<TContext> &
-  LookupProviderAdapter<TContext> & {
+> = FragmentProvider<TContext> &
+  LookupProvider<TContext> & {
     entities: RelationalProviderHandles<TEntities>;
   };

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { type RelNode } from "@tupl/foundation";
 import {
-  type FragmentProviderAdapter,
-  type LookupProviderAdapter,
+  type FragmentProvider,
+  type LookupProvider,
   type ProviderFragment,
 } from "@tupl/provider-kit";
 import { type QueryRow, type ScanFilterClause, type TableScanRequest } from "@tupl/schema-model";
@@ -12,8 +12,7 @@ import { executeRelWithProvidersResult } from "@tupl/runtime/executor";
 import { finalizeProviders } from "@tupl/test-support/runtime";
 import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
 
-type TestProvider = Omit<FragmentProviderAdapter, "name"> &
-  Partial<Pick<LookupProviderAdapter, "lookupMany">>;
+type TestProvider = Omit<FragmentProvider, "name"> & Partial<Pick<LookupProvider, "lookupMany">>;
 
 function scanRows(rows: QueryRow[], request: TableScanRequest): QueryRow[] {
   let out = rows.filter((row) => applyFilters(row, request.where ?? []));
@@ -160,7 +159,7 @@ function matchesLike(value: string, pattern: string): boolean {
 }
 
 describe("query/local executor", () => {
-  it("returns tagged execution errors from the result API when a provider adapter is missing", async () => {
+  it("returns tagged execution errors from the result API when a provider is missing", async () => {
     const schema = buildEntitySchema({
       orders: {
         provider: "memory",
@@ -200,7 +199,7 @@ describe("query/local executor", () => {
     expect(result.error).toMatchObject({
       _tag: "TuplExecutionError",
       name: "TuplExecutionError",
-      message: "Missing provider adapter: memory",
+      message: "Missing provider: memory",
     });
   });
 

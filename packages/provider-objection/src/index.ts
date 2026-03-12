@@ -1,8 +1,8 @@
 import {
   AdapterResult,
   createSqlRelationalProviderAdapter,
-  type FragmentProviderAdapter,
-  type LookupProviderAdapter,
+  type FragmentProvider,
+  type LookupProvider,
 } from "@tupl/provider-kit";
 
 import { executeLookupMany } from "./execution/lookup-execution";
@@ -36,8 +36,8 @@ export function createObjectionProvider<
   >,
 >(
   options: CreateObjectionProviderOptions<TContext, TEntities>,
-): FragmentProviderAdapter<TContext> &
-  LookupProviderAdapter<TContext> & {
+): FragmentProvider<TContext> &
+  LookupProvider<TContext> & {
     entities: ObjectionProviderEntities<TEntities>;
   } {
   const providerName = options.name ?? "objection";
@@ -68,8 +68,8 @@ export function createObjectionProvider<
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
-  }) as FragmentProviderAdapter<TContext> &
-    LookupProviderAdapter<TContext> & {
+  }) as FragmentProvider<TContext> &
+    LookupProvider<TContext> & {
       entities: ObjectionProviderEntities<TEntities>;
     };
 }
