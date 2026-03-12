@@ -4,8 +4,8 @@ import { TuplPlanningError, type RelNode } from "@tupl/foundation";
 import type { ProvidersMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
-import { resolveLookupJoinCandidate } from "../conventions";
-import { nextPhysicalStepId } from "../planner-ids";
+import { resolveLookupJoinCandidate } from "../provider/conventions";
+import { nextPhysicalStepId } from "../physical/planner-ids";
 import { recordPhysicalStep, type PhysicalPlanningState } from "./physical-plan-state";
 import { tryPlanRemoteFragmentResult } from "./remote-fragment-planning";
 

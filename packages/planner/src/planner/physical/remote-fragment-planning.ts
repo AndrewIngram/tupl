@@ -4,11 +4,11 @@ import { TuplPlanningError, type RelNode } from "@tupl/foundation";
 import { normalizeCapability, type ProvidersMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
-import { resolveSingleProvider } from "../conventions";
+import { resolveSingleProvider } from "../provider/conventions";
 import { buildProviderFragmentForNodeResult } from "../provider-fragments";
-import { nextPhysicalStepId } from "../planner-ids";
+import { nextPhysicalStepId } from "../physical/planner-ids";
 import { toTuplPlanningError } from "../planner-errors";
-import type { PhysicalStep } from "../physical";
+import type { PhysicalStep } from "../physical/physical";
 import { recordPhysicalStep, type PhysicalPlanningState } from "./physical-plan-state";
 
 /**

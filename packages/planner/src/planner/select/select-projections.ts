@@ -15,7 +15,7 @@ import {
   supportsRankWindowArgs,
   type SqlExprLoweringContext,
 } from "../sql-expr-lowering";
-import { nextRelId } from "../planner-ids";
+import { nextRelId } from "../physical/planner-ids";
 import { parseAggregateMetric } from "../aggregate-lowering";
 import { parseRelColumnRef } from "./select-from-lowering";
 

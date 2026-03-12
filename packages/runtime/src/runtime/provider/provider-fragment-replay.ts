@@ -22,7 +22,7 @@ import type {
 } from "../contracts";
 import { tryQueryStep, tryQueryStepAsync } from "../diagnostics";
 import { failProviderFragmentState } from "./provider-fragment-errors";
-import { withTimeoutResult } from "../provider-execution";
+import { withTimeoutResult } from "./provider-execution";
 import { enforceExecutionRowLimitResult } from "../policy";
 
 export interface ProviderFragmentRunFailure {

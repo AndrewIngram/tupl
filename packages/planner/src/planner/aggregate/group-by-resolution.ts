@@ -5,7 +5,7 @@ import type {
   ParsedAggregateProjection,
   ParsedGroupByTerm,
 } from "../planner-types";
-import { nextSyntheticColumnName } from "../planner-ids";
+import { nextSyntheticColumnName } from "../physical/planner-ids";
 
 /**
  * Group-by resolution owns aggregate group validation and ordinal/ref materialization.

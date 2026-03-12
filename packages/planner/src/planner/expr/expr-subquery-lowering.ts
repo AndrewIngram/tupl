@@ -1,6 +1,6 @@
 import type { RelExpr } from "@tupl/foundation";
 
-import { nextRelId } from "../planner-ids";
+import { nextRelId } from "../physical/planner-ids";
 import type { Binding } from "../planner-types";
 import type { SqlExprLoweringContext } from "../sql-expr-lowering";
 import { isCorrelatedSubquery, parseSubqueryAst } from "../sql-expr-utils";

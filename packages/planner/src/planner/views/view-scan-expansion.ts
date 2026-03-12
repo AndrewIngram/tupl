@@ -6,11 +6,11 @@ import {
   type SchemaDefinition,
 } from "@tupl/schema-model";
 
-import { compileViewRelForPlanner } from "../view-lowering";
-import { nextRelId } from "../planner-ids";
+import { compileViewRelForPlanner } from "./view-lowering";
+import { nextRelId } from "../physical/planner-ids";
 import { expandCalculatedScan, hasCalculatedColumns } from "./calculated-scan-expansion";
 import { buildPlannerViewProjection, needsPlannerViewProjection } from "./view-projection";
-import type { ViewExpansionResult } from "../view-expansion-types";
+import type { ViewExpansionResult } from "./view-expansion-types";
 import {
   mapViewColumnName,
   mergeAliasMaps,

@@ -3,7 +3,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import { countRelNodes, type RelNode, type TuplError } from "@tupl/foundation";
 import type { ProviderFragment } from "@tupl/provider-kit";
 import { expandRelViewsResult, lowerSqlToRelResult } from "@tupl/planner";
-import { createProviderFragmentSession } from "../provider-fragment-session";
+import { createProviderFragmentSession } from "./provider-fragment-session";
 
 import type {
   QueryExecutionPlan,
@@ -17,7 +17,7 @@ import {
   maybeRejectFallbackResult,
   resolveSyncProviderCapabilityForRel,
   resolveSyncProviderCapabilityForRelResult,
-} from "../provider-execution";
+} from "./provider-execution";
 import { enforcePlannerNodeLimitResult, resolveGuardrails } from "../policy";
 import {
   assertNoSqlNodesWithoutProviderFragmentResult,

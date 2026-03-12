@@ -1,10 +1,10 @@
 import { Result } from "better-result";
 
 import type { RelNode } from "@tupl/foundation";
-import type { PhysicalPlan } from "./physical";
+import type { PhysicalPlan } from "./physical/physical";
 import type { ProvidersMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
-import { assignConventions } from "./conventions";
+import { assignConventions } from "./provider/conventions";
 import { createPhysicalPlanningState } from "./physical/physical-plan-state";
 import { planPhysicalNodeResult } from "./physical/local-step-planning";
 import { expandRelViewsResult } from "./view-expansion";

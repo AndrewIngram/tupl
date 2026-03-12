@@ -1,7 +1,7 @@
 import type { RelColumnRef, RelNode } from "@tupl/foundation";
 import type { SchemaDefinition, ScanFilterClause } from "@tupl/schema-model";
 
-import { nextRelId } from "../planner-ids";
+import { nextRelId } from "../physical/planner-ids";
 import type { PreparedSimpleSelect } from "./select-shape";
 import { appearsInRel, parseRelColumnRef } from "./select-from-lowering";
 import { collectRelExprRefs, isCorrelatedSubquery } from "../sql-expr-lowering";

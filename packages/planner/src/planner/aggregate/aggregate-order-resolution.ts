@@ -9,7 +9,7 @@ import type {
   SelectExprProjection,
   SelectProjection,
 } from "../planner-types";
-import { nextSyntheticColumnName } from "../planner-ids";
+import { nextSyntheticColumnName } from "../physical/planner-ids";
 import {
   parsePositiveOrdinalLiteral,
   resolveColumnRef,

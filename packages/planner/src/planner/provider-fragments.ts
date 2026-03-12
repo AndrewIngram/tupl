@@ -5,7 +5,7 @@ import { type SchemaDefinition } from "@tupl/schema-model";
 import type { ProviderFragment } from "@tupl/provider-kit";
 import { buildAggregateProviderFragment } from "./aggregate/aggregate-provider-fragment";
 import { toTuplPlanningError } from "./planner-errors";
-import { resolveSingleProvider } from "./conventions";
+import { resolveSingleProvider } from "./provider/conventions";
 import { normalizeRelForProvider } from "./provider/provider-rel-normalization";
 import { normalizeScanForProvider } from "./provider/provider-scan-normalization";
 import { expandRelViewsResult } from "./view-expansion";

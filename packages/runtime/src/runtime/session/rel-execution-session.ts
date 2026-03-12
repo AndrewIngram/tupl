@@ -12,9 +12,9 @@ import type {
 } from "../contracts";
 import { tryQueryStep, unwrapQueryResult } from "../diagnostics";
 import { executeRelWithProvidersResult } from "../executor";
-import { buildRelExecutionPlan } from "../execution-plan-builder";
+import { buildRelExecutionPlan } from "../execution/execution-plan-builder";
 import { routeForStepKind } from "../execution/step-routing";
-import { withTimeoutResult } from "../provider-execution";
+import { withTimeoutResult } from "../provider/provider-execution";
 import { enforceExecutionRowLimitResult } from "../policy";
 import { setFailedStepState } from "./session-state";
 import type { QueryRow } from "@tupl/schema-model";

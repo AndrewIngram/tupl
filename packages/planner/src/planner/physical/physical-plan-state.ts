@@ -1,4 +1,4 @@
-import type { PhysicalStep } from "../physical";
+import type { PhysicalStep } from "../physical/physical";
 
 export interface PhysicalPlanningState {
   steps: PhysicalStep[];

@@ -1,7 +1,7 @@
 import { isRelProjectColumnMapping, type RelNode } from "@tupl/foundation";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
-import type { ViewExpansionResult } from "../view-expansion-types";
+import type { ViewExpansionResult } from "./view-expansion-types";
 import {
   mapRelExprRefs,
   mergeAliasMaps,

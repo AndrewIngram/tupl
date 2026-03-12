@@ -13,7 +13,7 @@ import {
 import type { ExecutableSchema, ExecutableSchemaRuntime } from "./contracts";
 import { unwrapQueryResult, tryQueryStep } from "./diagnostics";
 import { explainInternal, queryInternal, queryInternalResult } from "./query-runner";
-import { createQuerySessionInternal, createQuerySessionResult } from "./session";
+import { createQuerySessionInternal, createQuerySessionResult } from "./session/session";
 
 /**
  * Executable schema owns schema-to-runtime binding and the public executable facade constructors.

@@ -5,7 +5,7 @@ import type { RelNode } from "@tupl/foundation";
 import type { QuerySessionInput } from "../contracts";
 import type { PlanBuildState } from "./explain-shaping";
 import { nextPlanId } from "./explain-shaping";
-import { resolveSyncProviderCapabilityForRel } from "../provider-execution";
+import { resolveSyncProviderCapabilityForRel } from "../provider/provider-execution";
 
 /**
  * Step families own plan-time decisions for remote fragment execution families.

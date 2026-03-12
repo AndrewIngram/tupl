@@ -4,7 +4,7 @@ import type { RelNode } from "@tupl/foundation";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
 import { toTuplPlanningError } from "./planner-errors";
-import type { ViewExpansionResult } from "./view-expansion-types";
+import type { ViewExpansionResult } from "./views/view-expansion-types";
 import { rewriteExpandedViewNode } from "./views/view-node-rewriting";
 import { expandViewScanNode } from "./views/view-scan-expansion";
 

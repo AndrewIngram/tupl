@@ -1,6 +1,6 @@
 import type { RelColumnRef, RelNode } from "@tupl/foundation";
 
-import { nextRelId } from "../planner-ids";
+import { nextRelId } from "../physical/planner-ids";
 import type { PreparedSimpleSelect } from "./select-shape";
 import { appendProjectExpressions } from "./select-projections";
 

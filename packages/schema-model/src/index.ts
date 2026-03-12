@@ -69,7 +69,7 @@ export type {
   TableScanRequest,
   UniqueConstraint,
 } from "./types";
-export { createSchemaBuilder, defineTableMethods, isSchemaBuilder } from "./builder";
+export { createSchemaBuilder, defineTableMethods, isSchemaBuilder } from "./dsl/builder";
 export {
   createPhysicalBindingFromEntity,
   createTableDefinitionFromEntity,
@@ -89,7 +89,7 @@ export {
   mapProviderRowsToLogical,
   mapProviderRowsToRelOutput,
   normalizeProviderRowValue,
-} from "./mapping";
+} from "./mapping/mapping";
 export {
   resolveSchemaLinkedEnums,
   type EnumLinkReference,

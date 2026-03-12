@@ -1,7 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
 
 import type { ConstraintValidationOptions } from "./constraints";
-import { executeRelLocallyResult, type RelExecutionContext } from "./local-execution";
+import { executeRelLocallyResult, type RelExecutionContext } from "./execution/local-execution";
 import { expandRelViewsResult } from "@tupl/planner";
 import {
   TuplExecutionError,

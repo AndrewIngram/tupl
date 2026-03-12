@@ -6,19 +6,19 @@ export {
   copyNormalizedSchemaBindings,
   finalizeSchemaDefinition,
   getNormalizedTableBinding,
-} from "./schema-finalization";
+} from "./normalization/schema-finalization";
 export {
   getNormalizedColumnBindings,
   getNormalizedColumnSourceMap,
   resolveNormalizedColumnSource,
-} from "./binding-normalization";
+} from "./normalization/binding-normalization";
 export {
   createPhysicalBindingFromEntity,
   createTableDefinitionFromEntity,
-} from "./entity-bindings";
+} from "./normalization/entity-bindings";
 export {
   resolveTableProvider,
   resolveTableProviderResult,
   validateProviderBindings,
   validateProviderBindingsResult,
-} from "./provider-validation";
+} from "./normalization/provider-validation";

@@ -22,7 +22,7 @@ export type {
   TableConstraints,
   TableDefinition,
   UniqueConstraint,
-} from "./schema-contracts";
+} from "./contracts/schema-contracts";
 export type {
   DslTableDefinition,
   DslViewDefinition,
@@ -39,7 +39,7 @@ export type {
   SchemaViewRelNode,
   SchemaViewRelNodeInput,
   SchemaViewScanNode,
-} from "./dsl-contracts";
+} from "./contracts/dsl-contracts";
 export type {
   NormalizedCalculatedColumnBinding,
   NormalizedColumnBinding,
@@ -49,7 +49,7 @@ export type {
   NormalizedViewTableBinding,
   TableColumnName,
   TableName,
-} from "./normalized-contracts";
+} from "./contracts/normalized-contracts";
 export type {
   AggregateFunction,
   ColumnValue,
@@ -70,7 +70,7 @@ export type {
   TableMethodsMap,
   TableRow,
   TableScanRequest,
-} from "./query-contracts";
+} from "./contracts/query-contracts";
 export type {
   AggregatePlanDecision,
   LookupPlanDecision,
@@ -82,5 +82,8 @@ export type {
   PlannedOrderTerm,
   PlannedScanRequest,
   ScanPlanDecision,
-} from "./planning-contracts";
-export type { EnumLinkReference, ResolveSchemaLinkedEnumsOptions } from "./enum-contracts";
+} from "./contracts/planning-contracts";
+export type {
+  EnumLinkReference,
+  ResolveSchemaLinkedEnumsOptions,
+} from "./contracts/enum-contracts";

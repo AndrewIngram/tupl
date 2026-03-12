@@ -5,7 +5,7 @@ import {
   type NormalizedColumnBinding,
 } from "@tupl/schema-model";
 
-import { nextRelId } from "../planner-ids";
+import { nextRelId } from "../physical/planner-ids";
 import type { ViewAliasColumnMap } from "../planner-types";
 import { resolveMappedColumnRef, resolveViewSourceRef } from "./view-aliases";
 

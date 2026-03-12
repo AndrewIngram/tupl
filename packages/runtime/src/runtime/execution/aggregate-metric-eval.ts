@@ -2,7 +2,7 @@ import { Result, type Result as BetterResult } from "better-result";
 
 import { TuplExecutionError } from "@tupl/foundation";
 
-import { compareNullableValues } from "../row-ops";
+import { compareNullableValues } from "./row-ops";
 import { toFiniteNumberResult } from "./expression-scalar-functions";
 
 /**

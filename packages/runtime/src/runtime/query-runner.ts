@@ -26,7 +26,7 @@ import {
   maybeExecuteWholeQueryFragmentResult,
   resolveSyncProviderCapabilityForRelResult,
   withTimeoutResult,
-} from "./provider-execution";
+} from "./provider/provider-execution";
 
 /**
  * Query runner owns SQL-to-execution orchestration and explain/query entrypoints for the runtime.

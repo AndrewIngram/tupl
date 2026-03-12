@@ -2,7 +2,7 @@ import { Result, type Result as BetterResult } from "better-result";
 
 import { stringifyUnknownValue, TuplExecutionError } from "@tupl/foundation";
 
-import { compareNonNull, testSqlLikePattern } from "../row-ops";
+import { compareNonNull, testSqlLikePattern } from "./row-ops";
 
 /**
  * Expression scalar functions own local scalar SQL function semantics, casts, and numeric coercion.

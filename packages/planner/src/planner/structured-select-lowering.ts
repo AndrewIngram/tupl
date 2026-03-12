@@ -1,7 +1,7 @@
 import type { RelNode } from "@tupl/foundation";
 import type { SelectAst } from "./sqlite-parser/ast";
 import type { SchemaDefinition } from "@tupl/schema-model";
-import { nextRelId } from "./planner-ids";
+import { nextRelId } from "./physical/planner-ids";
 import { collectTablesFromSelectAst } from "./sql-expr-lowering";
 import { tryLowerSimpleSelect } from "./simple-select-lowering";
 import { parseSetOp } from "./select/set-op-lowering";
