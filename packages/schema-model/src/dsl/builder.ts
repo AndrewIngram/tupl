@@ -21,7 +21,8 @@ import type { SchemaDslViewRelHelpers, SchemaViewRelNodeInput } from "../contrac
 import { buildRegisteredSchemaDefinition } from "../normalization";
 
 /**
- * Builder owns the schema DSL entrypoints used to author logical tables and views.
+ * Builder owns schema authoring entrypoints and registration flow.
+ * It intentionally stops at collecting table/view definitions; normalization semantics live downstream.
  */
 export function createSchemaBuilder<TContext>(): SchemaBuilder<TContext> {
   const state: SchemaBuilderState<TContext> = {

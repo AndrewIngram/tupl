@@ -5,6 +5,7 @@ import {
   asIso8601Timestamp,
   createSchemaBuilder,
   defineTableMethods,
+  finalizeSchemaDefinition,
   getNormalizedTableBinding,
   mapProviderRowsToLogical,
   resolveSchemaLinkedEnums,
@@ -537,6 +538,73 @@ describe("createSchemaBuilder", () => {
     });
 
     expect(() => resolveSchemaLinkedEnums(schema)).toThrow("Unmapped enumFrom value");
+  });
+
+  it("fails fast when finalizing a schema without hidden normalized bindings", () => {
+    expect(() =>
+      finalizeSchemaDefinition({
+        tables: {
+          orders: {
+            provider: "warehouse",
+            columns: {
+              id: { type: "text", nullable: false },
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      "Physical tables must be declared via createSchemaBuilder().table(name, provider.entities.someTable, config).",
+    );
+  });
+
+  it("fails fast when a finalized schema's logical provider diverges from its physical binding", () => {
+    const ordersEntity = createDataEntityHandle({
+      entity: "orders_raw",
+      provider: "warehouse",
+    });
+
+    const schema = buildSchema((builder) => {
+      builder.table("myOrders", ordersEntity, {
+        columns: {
+          id: { source: "id", type: "text", nullable: false },
+        },
+      });
+    });
+
+    const myOrders = schema.tables.myOrders;
+    expect(myOrders).toBeDefined();
+    if (!myOrders) {
+      throw new Error("Expected myOrders table definition.");
+    }
+
+    myOrders.provider = "analytics";
+
+    expect(() => finalizeSchemaDefinition(schema)).toThrow(
+      "Table myOrders must define provider warehouse to match its entity-backed physical binding.",
+    );
+  });
+
+  it("preserves normalized table bindings across repeated finalization", () => {
+    const ordersEntity = createDataEntityHandle({
+      entity: "orders_raw",
+      provider: "warehouse",
+    });
+
+    const schema = buildSchema((builder) => {
+      builder.table("myOrders", ordersEntity, {
+        columns: {
+          id: { source: "id", type: "text", nullable: false },
+        },
+      });
+    });
+
+    const finalized = finalizeSchemaDefinition(schema);
+
+    expect(getNormalizedTableBinding(finalized, "myOrders")).toMatchObject({
+      kind: "physical",
+      provider: "warehouse",
+      entity: "orders_raw",
+    });
   });
 
   it("generates DDL with metadata comments for timestamp/description fields", () => {
