@@ -1,25 +1,19 @@
 import {
   AdapterResult,
-  bindAdapterEntities,
-  collectCapabilityAtomsForFragment,
-  createDataEntityHandle,
-  inferRouteFamilyForFragment,
-  normalizeDataEntityShape,
+  createRelationalProviderAdapter,
   type DataEntityShape,
   type DataEntityHandle,
   type DataEntityReadMetadataMap,
   type InferDataEntityShapeMetadata,
   type FragmentProviderAdapter,
   type LookupProviderAdapter,
-  type ProviderCapabilityAtom,
-  type ProviderCapabilityReport,
   type ProviderFragment,
   type QueryRow,
   type ProviderRuntimeBinding,
   type ScanFilterClause,
   type TableScanRequest,
 } from "@tupl/provider-kit";
-import { isRelProjectColumnMapping, stringifyUnknownValue, type RelNode } from "@tupl/foundation";
+import { isRelProjectColumnMapping, type RelNode } from "@tupl/foundation";
 import {
   UnsupportedRelationalPlanError,
   buildSingleQueryPlan as buildRelationalSingleQueryPlan,
@@ -247,7 +241,7 @@ export function createObjectionProvider<
       >;
     };
   } {
-  const declaredAtoms: readonly ProviderCapabilityAtom[] = [
+  const declaredAtoms = [
     "scan.project",
     "scan.filter.basic",
     "scan.filter.set_membership",
@@ -264,85 +258,34 @@ export function createObjectionProvider<
     "set_op.except",
     "cte.non_recursive",
     "window.rank_basic",
-  ];
+  ] as const;
   const providerName = options.name ?? "objection";
   const entityConfigs = resolveEntityConfigs(options);
   const entityOptions = (options.entities ?? {}) as TEntities;
-
-  const handles = {} as {
-    [K in keyof TEntities]: DataEntityHandle<
-      InferObjectionEntityColumns<TEntities[K]>,
-      NormalizeObjectionEntityRow<TEntities[K]>,
-      InferObjectionEntityColumnMetadata<TEntities[K]>
-    >;
-  };
-  const adapter = {
+  return createRelationalProviderAdapter<TContext, TEntities, ObjectionRelCompileStrategy>({
     name: providerName,
-    entities: handles,
-    routeFamilies: ["scan", "lookup", "aggregate", "rel-core", "rel-advanced"] as const,
-    capabilityAtoms: [...declaredAtoms],
-    canExecute(fragment): boolean | ProviderCapabilityReport {
-      switch (fragment.kind) {
-        case "scan":
-          return !!entityConfigs[fragment.table];
-        case "rel": {
-          const strategy = resolveObjectionRelCompileStrategy(fragment.rel, entityConfigs);
-          const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
-          const missingAtoms = requiredAtoms.filter((atom) => !declaredAtoms.includes(atom));
-          return strategy
-            ? true
-            : {
-                supported: false,
-                routeFamily: inferRouteFamilyForFragment(fragment),
-                requiredAtoms,
-                missingAtoms,
-                reason: hasSqlNode(fragment.rel)
-                  ? "rel fragment must not contain sql nodes."
-                  : "Rel fragment is not supported for single-query Objection pushdown.",
-              };
-        }
-        default:
-          return false;
-      }
+    declaredAtoms,
+    entities: entityOptions,
+    unsupportedRelCompileMessage: "Unsupported relational fragment for Objection provider.",
+    unsupportedRelReason({ fragment }) {
+      return hasSqlNode(fragment.rel)
+        ? "rel fragment must not contain sql nodes."
+        : "Rel fragment is not supported for single-query Objection pushdown.";
     },
-    async compile(fragment) {
-      switch (fragment.kind) {
-        case "scan":
-          if (!entityConfigs[fragment.table]) {
-            return AdapterResult.err(
-              new Error(`Unknown Objection entity config: ${fragment.table}`),
-            );
-          }
-          return AdapterResult.ok({
-            provider: providerName,
-            kind: "scan",
-            payload: fragment,
-          });
-        case "rel": {
-          const strategy = resolveObjectionRelCompileStrategy(fragment.rel, entityConfigs);
-          if (!strategy) {
-            return AdapterResult.err(
-              new Error("Unsupported relational fragment for Objection provider."),
-            );
-          }
-          return AdapterResult.ok({
-            provider: providerName,
-            kind: "rel",
-            payload: {
-              strategy,
-              rel: fragment.rel,
-            } satisfies ObjectionRelCompiledPlan,
-          });
-        }
-        default: {
-          const fragmentKind = stringifyUnknownValue((fragment as { kind?: unknown }).kind);
-          return AdapterResult.err(
-            new Error(`Unsupported Objection fragment kind: ${fragmentKind}`),
-          );
-        }
-      }
+    resolveRelCompileStrategy({ fragment }) {
+      return resolveObjectionRelCompileStrategy(fragment.rel, entityConfigs);
     },
-    async execute(plan, context) {
+    async compileRelFragment({ fragment, strategy }) {
+      return AdapterResult.ok({
+        provider: providerName,
+        kind: "rel",
+        payload: {
+          strategy,
+          rel: fragment.rel,
+        } satisfies ObjectionRelCompiledPlan,
+      });
+    },
+    async executeCompiledPlan({ plan, context }) {
       const knex = await resolveKnex(options, context);
       switch (plan.kind) {
         case "scan": {
@@ -366,7 +309,7 @@ export function createObjectionProvider<
           );
       }
     },
-    async lookupMany(request, context) {
+    async lookupMany({ request, context }) {
       const knex = await resolveKnex(options, context);
       const scanRequest: TableScanRequest = {
         table: request.table,
@@ -386,7 +329,7 @@ export function createObjectionProvider<
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
-  } satisfies FragmentProviderAdapter<TContext> &
+  }) as FragmentProviderAdapter<TContext> &
     LookupProviderAdapter<TContext> & {
       entities: {
         [K in keyof TEntities]: DataEntityHandle<
@@ -396,19 +339,6 @@ export function createObjectionProvider<
         >;
       };
     };
-  for (const entityName of Object.keys(entityConfigs) as Array<Extract<keyof TEntities, string>>) {
-    const config = entityOptions[entityName];
-    handles[entityName] = createDataEntityHandle({
-      entity: entityName,
-      provider: providerName,
-      adapter,
-      ...(config?.shape
-        ? { columns: normalizeDataEntityShape(config.shape as DataEntityShape<string>) }
-        : {}),
-    }) as never;
-  }
-
-  return bindAdapterEntities(adapter);
 }
 
 function resolveEntityConfigs<TContext>(

@@ -6,3 +6,4 @@ export * from "./entity-handles";
 export * from "./operations";
 export * from "./capabilities";
 export * from "./contracts";
+export * from "./relational/relational-provider";

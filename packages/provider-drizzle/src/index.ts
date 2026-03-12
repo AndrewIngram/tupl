@@ -19,11 +19,7 @@ import {
 } from "drizzle-orm";
 import {
   AdapterResult,
-  bindAdapterEntities,
-  collectCapabilityAtomsForFragment,
-  createDataEntityHandle,
-  inferRouteFamilyForFragment,
-  normalizeDataEntityShape,
+  createRelationalProviderAdapter,
   type DataEntityColumnMetadata,
   type DataEntityShape,
   type DataEntityHandle,
@@ -32,8 +28,6 @@ import {
   type InferDataEntityShapeMetadata,
   type LookupProviderAdapter,
   type MaybePromise,
-  type ProviderCapabilityAtom,
-  type ProviderCapabilityReport,
   type ProviderCompiledPlan,
   type ProviderFragment,
   type ProviderLookupManyRequest,
@@ -46,7 +40,6 @@ import {
 import {
   isRelProjectColumnMapping,
   type SqlScalarType,
-  stringifyUnknownValue,
   type RelExpr,
   type RelNode,
 } from "@tupl/foundation";
@@ -275,7 +268,7 @@ export function createDrizzleProvider<
       >;
     };
   } {
-  const declaredAtoms: readonly ProviderCapabilityAtom[] = [
+  const declaredAtoms = [
     "scan.project",
     "scan.filter.basic",
     "scan.filter.set_membership",
@@ -292,119 +285,66 @@ export function createDrizzleProvider<
     "set_op.except",
     "cte.non_recursive",
     "window.rank_basic",
-  ];
+  ] as const;
   const providerName = options.name ?? "drizzle";
   const tableConfigs = options.tables as Record<string, DrizzleProviderTableConfig<TContext>>;
   const dialect = options.dialect ?? inferDrizzleDialect(options.db, tableConfigs);
   void dialect;
-
-  const handles = {} as {
-    [K in keyof TTables]: DataEntityHandle<
-      InferDrizzleTableColumns<TTables[K]>,
-      InferDrizzleEntityRow<TTables[K]>,
-      InferDrizzleEntityColumnMetadata<TTables[K]>
-    >;
-  };
-  const adapter = {
+  return createRelationalProviderAdapter<TContext, TTables, DrizzleRelCompileStrategy>({
     name: providerName,
-    entities: handles,
-    routeFamilies: ["scan", "lookup", "aggregate", "rel-core", "rel-advanced"] as const,
-    capabilityAtoms: [...declaredAtoms],
-    canExecute(fragment, context): MaybePromise<boolean | ProviderCapabilityReport> {
-      switch (fragment.kind) {
-        case "scan":
-          return !!tableConfigs[fragment.table];
-        case "rel": {
-          const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
-          const missingAtoms = requiredAtoms.filter((atom) => !declaredAtoms.includes(atom));
-          const routeFamily = inferRouteFamilyForFragment(fragment);
-          const evaluateWithDb = (db: DrizzleQueryExecutor): boolean | ProviderCapabilityReport => {
-            const strategy = resolveDrizzleRelCompileStrategy(fragment.rel, tableConfigs);
-            if (strategy && !isStrategyAvailableOnDrizzleDb(strategy, db)) {
-              return {
-                supported: false,
-                routeFamily,
-                requiredAtoms,
-                missingAtoms,
-                reason: `Drizzle database instance does not support required APIs for "${strategy}" rel pushdown.`,
-              };
-            }
-            return strategy
-              ? true
-              : {
-                  supported: false,
-                  routeFamily,
-                  requiredAtoms,
-                  missingAtoms,
-                  reason: hasSqlNode(fragment.rel)
-                    ? "rel fragment must not contain sql nodes."
-                    : "Rel fragment is not supported for single-query drizzle pushdown.",
-                };
-          };
-
-          if (!isRuntimeBindingResolver(options.db)) {
-            return evaluateWithDb(options.db);
-          }
-
-          const db = resolveDrizzleDbMaybeSync(options, context);
-          return isPromiseLike(db) ? db.then(evaluateWithDb) : evaluateWithDb(db);
-        }
-        default:
-          return false;
-      }
+    declaredAtoms,
+    entities: options.tables,
+    unsupportedRelCompileMessage: "Unsupported relational fragment for drizzle provider.",
+    resolveEntityColumns({ config }) {
+      return deriveEntityColumnsFromTable(config.table);
     },
-    async compile(fragment, context) {
-      switch (fragment.kind) {
-        case "scan":
-          return AdapterResult.ok({
-            provider: providerName,
-            kind: fragment.kind,
-            payload: fragment,
-          });
-        case "rel": {
-          const strategy = resolveDrizzleRelCompileStrategy(fragment.rel, tableConfigs);
-          if (!strategy) {
-            return AdapterResult.err(
-              new Error("Unsupported relational fragment for drizzle provider."),
-            );
-          }
-          const db = await resolveDrizzleDb(options, context);
-          if (!isStrategyAvailableOnDrizzleDb(strategy, db)) {
-            return AdapterResult.err(
-              new Error(
-                `Drizzle database instance does not support required APIs for "${strategy}" rel pushdown.`,
-              ),
-            );
-          }
-
-          return AdapterResult.ok({
-            provider: providerName,
-            kind: fragment.kind,
-            payload: {
-              strategy,
-              rel: fragment.rel,
-            } satisfies DrizzleRelCompiledPlan,
-          });
-        }
-        default: {
-          const fragmentKind = stringifyUnknownValue((fragment as { kind?: unknown }).kind);
-          return AdapterResult.err(new Error(`Unsupported drizzle fragment kind: ${fragmentKind}`));
-        }
-      }
+    unsupportedRelReason({ fragment }) {
+      return hasSqlNode(fragment.rel)
+        ? "rel fragment must not contain sql nodes."
+        : "Rel fragment is not supported for single-query drizzle pushdown.";
     },
-    async execute(plan, context) {
+    resolveRelCompileStrategy({ fragment }) {
+      return resolveDrizzleRelCompileStrategy(fragment.rel, tableConfigs);
+    },
+    isRelStrategySupported({ context, strategy }) {
+      if (strategy == null) {
+        return "Rel fragment is not supported for single-query drizzle pushdown.";
+      }
+      const evaluateWithDb = (db: DrizzleQueryExecutor): true | string =>
+        isStrategyAvailableOnDrizzleDb(strategy, db)
+          ? true
+          : `Drizzle database instance does not support required APIs for "${strategy}" rel pushdown.`;
+
+      if (!isRuntimeBindingResolver(options.db)) {
+        return evaluateWithDb(options.db);
+      }
+
+      const db = resolveDrizzleDbMaybeSync(options, context);
+      return isPromiseLike(db) ? db.then(evaluateWithDb) : evaluateWithDb(db);
+    },
+    async compileRelFragment({ fragment, strategy }) {
+      return AdapterResult.ok({
+        provider: providerName,
+        kind: "rel",
+        payload: {
+          strategy,
+          rel: fragment.rel,
+        } satisfies DrizzleRelCompiledPlan,
+      });
+    },
+    async executeCompiledPlan({ plan, context }) {
       return AdapterResult.tryPromise({
         try: () => executeDrizzlePlan(plan, options, context),
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
-    async lookupMany(request, context) {
+    async lookupMany({ request, context }) {
       return AdapterResult.tryPromise({
         try: () => lookupManyWithDrizzle(options, request, context),
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
-  } satisfies FragmentProviderAdapter<TContext> &
+  }) as FragmentProviderAdapter<TContext> &
     LookupProviderAdapter<TContext> & {
       entities: {
         [K in keyof TTables]: DataEntityHandle<
@@ -414,31 +354,6 @@ export function createDrizzleProvider<
         >;
       };
     };
-  for (const tableName of Object.keys(options.tables) as Array<Extract<keyof TTables, string>>) {
-    const tableConfig = options.tables[tableName];
-    if (!tableConfig) {
-      throw new Error(`Missing drizzle table config: ${tableName}`);
-    }
-    const entityColumns = tableConfig.shape
-      ? normalizeDataEntityShape(
-          tableConfig.shape as DataEntityShape<InferDrizzleTableColumns<TTables[typeof tableName]>>,
-        )
-      : deriveEntityColumnsFromTable(tableConfig.table);
-    handles[tableName] = createDataEntityHandle<
-      InferDrizzleTableColumns<TTables[typeof tableName]>,
-      InferDrizzleEntityRow<TTables[typeof tableName]>,
-      InferDrizzleEntityColumnMetadata<TTables[typeof tableName]>
-    >({
-      entity: tableName,
-      provider: providerName,
-      adapter,
-      ...(entityColumns && Object.keys(entityColumns).length > 0
-        ? { columns: entityColumns as never }
-        : {}),
-    });
-  }
-
-  return bindAdapterEntities(adapter);
 }
 
 function inferDrizzleDialect<TContext>(

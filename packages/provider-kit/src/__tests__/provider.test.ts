@@ -3,10 +3,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   createDataEntityHandle,
+  createRelationalProviderAdapter,
   type FragmentProviderAdapter,
+  getDataEntityAdapter,
   type LookupProviderAdapter,
   type QueryRow,
   type ProviderAdapter,
+  type ProviderCapabilityAtom,
   type ProviderFragment,
   type ScanFilterClause,
   type TableScanRequest,
@@ -171,6 +174,310 @@ function matchesLike(value: string, pattern: string): boolean {
 }
 
 describe("query/provider runtime", () => {
+  it("creates and binds relational provider entity handles automatically", () => {
+    const adapter = createRelationalProviderAdapter({
+      name: "warehouse",
+      declaredAtoms: ["scan.project"] as const,
+      entities: {
+        orders: {
+          shape: {
+            id: "text",
+            total_cents: "integer",
+          },
+        },
+      },
+      resolveRelCompileStrategy() {
+        return null;
+      },
+      async compileRelFragment() {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: null,
+        });
+      },
+      async executeCompiledPlan() {
+        return Result.ok([]);
+      },
+    });
+
+    expect(adapter.entities.orders.entity).toBe("orders");
+    expect(adapter.entities.orders.provider).toBe("warehouse");
+    expect(adapter.entities.orders.columns).toMatchObject({
+      id: { source: "id", type: "text" },
+      total_cents: { source: "total_cents", type: "integer" },
+    });
+    expect(getDataEntityAdapter(adapter.entities.orders)).toBe(adapter);
+  });
+
+  it("returns structured capability reports for unsupported relational fragments", async () => {
+    const requiredAtomsByCheck: ProviderCapabilityAtom[][] = [];
+    const adapter = createRelationalProviderAdapter({
+      name: "warehouse",
+      declaredAtoms: ["scan.project"] as const,
+      entities: {
+        orders: {},
+      },
+      resolveRelCompileStrategy() {
+        return null;
+      },
+      unsupportedRelReason() {
+        return "Rel fragment is not supported for this provider.";
+      },
+      async compileRelFragment() {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: null,
+        });
+      },
+      async executeCompiledPlan() {
+        return Result.ok([]);
+      },
+      isRelStrategySupported(args) {
+        requiredAtomsByCheck.push(args.requiredAtoms);
+        return true;
+      },
+    });
+
+    const capability = await adapter.canExecute(
+      {
+        kind: "rel",
+        provider: "warehouse",
+        rel: {
+          id: "join",
+          kind: "join",
+          convention: "local",
+          joinType: "inner",
+          left: {
+            id: "left_scan",
+            kind: "scan",
+            convention: "local",
+            table: "orders",
+            select: ["id"],
+            output: [],
+          },
+          right: {
+            id: "right_scan",
+            kind: "scan",
+            convention: "local",
+            table: "orders",
+            alias: "o2",
+            select: ["id"],
+            output: [],
+          },
+          leftKey: { column: "id" },
+          rightKey: { alias: "o2", column: "id" },
+          output: [],
+        },
+      },
+      {},
+    );
+
+    expect(requiredAtomsByCheck).toEqual([]);
+    expect(capability).toEqual({
+      supported: false,
+      routeFamily: "rel-core",
+      requiredAtoms: ["join.inner", "scan.project"],
+      missingAtoms: ["join.inner"],
+      reason: "Rel fragment is not supported for this provider.",
+    });
+  });
+
+  it("passes route family and required atoms into supported relational capability checks", async () => {
+    const observed: {
+      routeFamily: string;
+      requiredAtoms: ProviderCapabilityAtom[];
+      missingAtoms: ProviderCapabilityAtom[];
+      strategy: string | null;
+    }[] = [];
+    const adapter = createRelationalProviderAdapter({
+      name: "warehouse",
+      declaredAtoms: ["scan.project", "join.inner"] as const,
+      entities: {
+        orders: {},
+      },
+      resolveRelCompileStrategy() {
+        return "basic";
+      },
+      isRelStrategySupported(args) {
+        observed.push({
+          routeFamily: args.routeFamily,
+          requiredAtoms: args.requiredAtoms,
+          missingAtoms: args.missingAtoms,
+          strategy: args.strategy,
+        });
+        return true;
+      },
+      async compileRelFragment() {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: null,
+        });
+      },
+      async executeCompiledPlan() {
+        return Result.ok([]);
+      },
+    });
+
+    const capability = await adapter.canExecute(
+      {
+        kind: "rel",
+        provider: "warehouse",
+        rel: {
+          id: "join",
+          kind: "join",
+          convention: "local",
+          joinType: "inner",
+          left: {
+            id: "left_scan",
+            kind: "scan",
+            convention: "local",
+            table: "orders",
+            select: ["id"],
+            output: [],
+          },
+          right: {
+            id: "right_scan",
+            kind: "scan",
+            convention: "local",
+            table: "orders",
+            alias: "o2",
+            select: ["id"],
+            output: [],
+          },
+          leftKey: { column: "id" },
+          rightKey: { alias: "o2", column: "id" },
+          output: [],
+        },
+      },
+      {},
+    );
+
+    expect(capability).toBe(true);
+    expect(observed).toEqual([
+      {
+        routeFamily: "rel-core",
+        requiredAtoms: ["join.inner", "scan.project"],
+        missingAtoms: [],
+        strategy: "basic",
+      },
+    ]);
+  });
+
+  it("bases scan fragment support on registered relational entities", async () => {
+    const adapter = createRelationalProviderAdapter({
+      name: "warehouse",
+      declaredAtoms: ["scan.project"] as const,
+      entities: {
+        orders: {},
+      },
+      resolveRelCompileStrategy() {
+        return null;
+      },
+      async compileRelFragment() {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: null,
+        });
+      },
+      async executeCompiledPlan() {
+        return Result.ok([]);
+      },
+    });
+
+    expect(
+      adapter.canExecute(
+        {
+          kind: "scan",
+          provider: "warehouse",
+          table: "orders",
+          request: {
+            table: "orders",
+            select: ["id"],
+          },
+        },
+        {},
+      ),
+    ).toBe(true);
+    expect(
+      adapter.canExecute(
+        {
+          kind: "scan",
+          provider: "warehouse",
+          table: "users",
+          request: {
+            table: "users",
+            select: ["id"],
+          },
+        },
+        {},
+      ),
+    ).toBe(false);
+  });
+
+  it("wires lookupMany only when relational lookup hooks are provided", async () => {
+    const withoutLookup = createRelationalProviderAdapter({
+      name: "warehouse",
+      declaredAtoms: ["scan.project"] as const,
+      entities: {
+        orders: {},
+      },
+      resolveRelCompileStrategy() {
+        return null;
+      },
+      async compileRelFragment() {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: null,
+        });
+      },
+      async executeCompiledPlan() {
+        return Result.ok([]);
+      },
+    });
+    const withLookup = createRelationalProviderAdapter({
+      name: "warehouse",
+      declaredAtoms: ["scan.project", "lookup.bulk"] as const,
+      entities: {
+        orders: {},
+      },
+      resolveRelCompileStrategy() {
+        return null;
+      },
+      async compileRelFragment() {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: null,
+        });
+      },
+      async executeCompiledPlan() {
+        return Result.ok([]);
+      },
+      async lookupMany() {
+        return Result.ok([{ id: "o1" }]);
+      },
+    });
+
+    expect("lookupMany" in withoutLookup).toBe(false);
+    expect("lookupMany" in withLookup).toBe(true);
+    await expect(
+      withLookup.lookupMany?.(
+        {
+          table: "orders",
+          key: "id",
+          keys: ["o1"],
+          select: ["id"],
+        },
+        {},
+      ),
+    ).resolves.toEqual(Result.ok([{ id: "o1" }]));
+  });
+
   it("does not require expr.null_distinct for is_null and is_not_null scan filters", () => {
     const isNullAtoms = collectCapabilityAtomsForFragment({
       kind: "scan",

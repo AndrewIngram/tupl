@@ -11,3 +11,7 @@ Stable adapter-authoring surfaces:
 - `@tupl/provider-kit/testing`: framework-neutral adapter conformance cases
 
 Ordinary adapter code should not need to import `@tupl/schema-model` directly.
+
+For SQL-like adapters, the ordinary path is now `createRelationalProviderAdapter(...)` on the main
+package root. It absorbs the standard entity binding and capability-report wiring so provider
+packages can focus on backend-specific compilation and execution.

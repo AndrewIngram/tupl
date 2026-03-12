@@ -437,6 +437,41 @@ describe("package boundaries", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("keeps first-party relational providers on the relational helper instead of manual wiring", () => {
+    const offenders: string[] = [];
+    const relationalProviderRoots = [
+      "packages/provider-drizzle/src",
+      "packages/provider-kysely/src",
+      "packages/provider-objection/src",
+    ];
+    const disallowedPrimitives = [
+      "bindAdapterEntities",
+      "collectCapabilityAtomsForFragment",
+      "createDataEntityHandle",
+      "inferRouteFamilyForFragment",
+      "normalizeDataEntityShape",
+    ];
+
+    for (const root of relationalProviderRoots) {
+      for (const file of walkFiles(join(REPO_ROOT, root))) {
+        if (!file.endsWith(".ts") && !file.endsWith(".tsx")) {
+          continue;
+        }
+
+        const contents = readFileSync(file, "utf8");
+        if (!contents.includes("@tupl/provider-kit")) {
+          continue;
+        }
+
+        if (disallowedPrimitives.some((name) => contents.includes(name))) {
+          offenders.push(relative(REPO_ROOT, file));
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
   it("removes the temporary internal core monoliths", () => {
     expect(() =>
       statSync(join(REPO_ROOT, "packages/schema-model/src/schema-model-core.ts")),

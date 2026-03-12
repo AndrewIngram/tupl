@@ -175,6 +175,75 @@ That adapter is already usable because unsupported joins, aggregates, and comput
 For ordinary adapter authoring, stay on `@tupl/provider-kit` and `@tupl/provider-kit/shapes`.
 You should not need `@tupl/schema-model` unless you are working on unusually deep planner/schema integration.
 
+## Relational Adapters Should Start With `createRelationalProviderAdapter`
+
+For SQL-like backends, the normal path is `createRelationalProviderAdapter(...)` from
+`@tupl/provider-kit`. It owns the repeated adapter plumbing:
+
+- entity handle creation and binding
+- shape normalization for declared entities
+- default `scan` / `rel` capability reporting
+- route-family inference and required-atom collection
+
+Your provider package should keep only backend-specific work:
+
+- entity config details (`table`, `base`, query-scoping hooks)
+- relational strategy resolution
+- fragment compilation
+- compiled-plan execution
+
+Sketch:
+
+```ts
+import { AdapterResult, createRelationalProviderAdapter } from "@tupl/provider-kit";
+
+const declaredAtoms = [
+  "scan.project",
+  "scan.filter.basic",
+  "scan.filter.set_membership",
+  "scan.sort",
+  "scan.limit_offset",
+  "lookup.bulk",
+  "join.inner",
+  "join.left",
+] as const;
+
+export function createExampleRelationalProvider(options: CreateExampleProviderOptions) {
+  const entityConfigs = resolveEntityConfigs(options);
+
+  return createRelationalProviderAdapter({
+    name: "example-sql",
+    declaredAtoms,
+    entities: options.entities ?? {},
+    resolveRelCompileStrategy({ fragment }) {
+      return resolveExampleStrategy(fragment.rel, entityConfigs);
+    },
+    compileRelFragment({ fragment, strategy }) {
+      return AdapterResult.ok({
+        provider: "example-sql",
+        kind: "rel",
+        payload: { strategy, rel: fragment.rel },
+      });
+    },
+    executeCompiledPlan({ plan, context }) {
+      return AdapterResult.tryPromise({
+        try: () => executeExamplePlan(plan, options, context),
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      });
+    },
+    lookupMany({ request, context }) {
+      return AdapterResult.tryPromise({
+        try: () => lookupManyWithExample(options, request, context),
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      });
+    },
+  });
+}
+```
+
+Reach for `@tupl/provider-kit/shapes` only when you need the advanced relational planning helpers
+that decide whether a `rel` fragment can be compiled as a single downstream query.
+
 ## Wiring the Adapter Into a Facade Schema
 
 Once an adapter exposes typed `entities`, the current schema API is:
