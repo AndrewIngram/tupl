@@ -11,7 +11,8 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@tupl/core": "workspace:*",
+    "@tupl/foundation": "workspace:*",
+    "@tupl/provider-kit": "workspace:*",
     "@tupl/schema": "workspace:*"
   }
 }

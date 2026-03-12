@@ -56,7 +56,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run workspace typecheck
-        run: pnpm -r typecheck
+        run: pnpm typecheck
 
   test-fast:
     name: Test (Fast)
@@ -87,7 +87,7 @@ jobs:
             ${{ runner.os }}-vitest-fast-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Run fast tests
-        run: pnpm exec vitest run --config vitest.fast.config.ts --coverage --reporter=default --reporter=blob --outputFile.blob=.vitest-reports/test-fast.json
+        run: pnpm test:fast:ci
 
       - name: Upload fast Vitest blob report
         uses: actions/upload-artifact@v4
@@ -125,7 +125,7 @@ jobs:
             ${{ runner.os }}-vitest-playground-slow-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Run slow playground tests
-        run: pnpm exec vitest run --config vitest.playground-slow.config.ts --coverage --reporter=default --reporter=blob --outputFile.blob=.vitest-reports/test-playground-slow.json
+        run: pnpm test:playground:slow:ci
 
       - name: Upload slow Vitest blob report
         uses: actions/upload-artifact@v4

@@ -11,6 +11,12 @@ For any non-trivial code change, always run:
 
 Do this before finalizing the work unless the user explicitly asks not to.
 
+Notes:
+
+- `pnpm typecheck` is the canonical workspace typecheck and must cover all packages (`pnpm -r typecheck`).
+- use `pnpm typecheck:root` only when you explicitly want the root tsconfig check by itself.
+- when you need local CI parity for verification, run `pnpm verify:ci`.
+
 ## Code coverage
 
 When code coverage is needed:
@@ -47,6 +53,19 @@ If a verification step cannot be run, state that explicitly and explain why.
 - exact deletion criteria
 - the ADR/task that tracks its removal
 - Default stance across the app: delete old-state compatibility code rather than carrying it forward.
+
+## Package boundaries
+
+- Keep the canonical package layering acyclic:
+  - `@tupl/foundation`
+  - `@tupl/provider-kit`
+  - `@tupl/schema-model`
+  - `@tupl/planner`
+  - `@tupl/runtime`
+  - `@tupl/schema`
+- Within those six packages, only import downward along that layering.
+- Application-facing docs and examples should use `@tupl/schema` plus first-party provider packages unless a lower-level package is explicitly required for adapter-authoring or internal tooling.
+- Do not introduce new `@tupl/core` or `@tupl-internal/*` references.
 
 ## Skills
 

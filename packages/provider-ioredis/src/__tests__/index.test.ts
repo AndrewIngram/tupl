@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AdapterResult, type ProviderFragment } from "@tupl/core/provider";
+import { AdapterResult, type ProviderFragment } from "@tupl/provider-kit";
 import { createIoredisProvider, type RedisLike, type RedisPipelineLike } from "../index";
 
 class StubPipeline implements RedisPipelineLike {

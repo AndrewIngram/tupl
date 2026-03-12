@@ -1,6 +1,10 @@
 import dagre from "dagre";
 import { MarkerType, Position, type Edge, type Node } from "@xyflow/react";
-import type { QueryExecutionPlanScope, QueryExecutionPlanStep, QueryStepState } from "@tupl/core";
+import type {
+  QueryExecutionPlanScope,
+  QueryExecutionPlanStep,
+  QueryStepState,
+} from "@tupl/runtime";
 
 const NODE_WIDTH = 320;
 const NODE_HEIGHT = 170;

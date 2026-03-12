@@ -3,8 +3,8 @@ import {
   bindAdapterEntities,
   createDataEntityHandle,
   type ProviderAdapter,
-} from "@tupl/core/provider";
-import { stringifyUnknownValue } from "@tupl/core";
+} from "@tupl/provider-kit";
+import { stringifyUnknownValue } from "@tupl/foundation";
 import {
   createExecutableSchema,
   createSchemaBuilder,

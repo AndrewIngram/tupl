@@ -13,6 +13,12 @@
 
 The facade stays relational (`SELECT` over tables/views), while providers can be relational or non-relational.
 
+Package guidance:
+
+- application authors should usually stay on `@tupl/schema`
+- adapter authors should usually stay on `@tupl/provider-kit`, `@tupl/provider-kit/shapes`, and `@tupl/provider-kit/testing`
+- planner/runtime packages are for advanced tooling, debugging, and lower-level integrations
+
 ## Why
 
 Typical reasons to use `tupl`:
@@ -209,6 +215,15 @@ Execution behavior notes:
 
 ## Guides
 
+- [Hosted playground](https://tupl-playground.andrewingram.workers.dev/)
 - [Building a schema (executable schema, Drizzle example)](./docs/building-a-schema.md)
 - [Creating a new adapter (progressive path)](./docs/creating-an-adapter.md)
+
+## Verification
+
+- `pnpm typecheck` runs the canonical workspace typecheck across all packages and examples.
+- `pnpm typecheck:root` runs only the root `tsconfig.json` check.
+- `pnpm verify` runs the standard local verification set: lint, workspace typecheck, full test suite, and format.
+- `pnpm verify:ci` runs the closest local approximation of GitHub Actions: lint, workspace typecheck, fast tests, slow playground tests, and `fmt --check`.
 - [Building a non-relational adapter (Redis-style)](./docs/building-a-non-relational-adapter.md)
+- [Package architecture and allowed dependency directions](./docs/package-architecture.md)

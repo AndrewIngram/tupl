@@ -10,15 +10,15 @@ import {
   type MaybePromise,
   type ProviderCapabilityAtom,
   type ProviderCapabilityReport,
+  type QueryRow,
   type ProviderRuntimeBinding,
-} from "@tupl/core/provider";
-import type { QueryRow } from "@tupl/core/schema";
+} from "@tupl/provider-kit";
 import {
   buildLookupOnlyUnsupportedReport,
   filterLookupRows,
   projectLookupRow,
   validateLookupRequest,
-} from "@tupl/core/provider/shapes";
+} from "@tupl/provider-kit/shapes";
 
 export interface RedisPipelineResult {
   hgetall: [Error | null, Record<string, string>];

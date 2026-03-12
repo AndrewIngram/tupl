@@ -27,7 +27,9 @@
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@tupl/core": "workspace:*"
+    "@tupl/foundation": "workspace:*",
+    "@tupl/provider-kit": "workspace:*",
+    "@tupl/schema": "workspace:*"
   },
   "devDependencies": {
     "knex": "^3.1.0",

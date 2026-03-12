@@ -1,4 +1,4 @@
-import { createDataEntityHandle } from "@tupl/core/provider";
+import { createDataEntityHandle } from "@tupl/provider-kit";
 import { createSchemaBuilder, type SchemaDefinition } from "@tupl/schema";
 
 import type {

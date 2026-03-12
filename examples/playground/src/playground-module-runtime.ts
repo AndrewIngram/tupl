@@ -11,6 +11,14 @@ export interface VirtualModuleRuntime {
   executeModule: (entryPath: string) => Record<string, unknown>;
 }
 
+function canImportExternalModule(rootPath: string, fromFile: string, specifier: string): boolean {
+  if (specifier !== "@playground/runtime") {
+    return true;
+  }
+
+  return normalizePath(fromFile).startsWith(`${normalizePath(rootPath)}/node_modules/@playground/`);
+}
+
 function normalizePath(path: string): string {
   const normalized = path.replace(/\\/gu, "/");
   const compact = normalized.replace(/\/+/gu, "/");
@@ -90,6 +98,11 @@ function resolveModulePath(
   specifier: string,
 ): { kind: "external"; id: string } | { kind: "workspace"; path: string } {
   if (specifier in externalModules) {
+    if (!canImportExternalModule(workspace.rootPath, fromFile, specifier)) {
+      throw new Error(
+        `[PLAYGROUND_IMPORT_DENIED] Unsupported import in playground module graph: ${specifier}`,
+      );
+    }
     return {
       kind: "external",
       id: specifier,

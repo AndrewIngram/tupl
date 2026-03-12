@@ -64,6 +64,19 @@ describe("playground/validation", () => {
     expect(schemaResult.issues[0]?.message).toContain("SCHEMA_EXEC_ERROR");
   });
 
+  it("rejects direct access to playground host runtime modules", async () => {
+    const schemaResult = await parseFacadeSchemaCode(
+      [
+        'import { getPlaygroundIoredisRuntime } from "@playground/runtime";',
+        "getPlaygroundIoredisRuntime();",
+        "export const executableSchema = null;",
+      ].join("\n"),
+    );
+
+    expect(schemaResult.ok).toBe(false);
+    expect(schemaResult.issues[0]?.message).toContain("PLAYGROUND_IMPORT_DENIED");
+  });
+
   it("rejects raw facade schema JSON input", () => {
     const schemaResult = parseFacadeSchemaText(serializeJson(FACADE_SCHEMA));
 

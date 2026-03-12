@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { stringifyUnknownValue } from "@tupl/core";
-import { type ProviderFragment } from "@tupl/core/provider";
-import type { RelNode } from "@tupl/core/model/rel";
-import type { QueryRow } from "@tupl/core/schema";
+import { stringifyUnknownValue, type RelNode } from "@tupl/foundation";
+import { type ProviderFragment, type QueryRow } from "@tupl/provider-kit";
 import {
   createDrizzleProvider,
   impossibleCondition,

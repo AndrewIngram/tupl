@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { type ProviderFragment } from "@tupl/core/provider";
-import type { RelNode } from "@tupl/core/model/rel";
-import type { QueryRow, TableScanRequest } from "@tupl/core/schema";
+import { type ProviderFragment, type QueryRow, type TableScanRequest } from "@tupl/provider-kit";
+import type { RelNode } from "@tupl/foundation";
 import { createKyselyProvider, type KyselyDatabaseLike } from "../index";
 
 interface KyselyCalls {

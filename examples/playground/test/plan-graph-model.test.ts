@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { QueryExecutionPlanScope, QueryExecutionPlanStep } from "@tupl/core";
+import type { QueryExecutionPlanScope, QueryExecutionPlanStep } from "@tupl/runtime";
 
 import {
   buildPlanGraphLayout,

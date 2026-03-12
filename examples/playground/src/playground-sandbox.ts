@@ -3,16 +3,10 @@ import * as drizzlePgCoreModule from "drizzle-orm/pg-core";
 import * as drizzlePgliteModule from "drizzle-orm/pglite";
 import * as pgliteModule from "@electric-sql/pglite";
 import * as betterResultModule from "better-result";
-import { type ExecutableSchema } from "@tupl/core";
-import type {
-  FragmentProviderAdapter,
-  ProviderAdapter,
-  ProviderFragment,
-} from "@tupl/core/provider";
-import type { RelNode } from "@tupl/core/model/rel";
-import type { PhysicalPlan } from "@tupl/core/planner";
-import { type QueryExecutionPlan, type QuerySession, type QueryStepEvent } from "@tupl/core";
-import type { QueryRow, SchemaDefinition } from "@tupl/schema";
+import type { FragmentProviderAdapter, ProviderAdapter } from "@tupl/provider-kit";
+import { lowerSqlToRel, planPhysicalQuery } from "@tupl/planner";
+import type { QueryExecutionPlan, QuerySession, QueryStepEvent } from "@tupl/runtime";
+import type { ExecutableSchema, QueryRow, SchemaDefinition } from "@tupl/schema";
 
 import { createVirtualModuleRuntime } from "./playground-module-runtime";
 import {
@@ -52,19 +46,6 @@ export interface SandboxCompiledInput {
   modules?: Record<string, string>;
 }
 
-export interface TranslationFragment {
-  stepId: string;
-  provider: string;
-  fragment: ProviderFragment;
-}
-
-export interface PlaygroundTranslation {
-  userSql: string;
-  facadeRel: RelNode;
-  physicalPlan: PhysicalPlan;
-  providerFragments: TranslationFragment[];
-}
-
 export interface SandboxSessionSnapshot {
   sessionId: string;
   plan: QueryExecutionPlan;
@@ -78,7 +59,6 @@ export interface SandboxCreateSessionSuccess {
   ok: true;
   sessionId: string;
   plan: QueryExecutionPlan;
-  translation: PlaygroundTranslation;
 }
 
 export interface SandboxCreateSessionFailure {
@@ -107,8 +87,8 @@ interface ProviderModuleExports<TContext> {
 }
 
 interface TuplRuntimeModule {
-  lowerSqlToRel: typeof import("@tupl/core").lowerSqlToRel;
-  planPhysicalQuery: typeof import("@tupl/core").planPhysicalQuery;
+  lowerSqlToRel: typeof lowerSqlToRel;
+  planPhysicalQuery: typeof planPhysicalQuery;
 }
 
 interface PlaygroundRuntimeModule {
@@ -135,11 +115,23 @@ const providerRuntimeCache = new Map<
 >();
 let nextSessionId = 1;
 const MAX_PROVIDER_RUNTIME_CACHE_ENTRIES = 8;
+const MAX_SANDBOX_SESSION_ENTRIES = 32;
 
 function makeSessionId(): string {
   const sessionId = `sandbox_session_${nextSessionId}`;
   nextSessionId += 1;
   return sessionId;
+}
+
+function setBoundedSessionStoreEntry(sessionId: string, record: SessionRecord): void {
+  if (!sessionStore.has(sessionId) && sessionStore.size >= MAX_SANDBOX_SESSION_ENTRIES) {
+    const oldestKey = sessionStore.keys().next().value;
+    if (typeof oldestKey === "string") {
+      sessionStore.delete(oldestKey);
+    }
+  }
+
+  sessionStore.set(sessionId, record);
 }
 
 function asErrorMessage(error: unknown): string {
@@ -150,6 +142,16 @@ function asErrorMessage(error: unknown): string {
     return error;
   }
   return "Sandbox execution failed.";
+}
+
+async function runSandboxPhase<T>(phase: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    const message = `[SANDBOX_${phase}] ${asErrorMessage(error)}`;
+    console.error(message, error);
+    throw new Error(message);
+  }
 }
 
 function extractSchemaExport(
@@ -266,7 +268,7 @@ function createProviderRuntime<TContext>(
   const dbProviderModule = runtime.executeModule(PLAYGROUND_DB_PROVIDER_FILE_PATH);
   const redisProviderModule = runtime.executeModule(PLAYGROUND_REDIS_PROVIDER_FILE_PATH);
   const tuplModule = runtime.executeModule(
-    `${workspace.rootPath}/node_modules/@tupl/core/index.ts`,
+    `${workspace.rootPath}/node_modules/@tupl/planner/index.ts`,
   ) as unknown as TuplRuntimeModule;
   const playgroundRuntimeModule = externalModules["@playground/runtime"] as
     | PlaygroundRuntimeModule
@@ -351,33 +353,6 @@ function normalizeSchemaError(message: string): SchemaParseResult {
   };
 }
 
-function buildTranslation(
-  userSql: string,
-  facadeRel: RelNode,
-  physicalPlan: PhysicalPlan,
-): PlaygroundTranslation {
-  const providerFragments: TranslationFragment[] = [];
-
-  for (const step of physicalPlan.steps) {
-    if (step.kind !== "remote_fragment" || !step.fragment) {
-      continue;
-    }
-
-    providerFragments.push({
-      stepId: step.id,
-      provider: step.provider,
-      fragment: step.fragment,
-    });
-  }
-
-  return {
-    userSql,
-    facadeRel,
-    physicalPlan,
-    providerFragments,
-  };
-}
-
 export async function validateSchemaInSandbox(
   schemaCode: string,
   options: PlaygroundSchemaProgramOptions = {},
@@ -434,35 +409,24 @@ export async function createSandboxSession(
 ): Promise<SandboxCreateSessionResult> {
   clearExecutedProviderOperations();
   if (options.reseed ?? true) {
-    await reseedDownstreamDatabase(compiled.downstreamRows);
+    await runSandboxPhase("RESEED", () => reseedDownstreamDatabase(compiled.downstreamRows));
   }
   clearExecutedProviderOperations();
 
-  const runtime = await getOrCreateProviderRuntime(compiled);
+  const runtime = await runSandboxPhase("RUNTIME_INIT", () => getOrCreateProviderRuntime(compiled));
   const runtimeContext = toRuntimeContext(context, runtime);
-  const { tuplModule, executableSchema, dbProvider, redisProvider } = runtime;
+  const { executableSchema } = runtime;
 
-  const providers = {
-    [dbProvider.name]: dbProvider,
-    [redisProvider.name]: redisProvider,
-  };
-  const lowered = tuplModule.lowerSqlToRel(compiled.sql, executableSchema.schema);
-  const physicalPlan = await tuplModule.planPhysicalQuery(
-    lowered.rel,
-    executableSchema.schema,
-    providers,
-    runtimeContext,
-    compiled.sql,
+  const sessionResult = await runSandboxPhase("CREATE_SESSION", async () =>
+    executableSchema.createSessionResult({
+      context: runtimeContext,
+      sql: compiled.sql,
+      options: {
+        maxConcurrency: 4,
+        captureRows: "full",
+      },
+    }),
   );
-
-  const sessionResult = executableSchema.createSessionResult({
-    context: runtimeContext,
-    sql: compiled.sql,
-    options: {
-      maxConcurrency: 4,
-      captureRows: "full",
-    },
-  });
   if (betterResultModule.Result.isError(sessionResult)) {
     return {
       ok: false,
@@ -478,13 +442,12 @@ export async function createSandboxSession(
   const session = sessionResult.value;
 
   const sessionId = makeSessionId();
-  sessionStore.set(sessionId, { session });
+  setBoundedSessionStoreEntry(sessionId, { session });
 
   return {
     ok: true,
     sessionId,
     plan: session.getPlan(),
-    translation: buildTranslation(compiled.sql, lowered.rel, physicalPlan),
   };
 }
 
@@ -502,6 +465,7 @@ export async function nextSandboxSessionEvent(
   const record = readSessionRecord(sessionId);
   const next = await record.session.next();
   if ("done" in next) {
+    disposeSandboxSession(sessionId);
     return {
       done: true,
       result: next.result,
@@ -519,6 +483,7 @@ export async function runSandboxSessionToCompletion(
   while (true) {
     const next = await record.session.next();
     if ("done" in next) {
+      disposeSandboxSession(sessionId);
       return {
         plan: record.session.getPlan(),
         events,
@@ -547,6 +512,7 @@ export async function replaySandboxSession(
   while (events.length < eventCount) {
     const next = await record.session.next();
     if ("done" in next) {
+      disposeSandboxSession(bundle.sessionId);
       return {
         sessionId: bundle.sessionId,
         plan: record.session.getPlan(),

@@ -1,15 +1,13 @@
-import type { ProviderFragment } from "@tupl/core/provider";
-import type { RelNode } from "@tupl/core/model/rel";
-import { defaultSqlAstParser, lowerSqlToRel, type PhysicalPlan } from "@tupl/core/planner";
-import {
-  resolveSchemaLinkedEnums,
-  resolveTableColumnDefinition,
-  type QueryExecutionPlan,
-  type QuerySession,
-  type QueryStepEvent,
-  type QueryStepState,
-} from "@tupl/core";
+import type { RelNode } from "@tupl/foundation";
+import { defaultSqlAstParser, lowerSqlToRel } from "@tupl/planner";
+import type {
+  QueryExecutionPlan,
+  QuerySession,
+  QueryStepEvent,
+  QueryStepState,
+} from "@tupl/runtime";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema";
+import { resolveSchemaLinkedEnums, resolveTableColumnDefinition } from "@tupl/schema-model";
 
 import { DOWNSTREAM_ROWS_SCHEMA } from "./downstream-model";
 import { requestSandboxWorker } from "./playground-sandbox-client";
@@ -18,6 +16,7 @@ import {
   serializeStringRecord,
   type PlaygroundSchemaProgramOptions,
 } from "./playground-program-files";
+import type { SandboxCompiledInput } from "./playground-sandbox";
 import type { DownstreamRows, ExecutedProviderOperation, PlaygroundContext } from "./types";
 import { parseDownstreamRowsText, parseFacadeSchemaCode } from "./validation";
 
@@ -56,22 +55,8 @@ export interface SessionSnapshot {
   executedOperations: ExecutedProviderOperation[];
 }
 
-export interface TranslationFragment {
-  stepId: string;
-  provider: string;
-  fragment: ProviderFragment;
-}
-
-export interface PlaygroundTranslation {
-  userSql: string;
-  facadeRel: RelNode;
-  physicalPlan: PhysicalPlan;
-  providerFragments: TranslationFragment[];
-}
-
 export interface PlaygroundSessionBundle {
   session: QuerySession;
-  translation: PlaygroundTranslation;
 }
 
 interface PlaygroundPreparedInputCacheEntry extends PlaygroundPreparedInputSuccess {
@@ -729,13 +714,22 @@ function createSandboxQuerySession(
   return session;
 }
 
+function toSandboxCompiledInput(compiled: PlaygroundCompileSuccess): SandboxCompiledInput {
+  return {
+    schemaCode: compiled.schemaCode,
+    downstreamRows: compiled.downstreamRows,
+    sql: compiled.sql,
+    ...(compiled.modules ? { modules: compiled.modules } : {}),
+  };
+}
+
 export async function createSession(
   compiled: PlaygroundCompileSuccess,
   context: PlaygroundContext,
   options: PlaygroundSessionOptions = {},
 ): Promise<PlaygroundSessionBundle> {
   const bundle = await requestSandboxWorker("create_session", {
-    compiled,
+    compiled: toSandboxCompiledInput(compiled),
     context,
     options,
   });
@@ -746,7 +740,6 @@ export async function createSession(
 
   return {
     session,
-    translation: bundle.translation,
   };
 }
 
@@ -757,7 +750,7 @@ export async function replaySession(
   options: PlaygroundSessionOptions = {},
 ): Promise<SessionSnapshot> {
   const snapshot = await requestSandboxWorker("replay_session", {
-    compiled,
+    compiled: toSandboxCompiledInput(compiled),
     context,
     eventCount,
     options,

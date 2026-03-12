@@ -73,14 +73,8 @@ function mapVirtualFiles(
   return out;
 }
 
-const CORE_SOURCE_IMPORTS = import.meta.glob("../../../packages/core/src/**/*.ts", {
-  eager: true,
-  import: "default",
-  query: "?raw",
-}) as Record<string, string>;
-
 const INTERNAL_FOUNDATION_SOURCE_IMPORTS = import.meta.glob(
-  "../../../packages/internal-foundation/src/**/*.ts",
+  "../../../packages/foundation/src/**/*.ts",
   {
     eager: true,
     import: "default",
@@ -89,7 +83,7 @@ const INTERNAL_FOUNDATION_SOURCE_IMPORTS = import.meta.glob(
 ) as Record<string, string>;
 
 const INTERNAL_PROVIDER_SOURCE_IMPORTS = import.meta.glob(
-  "../../../packages/internal-provider/src/**/*.ts",
+  "../../../packages/provider-kit/src/**/*.ts",
   {
     eager: true,
     import: "default",
@@ -98,7 +92,7 @@ const INTERNAL_PROVIDER_SOURCE_IMPORTS = import.meta.glob(
 ) as Record<string, string>;
 
 const INTERNAL_SCHEMA_SOURCE_IMPORTS = import.meta.glob(
-  "../../../packages/internal-schema/src/**/*.ts",
+  "../../../packages/schema-model/src/**/*.ts",
   {
     eager: true,
     import: "default",
@@ -106,23 +100,17 @@ const INTERNAL_SCHEMA_SOURCE_IMPORTS = import.meta.glob(
   },
 ) as Record<string, string>;
 
-const INTERNAL_PLANNER_SOURCE_IMPORTS = import.meta.glob(
-  "../../../packages/internal-planner/src/**/*.ts",
-  {
-    eager: true,
-    import: "default",
-    query: "?raw",
-  },
-) as Record<string, string>;
+const INTERNAL_PLANNER_SOURCE_IMPORTS = import.meta.glob("../../../packages/planner/src/**/*.ts", {
+  eager: true,
+  import: "default",
+  query: "?raw",
+}) as Record<string, string>;
 
-const INTERNAL_RUNTIME_SOURCE_IMPORTS = import.meta.glob(
-  "../../../packages/internal-runtime/src/**/*.ts",
-  {
-    eager: true,
-    import: "default",
-    query: "?raw",
-  },
-) as Record<string, string>;
+const INTERNAL_RUNTIME_SOURCE_IMPORTS = import.meta.glob("../../../packages/runtime/src/**/*.ts", {
+  eager: true,
+  import: "default",
+  query: "?raw",
+}) as Record<string, string>;
 
 const SCHEMA_SOURCE_IMPORTS = import.meta.glob("../../../packages/schema/src/**/*.ts", {
   eager: true,
@@ -170,40 +158,34 @@ const BETTER_RESULT_DECLARATION_IMPORTS = {
   }),
 } as Record<string, string>;
 
-const CORE_SOURCE_FILES = mapVirtualFiles(
-  CORE_SOURCE_IMPORTS,
-  "/packages/core/src/",
-  `${NODE_MODULES_ROOT_PATH}/@tupl/core`,
-);
-
 const INTERNAL_FOUNDATION_SOURCE_FILES = mapVirtualFiles(
   INTERNAL_FOUNDATION_SOURCE_IMPORTS,
-  "/packages/internal-foundation/src/",
-  `${NODE_MODULES_ROOT_PATH}/@tupl-internal/foundation`,
+  "/packages/foundation/src/",
+  `${NODE_MODULES_ROOT_PATH}/@tupl/foundation`,
 );
 
 const INTERNAL_PROVIDER_SOURCE_FILES = mapVirtualFiles(
   INTERNAL_PROVIDER_SOURCE_IMPORTS,
-  "/packages/internal-provider/src/",
-  `${NODE_MODULES_ROOT_PATH}/@tupl-internal/provider`,
+  "/packages/provider-kit/src/",
+  `${NODE_MODULES_ROOT_PATH}/@tupl/provider-kit`,
 );
 
 const INTERNAL_SCHEMA_SOURCE_FILES = mapVirtualFiles(
   INTERNAL_SCHEMA_SOURCE_IMPORTS,
-  "/packages/internal-schema/src/",
-  `${NODE_MODULES_ROOT_PATH}/@tupl-internal/schema`,
+  "/packages/schema-model/src/",
+  `${NODE_MODULES_ROOT_PATH}/@tupl/schema-model`,
 );
 
 const INTERNAL_PLANNER_SOURCE_FILES = mapVirtualFiles(
   INTERNAL_PLANNER_SOURCE_IMPORTS,
-  "/packages/internal-planner/src/",
-  `${NODE_MODULES_ROOT_PATH}/@tupl-internal/planner`,
+  "/packages/planner/src/",
+  `${NODE_MODULES_ROOT_PATH}/@tupl/planner`,
 );
 
 const INTERNAL_RUNTIME_SOURCE_FILES = mapVirtualFiles(
   INTERNAL_RUNTIME_SOURCE_IMPORTS,
-  "/packages/internal-runtime/src/",
-  `${NODE_MODULES_ROOT_PATH}/@tupl-internal/runtime`,
+  "/packages/runtime/src/",
+  `${NODE_MODULES_ROOT_PATH}/@tupl/runtime`,
 );
 
 const SCHEMA_SOURCE_FILES = mapVirtualFiles(
@@ -268,12 +250,17 @@ export const playgroundIoredisRuntime = getPlaygroundIoredisRuntime();
 `.trim(),
 };
 
+const PUBLIC_SUBPATH_SOURCE_FILES: Record<string, string> = {
+  [`${NODE_MODULES_ROOT_PATH}/@tupl/provider-kit/shapes/index.ts`]:
+    'export * from "../provider/shapes";',
+  [`${NODE_MODULES_ROOT_PATH}/@tupl/runtime/executor.ts`]: 'export * from "./runtime/executor";',
+};
+
 const PGLITE_ROOT_DECLARATION_FILES: Record<string, string> = {
   [`${NODE_MODULES_ROOT_PATH}/@electric-sql/pglite/index.d.ts`]: 'export * from "./dist/index";',
 };
 
 const STATIC_SOURCE_FILES = {
-  ...CORE_SOURCE_FILES,
   ...INTERNAL_FOUNDATION_SOURCE_FILES,
   ...INTERNAL_PROVIDER_SOURCE_FILES,
   ...INTERNAL_SCHEMA_SOURCE_FILES,
@@ -282,6 +269,7 @@ const STATIC_SOURCE_FILES = {
   ...SCHEMA_SOURCE_FILES,
   ...DRIZZLE_SOURCE_FILES,
   ...IOREDIS_SOURCE_FILES,
+  ...PUBLIC_SUBPATH_SOURCE_FILES,
   ...HOST_PACKAGE_SOURCE_FILES,
 };
 
