@@ -1,17 +1,11 @@
 import type * as Monaco from "monaco-editor";
 
 import {
-  buildPlaygroundWorkspaceSnapshot,
+  buildPlaygroundStaticWorkspaceSnapshot,
   PLAYGROUND_WORKSPACE_ROOT_URI,
 } from "./playground-workspace";
 
-const STATIC_WORKSPACE = buildPlaygroundWorkspaceSnapshot({
-  schemaCode: "",
-  contextCode: "",
-  dbProviderCode: "",
-  redisProviderCode: "",
-  generatedDbCode: "",
-});
+const STATIC_WORKSPACE = buildPlaygroundStaticWorkspaceSnapshot();
 
 let workspaceLibrariesRegistered = false;
 
