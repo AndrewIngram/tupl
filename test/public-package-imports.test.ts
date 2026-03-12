@@ -21,6 +21,7 @@ import type {
   RelationalProviderRelCompileStrategy as ProviderRelationalProviderRelCompileStrategy,
   ScanFilterClause as ProviderScanFilterClause,
   ScanOrderBy as ProviderScanOrderBy,
+  SqlRelationalProviderOptions as ProviderSqlRelationalProviderOptions,
   TableAggregateMetric as ProviderTableAggregateMetric,
   TableAggregateRequest as ProviderTableAggregateRequest,
   TableLookupRequest as ProviderTableLookupRequest,
@@ -38,6 +39,20 @@ declare const providerRelationalProviderCapabilityContext: ProviderRelationalPro
   Record<string, ProviderRelationalProviderEntityConfig>,
   ProviderRelationalProviderRelCompileStrategy
 >;
+declare const providerSqlRelationalProviderOptions: ProviderSqlRelationalProviderOptions<
+  unknown,
+  Record<string, ProviderRelationalProviderEntityConfig>,
+  { entity: string; table: string; config: unknown },
+  {
+    alias: string;
+    entity: string;
+    table: string;
+    resolved: { entity: string; table: string; config: unknown };
+    scan: Extract<providerKit.ProviderFragment, { kind: "scan" }>;
+  },
+  unknown,
+  unknown
+>;
 declare const providerScanFilter: ProviderScanFilterClause;
 declare const providerScanOrderBy: ProviderScanOrderBy;
 declare const providerTableScanRequest: ProviderTableScanRequest;
@@ -48,6 +63,7 @@ declare const providerTableAggregateRequest: ProviderTableAggregateRequest;
 void providerQueryRow;
 void providerRelationalProviderOptions;
 void providerRelationalProviderCapabilityContext;
+void providerSqlRelationalProviderOptions;
 void providerScanFilter;
 void providerScanOrderBy;
 void providerTableScanRequest;

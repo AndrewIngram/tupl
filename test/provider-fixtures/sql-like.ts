@@ -46,62 +46,66 @@ export function createSqlLikeFixtureProvider() {
       };
     },
     backend: {
-      createScanBinding(scan, resolvedEntities) {
-        const resolved = resolvedEntities[scan.table];
-        if (!resolved) {
-          throw new Error(`Unknown fixture entity: ${scan.table}`);
-        }
+      planning: {
+        createScanBinding(scan, resolvedEntities) {
+          const resolved = resolvedEntities[scan.table];
+          if (!resolved) {
+            throw new Error(`Unknown fixture entity: ${scan.table}`);
+          }
 
-        return {
-          alias: scan.alias ?? resolved.table,
-          entity: resolved.entity,
-          table: resolved.table,
-          scan,
-          resolved,
-        };
+          return {
+            alias: scan.alias ?? resolved.table,
+            entity: resolved.entity,
+            table: resolved.table,
+            scan,
+            resolved,
+          };
+        },
       },
-      createRootQuery({ root }) {
-        return {
-          rows: [...root.resolved.config.rows],
-        };
-      },
-      applyRegularJoin() {
-        throw new Error("Fixture SQL-like provider does not model joins.");
-      },
-      applySemiJoin() {
-        throw new Error("Fixture SQL-like provider does not model semi-joins.");
-      },
-      applyWhereClause({ query, clause }) {
-        return applyFilterClause(query, clause);
-      },
-      applySelection({ query, selection }) {
-        return {
-          rows: applySelection(query.rows, selection),
-        };
-      },
-      applyGroupBy({ query }) {
-        return query;
-      },
-      applyOrderBy({ query, orderBy }) {
-        const rows = [...query.rows].sort((left, right) =>
-          compareRows(left, right, orderTermsToScanOrderBy(orderBy)),
-        );
-        return { rows };
-      },
-      applyLimit({ query, limit }) {
-        return { rows: query.rows.slice(0, limit) };
-      },
-      applyOffset({ query, offset }) {
-        return { rows: query.rows.slice(offset) };
-      },
-      applySetOp() {
-        throw new Error("Fixture SQL-like provider does not model set operations.");
-      },
-      buildWithQuery() {
-        throw new Error("Fixture SQL-like provider does not model CTEs.");
-      },
-      async executeQuery({ query }) {
-        return query.rows;
+      query: {
+        createRootQuery({ root }) {
+          return {
+            rows: [...root.resolved.config.rows],
+          };
+        },
+        applyRegularJoin() {
+          throw new Error("Fixture SQL-like provider does not model joins.");
+        },
+        applySemiJoin() {
+          throw new Error("Fixture SQL-like provider does not model semi-joins.");
+        },
+        applyWhereClause({ query, clause }) {
+          return applyFilterClause(query, clause);
+        },
+        applySelection({ query, selection }) {
+          return {
+            rows: applySelection(query.rows, selection),
+          };
+        },
+        applyGroupBy({ query }) {
+          return query;
+        },
+        applyOrderBy({ query, orderBy }) {
+          const rows = [...query.rows].sort((left, right) =>
+            compareRows(left, right, orderTermsToScanOrderBy(orderBy)),
+          );
+          return { rows };
+        },
+        applyLimit({ query, limit }) {
+          return { rows: query.rows.slice(0, limit) };
+        },
+        applyOffset({ query, offset }) {
+          return { rows: query.rows.slice(offset) };
+        },
+        applySetOp() {
+          throw new Error("Fixture SQL-like provider does not model set operations.");
+        },
+        buildWithQuery() {
+          throw new Error("Fixture SQL-like provider does not model CTEs.");
+        },
+        async executeQuery({ query }) {
+          return query.rows;
+        },
       },
     },
     resolveRuntime() {

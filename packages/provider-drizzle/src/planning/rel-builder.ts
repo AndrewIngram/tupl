@@ -43,234 +43,226 @@ export const drizzleSqlRelationalBackend: SqlRelationalBackend<
   DrizzleQueryExecutor,
   DrizzleRelationalQuery
 > = {
-  createScanBinding,
-  buildSingleQueryPlan,
-  resolveRelCompileStrategy: (node, resolvedEntities) =>
-    resolveDrizzleRelCompileStrategy(node, resolvedEntities),
-  createRootQuery({ runtime, plan }) {
-    const singleQueryPlan = plan as SingleQueryPlan<any>;
-    const preferDistinctSelection =
-      !!singleQueryPlan.pipeline.aggregate &&
-      singleQueryPlan.pipeline.aggregate.metrics.length === 0 &&
-      singleQueryPlan.pipeline.aggregate.groupBy.length > 0;
-    const dbWithSelectDistinct = runtime as {
-      select: (selection: Record<string, unknown>) => {
-        from: (table: object) => DrizzleExecutableBuilder;
-      };
-      selectDistinct?: (selection: Record<string, unknown>) => {
-        from: (table: object) => DrizzleExecutableBuilder;
-      };
-    };
-    const selectFn =
-      preferDistinctSelection && typeof dbWithSelectDistinct.selectDistinct === "function"
-        ? dbWithSelectDistinct.selectDistinct.bind(dbWithSelectDistinct)
-        : dbWithSelectDistinct.select.bind(dbWithSelectDistinct);
-
-    const builder = selectFn(buildSingleQuerySelection(singleQueryPlan)).from(
-      singleQueryPlan.joinPlan.root.sourceTable,
-    ) as DrizzleExecutableBuilder;
-
-    return {
-      builder,
-      pendingWhere: [],
-    };
+  planning: {
+    createScanBinding,
+    buildSingleQueryPlan,
+    resolveRelCompileStrategy: (node, resolvedEntities) =>
+      resolveDrizzleRelCompileStrategy(node, resolvedEntities),
   },
-  applyRegularJoin({ query, join, aliases }) {
-    ensureJoinMethodsAvailable(
-      query.builder as {
-        innerJoin?: unknown;
-        leftJoin?: unknown;
-        rightJoin?: unknown;
-        fullJoin?: unknown;
-      },
-      [join],
-    );
-
-    const leftColumn = resolveJoinKeyColumnRefFromAliasMap(aliases, {
-      alias: join.leftKey.alias,
-      column: join.leftKey.column,
-    });
-    const rightColumn = resolveJoinKeyColumnRefFromAliasMap(aliases, {
-      alias: join.rightKey.alias,
-      column: join.rightKey.column,
-    });
-    const onClause = eq(leftColumn, rightColumn);
-
-    const builder = query.builder as DrizzleExecutableBuilder & {
-      innerJoin: (table: object, on: SQL) => unknown;
-      leftJoin: (table: object, on: SQL) => unknown;
-      rightJoin: (table: object, on: SQL) => unknown;
-      fullJoin: (table: object, on: SQL) => unknown;
-    };
-
-    query.builder = (
-      join.joinType === "inner"
-        ? builder.innerJoin(join.right.sourceTable, onClause)
-        : join.joinType === "left"
-          ? builder.leftJoin(join.right.sourceTable, onClause)
-          : join.joinType === "right"
-            ? builder.rightJoin(join.right.sourceTable, onClause)
-            : builder.fullJoin(join.right.sourceTable, onClause)
-    ) as DrizzleExecutableBuilder;
-
-    return query;
-  },
-  applySemiJoin({ query, leftKey, subquery, aliases }) {
-    const leftColumn = resolveJoinKeyColumnRefFromAliasMap(aliases, {
-      alias: leftKey.alias,
-      column: leftKey.column,
-    });
-
-    query.pendingWhere.push(
-      sql`${leftColumn} in (${asDrizzleSubquerySql(finalizeDrizzleQuery(subquery).builder)})`,
-    );
-    return query;
-  },
-  applyWhereClause({ query, clause, plan }) {
-    query.pendingWhere.push(
-      toSqlConditionFromRelFilterClause(clause, plan as SingleQueryPlan<any>),
-    );
-    return query;
-  },
-  applySelection({ query }) {
-    return finalizeDrizzleQuery(query);
-  },
-  applyGroupBy({ query, groupBy, aliases }) {
-    query = finalizeDrizzleQuery(query);
-    const builder = query.builder as DrizzleExecutableBuilder & {
-      groupBy?: (...columns: AnyColumn[]) => unknown;
-    };
-    if (typeof builder.groupBy !== "function") {
-      return query;
-    }
-
-    const groupByColumns = groupBy.map((columnRef) =>
-      resolveColumnRefFromAliasMap(
-        aliases,
-        toAliasColumnRef(columnRef.alias ?? columnRef.table, columnRef.column),
-      ),
-    );
-    query.builder = builder.groupBy(...(groupByColumns as AnyColumn[])) as DrizzleExecutableBuilder;
-    return query;
-  },
-  applyOrderBy({ query, plan, orderBy }) {
-    query = finalizeDrizzleQuery(query);
-    if (typeof query.builder.orderBy !== "function") {
-      return query;
-    }
-
-    const clauses = orderBy.map((term) => {
-      const source = resolveOrderSource(term, plan);
-      return term.direction === "asc" ? asc(source) : desc(source);
-    });
-    if (clauses.length > 0) {
-      query.builder = query.builder.orderBy(...clauses) as DrizzleExecutableBuilder;
-    }
-    return query;
-  },
-  applyLimit({ query, limit }) {
-    query = finalizeDrizzleQuery(query);
-    if (typeof query.builder.limit === "function") {
-      query.builder = query.builder.limit(limit) as DrizzleExecutableBuilder;
-    }
-    return query;
-  },
-  applyOffset({ query, offset }) {
-    query = finalizeDrizzleQuery(query);
-    if (typeof query.builder.offset === "function") {
-      query.builder = query.builder.offset(offset) as DrizzleExecutableBuilder;
-    }
-    return query;
-  },
-  applySetOp({ left, right, wrapper }) {
-    const leftBuilder = finalizeDrizzleQuery(left).builder;
-    const rightBuilder = finalizeDrizzleQuery(right).builder;
-    const methodName =
-      wrapper.setOp.op === "union_all"
-        ? "unionAll"
-        : wrapper.setOp.op === "union"
-          ? "union"
-          : wrapper.setOp.op === "intersect"
-            ? "intersect"
-            : "except";
-    const applySetOp = (leftBuilder as unknown as Record<string, unknown>)[methodName];
-    if (typeof applySetOp !== "function") {
-      throw new UnsupportedSingleQueryPlanError(
-        `Drizzle query builder does not support ${methodName} for single-query pushdown.`,
-      );
-    }
-
-    return {
-      builder: applySetOp.call(leftBuilder, rightBuilder) as DrizzleExecutableBuilder,
-      pendingWhere: [],
-    };
-  },
-  buildWithQuery({ body, ctes, projection, orderBy, runtime }) {
-    const dbWithCtes = runtime as {
-      $with?: (name: string) => { as: (query: DrizzleExecutableBuilder) => unknown };
-      with?: (...cteRefs: unknown[]) => {
+  query: {
+    createRootQuery({ runtime, plan }) {
+      const singleQueryPlan = plan as SingleQueryPlan<any>;
+      const preferDistinctSelection =
+        !!singleQueryPlan.pipeline.aggregate &&
+        singleQueryPlan.pipeline.aggregate.metrics.length === 0 &&
+        singleQueryPlan.pipeline.aggregate.groupBy.length > 0;
+      const dbWithSelectDistinct = runtime as {
         select: (selection: Record<string, unknown>) => {
-          from: (source: unknown) => DrizzleExecutableBuilder;
+          from: (table: object) => DrizzleExecutableBuilder;
+        };
+        selectDistinct?: (selection: Record<string, unknown>) => {
+          from: (table: object) => DrizzleExecutableBuilder;
         };
       };
-    };
-    if (typeof dbWithCtes.$with !== "function" || typeof dbWithCtes.with !== "function") {
-      throw new UnsupportedSingleQueryPlanError(
-        "Drizzle database instance does not support CTE builders required for WITH pushdown.",
+      const selectFn =
+        preferDistinctSelection && typeof dbWithSelectDistinct.selectDistinct === "function"
+          ? dbWithSelectDistinct.selectDistinct.bind(dbWithSelectDistinct)
+          : dbWithSelectDistinct.select.bind(dbWithSelectDistinct);
+
+      const builder = selectFn(buildSingleQuerySelection(singleQueryPlan)).from(
+        singleQueryPlan.joinPlan.root.sourceTable,
+      ) as DrizzleExecutableBuilder;
+
+      return {
+        builder,
+        pendingWhere: [],
+      };
+    },
+    applyRegularJoin({ query, join, aliases }) {
+      ensureJoinMethodsAvailable(
+        query.builder as {
+          innerJoin?: unknown;
+          leftJoin?: unknown;
+          rightJoin?: unknown;
+          fullJoin?: unknown;
+        },
+        [join],
       );
-    }
 
-    const cteBindings = new Map<string, unknown>();
-    const cteRefs: unknown[] = [];
-    for (const cte of ctes) {
-      const cteRef = dbWithCtes.$with(cte.name).as(finalizeDrizzleQuery(cte.query).builder);
-      cteBindings.set(cte.name, cteRef);
-      cteRefs.push(cteRef);
-    }
+      const leftColumn = resolveJoinKeyColumnRefFromAliasMap(aliases, {
+        alias: join.leftKey.alias,
+        column: join.leftKey.column,
+      });
+      const rightColumn = resolveJoinKeyColumnRefFromAliasMap(aliases, {
+        alias: join.rightKey.alias,
+        column: join.rightKey.column,
+      });
+      const onClause = eq(leftColumn, rightColumn);
 
-    const source = cteBindings.get(body.cteScan.table);
-    if (!source) {
-      throw new UnsupportedSingleQueryPlanError(
-        `Unknown CTE "${body.cteScan.table}" in WITH body.`,
+      const builder = query.builder as DrizzleExecutableBuilder & {
+        innerJoin: (table: object, on: SQL) => unknown;
+        leftJoin: (table: object, on: SQL) => unknown;
+        rightJoin: (table: object, on: SQL) => unknown;
+        fullJoin: (table: object, on: SQL) => unknown;
+      };
+
+      query.builder = (
+        join.joinType === "inner"
+          ? builder.innerJoin(join.right.sourceTable, onClause)
+          : join.joinType === "left"
+            ? builder.leftJoin(join.right.sourceTable, onClause)
+            : join.joinType === "right"
+              ? builder.rightJoin(join.right.sourceTable, onClause)
+              : builder.fullJoin(join.right.sourceTable, onClause)
+      ) as DrizzleExecutableBuilder;
+
+      return query;
+    },
+    applySemiJoin({ query, leftKey, subquery, aliases }) {
+      const leftColumn = resolveJoinKeyColumnRefFromAliasMap(aliases, {
+        alias: leftKey.alias,
+        column: leftKey.column,
+      });
+
+      query.pendingWhere.push(
+        sql`${leftColumn} in (${asDrizzleSubquerySql(finalizeDrizzleQuery(subquery).builder)})`,
       );
-    }
-    const scanAlias = body.cteScan.alias ?? body.cteScan.table;
-
-    const windowExpressions = new Map<string, unknown>();
-    for (const fn of body.window?.functions ?? []) {
-      windowExpressions.set(
-        fn.as,
-        buildWindowFunctionSql(fn, source as Record<string, unknown>, scanAlias),
+      return query;
+    },
+    applyWhereClause({ query, clause, plan }) {
+      query.pendingWhere.push(
+        toSqlConditionFromRelFilterClause(clause, plan as SingleQueryPlan<any>),
       );
-    }
+      return query;
+    },
+    applySelection({ query }) {
+      return finalizeDrizzleQuery(query);
+    },
+    applyGroupBy({ query, groupBy, aliases }) {
+      query = finalizeDrizzleQuery(query);
+      const builder = query.builder as DrizzleExecutableBuilder & {
+        groupBy?: (...columns: AnyColumn[]) => unknown;
+      };
+      if (typeof builder.groupBy !== "function") {
+        return query;
+      }
 
-    let builder = dbWithCtes
-      .with(...cteRefs)
-      .select(
-        buildWithSelectionRecord(
-          projection,
-          source as Record<string, unknown>,
-          windowExpressions,
-          scanAlias,
+      const groupByColumns = groupBy.map((columnRef) =>
+        resolveColumnRefFromAliasMap(
+          aliases,
+          toAliasColumnRef(columnRef.alias ?? columnRef.table, columnRef.column),
         ),
-      )
-      .from(source) as DrizzleExecutableBuilder;
+      );
+      query.builder = builder.groupBy(
+        ...(groupByColumns as AnyColumn[]),
+      ) as DrizzleExecutableBuilder;
+      return query;
+    },
+    applyOrderBy({ query, plan, orderBy }) {
+      query = finalizeDrizzleQuery(query);
+      if (typeof query.builder.orderBy !== "function") {
+        return query;
+      }
 
-    const whereClauses: SQL[] = [];
-    for (const clause of body.cteScan.where ?? []) {
-      whereClauses.push(
-        toSqlConditionFromSource(
-          clause,
-          resolveWithBodySourceColumn(
+      const clauses = orderBy.map((term) => {
+        const source = resolveOrderSource(term, plan);
+        return term.direction === "asc" ? asc(source) : desc(source);
+      });
+      if (clauses.length > 0) {
+        query.builder = query.builder.orderBy(...clauses) as DrizzleExecutableBuilder;
+      }
+      return query;
+    },
+    applyLimit({ query, limit }) {
+      query = finalizeDrizzleQuery(query);
+      if (typeof query.builder.limit === "function") {
+        query.builder = query.builder.limit(limit) as DrizzleExecutableBuilder;
+      }
+      return query;
+    },
+    applyOffset({ query, offset }) {
+      query = finalizeDrizzleQuery(query);
+      if (typeof query.builder.offset === "function") {
+        query.builder = query.builder.offset(offset) as DrizzleExecutableBuilder;
+      }
+      return query;
+    },
+    applySetOp({ left, right, wrapper }) {
+      const leftBuilder = finalizeDrizzleQuery(left).builder;
+      const rightBuilder = finalizeDrizzleQuery(right).builder;
+      const methodName =
+        wrapper.setOp.op === "union_all"
+          ? "unionAll"
+          : wrapper.setOp.op === "union"
+            ? "union"
+            : wrapper.setOp.op === "intersect"
+              ? "intersect"
+              : "except";
+      const applySetOp = (leftBuilder as unknown as Record<string, unknown>)[methodName];
+      if (typeof applySetOp !== "function") {
+        throw new UnsupportedSingleQueryPlanError(
+          `Drizzle query builder does not support ${methodName} for single-query pushdown.`,
+        );
+      }
+
+      return {
+        builder: applySetOp.call(leftBuilder, rightBuilder) as DrizzleExecutableBuilder,
+        pendingWhere: [],
+      };
+    },
+    buildWithQuery({ body, ctes, projection, orderBy, runtime }) {
+      const dbWithCtes = runtime as {
+        $with?: (name: string) => { as: (query: DrizzleExecutableBuilder) => unknown };
+        with?: (...cteRefs: unknown[]) => {
+          select: (selection: Record<string, unknown>) => {
+            from: (source: unknown) => DrizzleExecutableBuilder;
+          };
+        };
+      };
+      if (typeof dbWithCtes.$with !== "function" || typeof dbWithCtes.with !== "function") {
+        throw new UnsupportedSingleQueryPlanError(
+          "Drizzle database instance does not support CTE builders required for WITH pushdown.",
+        );
+      }
+
+      const cteBindings = new Map<string, unknown>();
+      const cteRefs: unknown[] = [];
+      for (const cte of ctes) {
+        const cteRef = dbWithCtes.$with(cte.name).as(finalizeDrizzleQuery(cte.query).builder);
+        cteBindings.set(cte.name, cteRef);
+        cteRefs.push(cteRef);
+      }
+
+      const source = cteBindings.get(body.cteScan.table);
+      if (!source) {
+        throw new UnsupportedSingleQueryPlanError(
+          `Unknown CTE "${body.cteScan.table}" in WITH body.`,
+        );
+      }
+      const scanAlias = body.cteScan.alias ?? body.cteScan.table;
+
+      const windowExpressions = new Map<string, unknown>();
+      for (const fn of body.window?.functions ?? []) {
+        windowExpressions.set(
+          fn.as,
+          buildWindowFunctionSql(fn, source as Record<string, unknown>, scanAlias),
+        );
+      }
+
+      let builder = dbWithCtes
+        .with(...cteRefs)
+        .select(
+          buildWithSelectionRecord(
+            projection,
             source as Record<string, unknown>,
-            toInlineColumnRef(clause.column),
+            windowExpressions,
             scanAlias,
           ),
-        ),
-      );
-    }
-    for (const filter of body.filters) {
-      for (const clause of filter.where ?? []) {
+        )
+        .from(source) as DrizzleExecutableBuilder;
+
+      const whereClauses: SQL[] = [];
+      for (const clause of body.cteScan.where ?? []) {
         whereClauses.push(
           toSqlConditionFromSource(
             clause,
@@ -282,44 +274,58 @@ export const drizzleSqlRelationalBackend: SqlRelationalBackend<
           ),
         );
       }
-    }
-
-    if (whereClauses.length > 0) {
-      if (typeof builder.where !== "function") {
-        throw new UnsupportedSingleQueryPlanError(
-          "Drizzle query builder does not support WHERE on WITH fragments.",
-        );
-      }
-      builder = builder.where(sql.join(whereClauses, sql` and `)) as DrizzleExecutableBuilder;
-    }
-
-    if (orderBy.length > 0) {
-      if (typeof builder.orderBy !== "function") {
-        throw new UnsupportedSingleQueryPlanError(
-          "Drizzle query builder does not support ORDER BY on WITH fragments.",
-        );
-      }
-      const clauses = orderBy.map((term) => {
-        const sourceColumn =
-          term.kind === "output"
-            ? sql.identifier(term.column)
-            : resolveWithBodySourceColumn(
+      for (const filter of body.filters) {
+        for (const clause of filter.where ?? []) {
+          whereClauses.push(
+            toSqlConditionFromSource(
+              clause,
+              resolveWithBodySourceColumn(
                 source as Record<string, unknown>,
-                term.source,
+                toInlineColumnRef(clause.column),
                 scanAlias,
-              );
-        return term.direction === "asc" ? asc(sourceColumn) : desc(sourceColumn);
-      });
-      builder = builder.orderBy(...clauses) as DrizzleExecutableBuilder;
-    }
+              ),
+            ),
+          );
+        }
+      }
 
-    return {
-      builder,
-      pendingWhere: [],
-    };
-  },
-  async executeQuery({ query, runtime }) {
-    return executeDrizzleQueryBuilder(finalizeDrizzleQuery(query).builder, runtime);
+      if (whereClauses.length > 0) {
+        if (typeof builder.where !== "function") {
+          throw new UnsupportedSingleQueryPlanError(
+            "Drizzle query builder does not support WHERE on WITH fragments.",
+          );
+        }
+        builder = builder.where(sql.join(whereClauses, sql` and `)) as DrizzleExecutableBuilder;
+      }
+
+      if (orderBy.length > 0) {
+        if (typeof builder.orderBy !== "function") {
+          throw new UnsupportedSingleQueryPlanError(
+            "Drizzle query builder does not support ORDER BY on WITH fragments.",
+          );
+        }
+        const clauses = orderBy.map((term) => {
+          const sourceColumn =
+            term.kind === "output"
+              ? sql.identifier(term.column)
+              : resolveWithBodySourceColumn(
+                  source as Record<string, unknown>,
+                  term.source,
+                  scanAlias,
+                );
+          return term.direction === "asc" ? asc(sourceColumn) : desc(sourceColumn);
+        });
+        builder = builder.orderBy(...clauses) as DrizzleExecutableBuilder;
+      }
+
+      return {
+        builder,
+        pendingWhere: [],
+      };
+    },
+    async executeQuery({ query, runtime }) {
+      return executeDrizzleQueryBuilder(finalizeDrizzleQuery(query).builder, runtime);
+    },
   },
 };
 

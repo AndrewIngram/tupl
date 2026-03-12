@@ -196,7 +196,8 @@ Your provider package should keep only backend-specific work:
 
 - entity config details (`table`, `base`, query-scoping hooks)
 - runtime binding resolution
-- backend hook translation for joins, selections, set ops, and CTEs
+- backend `planning` hooks for unusual scan/strategy behavior
+- backend `query` hooks for joins, selections, set ops, and CTEs
 - compiled-plan execution
 
 Sketch:

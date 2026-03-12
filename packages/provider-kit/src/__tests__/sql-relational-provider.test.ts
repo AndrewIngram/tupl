@@ -11,133 +11,137 @@ type FakeEntityConfig = RelationalProviderEntityConfig & { table?: string };
 type FakeQuery = { steps: string[] };
 
 const fakeBackend = {
-  createScanBinding(scan: Extract<any, { kind: "scan" }>, resolvedEntities: Record<string, any>) {
-    const resolved = resolvedEntities[scan.table];
-    if (!resolved) {
-      throw new Error(`missing entity ${scan.table}`);
-    }
-    return {
-      alias: scan.alias ?? resolved.table,
-      entity: resolved.entity,
-      table: resolved.table,
-      scan,
-      resolved,
-    };
+  planning: {
+    createScanBinding(scan: Extract<any, { kind: "scan" }>, resolvedEntities: Record<string, any>) {
+      const resolved = resolvedEntities[scan.table];
+      if (!resolved) {
+        throw new Error(`missing entity ${scan.table}`);
+      }
+      return {
+        alias: scan.alias ?? resolved.table,
+        entity: resolved.entity,
+        table: resolved.table,
+        scan,
+        resolved,
+      };
+    },
   },
-  createRootQuery({ root }: { root: { alias: string } }): FakeQuery {
-    return { steps: [`root:${root.alias}`] };
-  },
-  applyRegularJoin({
-    query,
-    join,
-  }: {
-    query: FakeQuery;
-    join: { joinType: string; right: { alias: string } };
-  }): FakeQuery {
-    return { steps: [...query.steps, `join:${join.joinType}:${join.right.alias}`] };
-  },
-  applySemiJoin({
-    query,
-    leftKey,
-  }: {
-    query: FakeQuery;
-    leftKey: { alias: string; column: string };
-  }): FakeQuery {
-    return { steps: [...query.steps, `semi:${leftKey.alias}.${leftKey.column}`] };
-  },
-  applyWhereClause({
-    query,
-    clause,
-  }: {
-    query: FakeQuery;
-    clause: { column: string; op: string };
-  }): FakeQuery {
-    return { steps: [...query.steps, `where:${clause.column}:${clause.op}`] };
-  },
-  applySelection({
-    query,
-    selection,
-  }: {
-    query: FakeQuery;
-    selection: Array<{ kind: string; output: string }>;
-  }): FakeQuery {
-    return {
-      steps: [
-        ...query.steps,
-        `select:${selection.map((entry) => `${entry.kind}:${entry.output}`).join(",")}`,
-      ],
-    };
-  },
-  applyGroupBy({
-    query,
-    groupBy,
-  }: {
-    query: FakeQuery;
-    groupBy: Array<{ alias?: string; table?: string; column: string }>;
-  }): FakeQuery {
-    return {
-      steps: [
-        ...query.steps,
-        `group:${groupBy.map((entry) => `${entry.alias ?? entry.table}.${entry.column}`).join(",")}`,
-      ],
-    };
-  },
-  applyOrderBy({
-    query,
-    orderBy,
-  }: {
-    query: FakeQuery;
-    orderBy: Array<{ kind: string; column?: string; source?: { column: string } }>;
-  }): FakeQuery {
-    return {
-      steps: [
-        ...query.steps,
-        `order:${orderBy
-          .map((entry) => (entry.kind === "output" ? entry.column : entry.source?.column))
-          .join(",")}`,
-      ],
-    };
-  },
-  applyLimit({ query, limit }: { query: FakeQuery; limit: number }): FakeQuery {
-    return { steps: [...query.steps, `limit:${limit}`] };
-  },
-  applyOffset({ query, offset }: { query: FakeQuery; offset: number }): FakeQuery {
-    return { steps: [...query.steps, `offset:${offset}`] };
-  },
-  applySetOp({
-    left,
-    right,
-    wrapper,
-  }: {
-    left: FakeQuery;
-    right: FakeQuery;
-    wrapper: { setOp: { op: string } };
-  }): FakeQuery {
-    return {
-      steps: [...left.steps, `set:${wrapper.setOp.op}`, ...right.steps],
-    };
-  },
-  buildWithQuery({
-    ctes,
-    projection,
-    orderBy,
-  }: {
-    ctes: Array<{ name: string }>;
-    projection: Array<{ kind: string; output: string }>;
-    orderBy: Array<{ kind: string; column?: string; source?: { column: string } }>;
-  }): FakeQuery {
-    return {
-      steps: [
-        `with:${ctes.map((cte) => cte.name).join(",")}`,
-        `with-select:${projection.map((entry) => `${entry.kind}:${entry.output}`).join(",")}`,
-        `with-order:${orderBy
-          .map((entry) => (entry.kind === "output" ? entry.column : entry.source?.column))
-          .join(",")}`,
-      ],
-    };
-  },
-  async executeQuery({ query }: { query: FakeQuery }): Promise<QueryRow[]> {
-    return [{ steps: query.steps.join(" > ") }];
+  query: {
+    createRootQuery({ root }: { root: { alias: string } }): FakeQuery {
+      return { steps: [`root:${root.alias}`] };
+    },
+    applyRegularJoin({
+      query,
+      join,
+    }: {
+      query: FakeQuery;
+      join: { joinType: string; right: { alias: string } };
+    }): FakeQuery {
+      return { steps: [...query.steps, `join:${join.joinType}:${join.right.alias}`] };
+    },
+    applySemiJoin({
+      query,
+      leftKey,
+    }: {
+      query: FakeQuery;
+      leftKey: { alias: string; column: string };
+    }): FakeQuery {
+      return { steps: [...query.steps, `semi:${leftKey.alias}.${leftKey.column}`] };
+    },
+    applyWhereClause({
+      query,
+      clause,
+    }: {
+      query: FakeQuery;
+      clause: { column: string; op: string };
+    }): FakeQuery {
+      return { steps: [...query.steps, `where:${clause.column}:${clause.op}`] };
+    },
+    applySelection({
+      query,
+      selection,
+    }: {
+      query: FakeQuery;
+      selection: Array<{ kind: string; output: string }>;
+    }): FakeQuery {
+      return {
+        steps: [
+          ...query.steps,
+          `select:${selection.map((entry) => `${entry.kind}:${entry.output}`).join(",")}`,
+        ],
+      };
+    },
+    applyGroupBy({
+      query,
+      groupBy,
+    }: {
+      query: FakeQuery;
+      groupBy: Array<{ alias?: string; table?: string; column: string }>;
+    }): FakeQuery {
+      return {
+        steps: [
+          ...query.steps,
+          `group:${groupBy.map((entry) => `${entry.alias ?? entry.table}.${entry.column}`).join(",")}`,
+        ],
+      };
+    },
+    applyOrderBy({
+      query,
+      orderBy,
+    }: {
+      query: FakeQuery;
+      orderBy: Array<{ kind: string; column?: string; source?: { column: string } }>;
+    }): FakeQuery {
+      return {
+        steps: [
+          ...query.steps,
+          `order:${orderBy
+            .map((entry) => (entry.kind === "output" ? entry.column : entry.source?.column))
+            .join(",")}`,
+        ],
+      };
+    },
+    applyLimit({ query, limit }: { query: FakeQuery; limit: number }): FakeQuery {
+      return { steps: [...query.steps, `limit:${limit}`] };
+    },
+    applyOffset({ query, offset }: { query: FakeQuery; offset: number }): FakeQuery {
+      return { steps: [...query.steps, `offset:${offset}`] };
+    },
+    applySetOp({
+      left,
+      right,
+      wrapper,
+    }: {
+      left: FakeQuery;
+      right: FakeQuery;
+      wrapper: { setOp: { op: string } };
+    }): FakeQuery {
+      return {
+        steps: [...left.steps, `set:${wrapper.setOp.op}`, ...right.steps],
+      };
+    },
+    buildWithQuery({
+      ctes,
+      projection,
+      orderBy,
+    }: {
+      ctes: Array<{ name: string }>;
+      projection: Array<{ kind: string; output: string }>;
+      orderBy: Array<{ kind: string; column?: string; source?: { column: string } }>;
+    }): FakeQuery {
+      return {
+        steps: [
+          `with:${ctes.map((cte) => cte.name).join(",")}`,
+          `with-select:${projection.map((entry) => `${entry.kind}:${entry.output}`).join(",")}`,
+          `with-order:${orderBy
+            .map((entry) => (entry.kind === "output" ? entry.column : entry.source?.column))
+            .join(",")}`,
+        ],
+      };
+    },
+    async executeQuery({ query }: { query: FakeQuery }): Promise<QueryRow[]> {
+      return [{ steps: query.steps.join(" > ") }];
+    },
   },
 };
 

@@ -131,6 +131,10 @@ function collectRequiredColumns(
   }
 
   if (shape.aggregateMode) {
+    // Aggregate lowering owns the invariant that every grouped expression, metric input, and
+    // post-aggregate ordering reference is already present on the scan rows feeding the aggregate.
+    // That keeps provider/runtime stages from having to rediscover which pre-aggregate columns are
+    // semantically required to preserve the logical result.
     for (const projection of shape.safeAggregateProjections) {
       if (projection.kind !== "group") {
         continue;
@@ -163,6 +167,10 @@ function collectRequiredColumns(
       }
     }
   } else {
+    // Non-aggregate select lowering follows the same rule for ordinary projections and window
+    // functions: scans must surface every referenced base column before later shaping rewrites the
+    // row. This keeps join-tree construction responsible for physical row shape, while later
+    // project/window stages only decide logical output naming.
     for (const projection of shape.safeProjections) {
       if (projection.kind === "column") {
         if (projection.source.alias) {
@@ -224,8 +232,10 @@ function collectRequiredColumns(
     if (!columns || columns.size > 0) {
       continue;
     }
-    // Scan nodes must still expose at least one column so later phases have a stable row shape.
-    // Falling back to the first schema column keeps that invariant local to join-tree lowering.
+    // Even a scan whose columns are not referenced later still needs one stable physical column so
+    // join/filter execution can materialize a row shape. Using the first declared schema column is
+    // intentionally arbitrary but local: it avoids leaking a "synthetic empty row" convention into
+    // provider/runtime execution semantics.
     if (schema.tables[binding.table]) {
       const schemaColumns = Object.keys(schema.tables[binding.table]?.columns ?? {});
       const first = schemaColumns[0];
