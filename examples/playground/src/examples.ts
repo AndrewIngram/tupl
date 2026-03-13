@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { createDataEntityHandle } from "@tupl/provider-kit";
 import { createSchemaBuilder, type SchemaDefinition } from "@tupl/schema";
 
@@ -38,6 +39,14 @@ const productViewCountsEntity = createDataEntityHandle<"product_id" | "view_coun
   provider: "redisProvider",
   entity: "product_view_counts",
 });
+
+function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
 
 const facadeSchemaBuilder = createSchemaBuilder<Record<string, never>>();
 
@@ -264,7 +273,7 @@ facadeSchemaBuilder.view(
   },
 );
 
-export const FACADE_SCHEMA: SchemaDefinition = facadeSchemaBuilder.build();
+export const FACADE_SCHEMA: SchemaDefinition = unwrapResult(facadeSchemaBuilder.build());
 
 export const GENERATED_DB_MODULE_ID = "./generated-db";
 export const DB_PROVIDER_MODULE_ID = "./db-provider";

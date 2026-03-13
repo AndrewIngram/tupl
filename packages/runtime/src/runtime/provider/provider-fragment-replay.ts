@@ -3,7 +3,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import type { RelNode } from "@tupl/foundation";
 import {
   unwrapProviderOperationResult,
-  type FragmentProviderAdapter,
+  type FragmentProvider,
   type ProviderFragment,
 } from "@tupl/provider-kit";
 import {
@@ -29,7 +29,7 @@ export interface ProviderFragmentRunFailure {
  * Provider fragment replay owns one-shot remote fragment execution and done-event shaping.
  */
 export async function runProviderFragmentOnceResult<TContext>(input: {
-  provider: FragmentProviderAdapter<TContext>;
+  provider: FragmentProvider<TContext>;
   providerName: string;
   fragment: ProviderFragment;
   rel: RelNode;

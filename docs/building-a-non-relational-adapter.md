@@ -2,6 +2,12 @@
 
 This guide covers lookup-first systems such as Redis, KV stores, document stores, and index-backed adapters.
 
+Terminology in this guide:
+
+- `provider`: the runtime object registered under a provider name
+- `adapter`: the authoring layer or helper that builds that provider
+- `backend`: the wrapped external store or client library
+
 For a concrete lookup-only Redis implementation, see `@tupl/provider-ioredis` in this repo.
 To expose those entities in a facade schema, use `createSchemaBuilder(...)` and finish with
 `createExecutableSchema(builder)`.
@@ -14,7 +20,7 @@ This is the shape to aim for when the backend is naturally keyed and may never o
 
 ```ts
 import type {
-  ProviderAdapter,
+  Provider,
   ProviderCapabilityReport,
   ProviderCompiledPlan,
   ProviderLookupManyRequest,
@@ -44,7 +50,7 @@ type CompiledKvPlan =
 
 const declaredAtoms: readonly ProviderCapabilityAtom[] = ["lookup.bulk"];
 
-export function createExampleKvAdapter(rows: KvRecord[]): ProviderAdapter<KvContext> {
+export function createExampleKvAdapter(rows: KvRecord[]): Provider<KvContext> {
   return {
     name: "example-kv",
     routeFamilies: ["lookup"],

@@ -1,4 +1,4 @@
-import type { ProvidersMap, QueryFallbackPolicy, TuplDiagnostic } from "@tupl/provider-kit";
+import type { ProviderMap, QueryFallbackPolicy, TuplDiagnostic } from "@tupl/provider-kit";
 import type { RelNode, TuplResult } from "@tupl/foundation";
 
 import type { ConstraintValidationOptions } from "./constraints";
@@ -54,7 +54,7 @@ export const DEFAULT_QUERY_FALLBACK_POLICY: Required<QueryFallbackPolicy> = {
  */
 export interface QueryInput<TContext> {
   schema: SchemaDefinition;
-  providers: ProvidersMap<TContext>;
+  providers: ProviderMap<TContext>;
   context: TContext;
   sql: string;
   queryGuardrails?: Partial<QueryGuardrails>;
@@ -80,9 +80,8 @@ export interface ExecutableSchemaQueryInput<TContext> {
  */
 export interface ExecutableSchema<TContext, TSchema extends SchemaDefinition = SchemaDefinition> {
   schema: TSchema;
-  query(input: ExecutableSchemaQueryInput<TContext>): Promise<QueryRow[]>;
-  queryResult(input: ExecutableSchemaQueryInput<TContext>): Promise<TuplResult<QueryRow[]>>;
-  explain(input: ExecutableSchemaQueryInput<TContext>): ExplainResult;
+  query(input: ExecutableSchemaQueryInput<TContext>): Promise<TuplResult<QueryRow[]>>;
+  explain(input: ExecutableSchemaQueryInput<TContext>): TuplResult<ExplainResult>;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { createDataEntityHandle } from "@tupl/provider-kit";
 import {
   createSchemaBuilder,
@@ -15,7 +16,7 @@ export function buildSchema<TContext = Record<string, never>>(
 ): SchemaDefinition {
   const builder = createSchemaBuilder<TContext>();
   register(builder);
-  return builder.build();
+  return unwrapResult(builder.build());
 }
 
 type EntityTableDefinition<TColumns extends Record<string, TableColumnDefinition>> = {
@@ -53,5 +54,13 @@ export function buildEntitySchema<const TTables extends EntitySchemaInput>(
       ...(table.constraints ? { constraints: table.constraints } : {}),
     });
   }
-  return builder.build() as EntitySchemaDefinition<TTables>;
+  return unwrapResult(builder.build()) as EntitySchemaDefinition<TTables>;
+}
+
+function unwrapResult<T>(result: ReturnType<SchemaBuilder<any>["build"]>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value as T;
 }

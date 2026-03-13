@@ -153,10 +153,8 @@ const STRUCTURAL_LINE_BUDGETS = {
   "packages/schema-model/src/mapping/output-inference.ts": 500,
   "packages/schema-model/src/mapping/rel-output-mapping.ts": 200,
   "packages/provider-kysely/src/index.ts": 250,
-  "packages/provider-kysely/src/planning/rel-strategy.ts": 250,
   "packages/provider-kysely/src/execution/scan-execution.ts": 350,
   "packages/provider-objection/src/index.ts": 250,
-  "packages/provider-objection/src/planning/rel-strategy.ts": 250,
   "packages/provider-objection/src/execution/scan-execution.ts": 350,
   "packages/provider-drizzle/src/index.ts": 250,
   "packages/provider-drizzle/src/planning/rel-strategy.ts": 500,
@@ -450,6 +448,25 @@ describe("package boundaries", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("keeps third-party provider authoring fixtures on the public provider-kit surface", () => {
+    const offenders: string[] = [];
+    const allowedImports = new Set<string>(["@tupl/provider-kit"]);
+
+    for (const file of walkFiles(join(REPO_ROOT, "test/provider-fixtures"))) {
+      if (!file.endsWith(".ts")) {
+        continue;
+      }
+
+      const imports = getWorkspaceImports(readFileSync(file, "utf8"));
+      const disallowed = imports.filter((specifier) => !allowedImports.has(specifier));
+      if (disallowed.length > 0) {
+        offenders.push(`${relative(REPO_ROOT, file)} -> ${disallowed.join(", ")}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
   it("keeps first-party adapter conformance on the public provider-kit/testing surface", () => {
     const contents = readFileSync(join(REPO_ROOT, "test/providers/conformance.test.ts"), "utf8");
     expect(contents).toContain("@tupl/provider-kit/testing");
@@ -488,7 +505,7 @@ describe("package boundaries", () => {
       "packages/provider-objection/src",
     ];
     const disallowedPrimitives = [
-      "bindAdapterEntities",
+      "bindProviderEntities",
       "collectCapabilityAtomsForFragment",
       "createDataEntityHandle",
       "inferRouteFamilyForFragment",

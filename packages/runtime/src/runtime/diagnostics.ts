@@ -8,7 +8,7 @@ import {
   type TuplError,
 } from "@tupl/foundation";
 import type {
-  ProviderAdapter,
+  Provider,
   ProviderCapabilityReport,
   ProviderFragment,
   QueryFallbackPolicy,
@@ -98,7 +98,7 @@ export function summarizeCapabilityReason(report: ProviderCapabilityReport | nul
 }
 
 export function buildCapabilityDiagnostics<TContext>(
-  provider: ProviderAdapter<TContext> | null,
+  provider: Provider<TContext> | null,
   fragment: ProviderFragment | null,
   report: ProviderCapabilityReport | null,
   queryPolicy?: QueryFallbackPolicy,

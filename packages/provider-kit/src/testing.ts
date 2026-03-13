@@ -3,7 +3,7 @@ import { stringifyUnknownValue, type QueryRow } from "@tupl/foundation";
 import {
   normalizeCapability,
   unwrapProviderOperationResult,
-  type FragmentProviderAdapter,
+  type FragmentProvider,
   type ProviderCapabilityReport,
   type ProviderFragment,
 } from "./index";
@@ -15,7 +15,7 @@ export interface ProviderConformanceCase {
 
 export interface ProviderConformanceOptions<
   TContext,
-  TProvider extends FragmentProviderAdapter<TContext>,
+  TProvider extends FragmentProvider<TContext>,
   TBinding = void,
 > {
   provider: TProvider | ((binding: TBinding) => TProvider);
@@ -37,7 +37,7 @@ export interface ProviderConformanceOptions<
  */
 export function createProviderConformanceCases<
   TContext,
-  TProvider extends FragmentProviderAdapter<TContext>,
+  TProvider extends FragmentProvider<TContext>,
   TBinding = void,
 >(options: ProviderConformanceOptions<TContext, TProvider, TBinding>): ProviderConformanceCase[] {
   const resolveProvider = () =>
@@ -96,7 +96,7 @@ export function createProviderConformanceCases<
 }
 
 async function assertFragmentSupported<TContext>(
-  provider: FragmentProviderAdapter<TContext>,
+  provider: FragmentProvider<TContext>,
   fragment: ProviderFragment,
   context: TContext,
 ) {
@@ -111,7 +111,7 @@ async function assertFragmentSupported<TContext>(
 }
 
 async function executeFragment<TContext>(
-  provider: FragmentProviderAdapter<TContext>,
+  provider: FragmentProvider<TContext>,
   fragment: ProviderFragment,
   context: TContext,
 ): Promise<QueryRow[]> {

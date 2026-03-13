@@ -2,11 +2,11 @@ import { Result } from "better-result";
 
 import { TuplExecutionError, type RelNode } from "@tupl/foundation";
 import {
-  getDataEntityAdapter,
+  getDataEntityProvider,
   normalizeCapability,
   supportsFragmentExecution,
   unwrapProviderOperationResult,
-  type ProviderAdapter,
+  type Provider,
 } from "@tupl/provider-kit";
 import { buildProviderFragmentForRelResult } from "@tupl/planner";
 import { mapProviderRowsToRelOutput } from "@tupl/schema-model";
@@ -43,7 +43,7 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
     return Result.err(
       new TuplExecutionError({
         operation: "execute relational node",
-        message: `Missing provider adapter: ${fragment.provider}`,
+        message: `Missing provider: ${fragment.provider}`,
       }),
     );
   }
@@ -100,20 +100,20 @@ function resolveProviderForNode<TContext>(
   node: RelNode,
   providerName: string,
   context: RelExecutionContext<TContext>,
-): ProviderAdapter<TContext> | undefined {
-  return context.providers[providerName] ?? findNodeProviderAdapter(node, providerName);
+): Provider<TContext> | undefined {
+  return context.providers[providerName] ?? findNodeProvider(node, providerName);
 }
 
-function findNodeProviderAdapter<TContext>(
+function findNodeProvider<TContext>(
   node: RelNode,
   providerName: string,
-): ProviderAdapter<TContext> | undefined {
+): Provider<TContext> | undefined {
   switch (node.kind) {
     case "scan": {
       if (!node.entity || node.entity.provider !== providerName) {
         return undefined;
       }
-      return getDataEntityAdapter(node.entity) as ProviderAdapter<TContext> | undefined;
+      return getDataEntityProvider(node.entity) as Provider<TContext> | undefined;
     }
     case "filter":
     case "project":
@@ -121,17 +121,16 @@ function findNodeProviderAdapter<TContext>(
     case "window":
     case "sort":
     case "limit_offset":
-      return findNodeProviderAdapter(node.input, providerName);
+      return findNodeProvider(node.input, providerName);
     case "join":
     case "set_op":
       return (
-        findNodeProviderAdapter(node.left, providerName) ??
-        findNodeProviderAdapter(node.right, providerName)
+        findNodeProvider(node.left, providerName) ?? findNodeProvider(node.right, providerName)
       );
     case "with":
       return (
-        node.ctes.map((cte) => findNodeProviderAdapter(cte.query, providerName)).find(Boolean) ??
-        findNodeProviderAdapter(node.body, providerName)
+        node.ctes.map((cte) => findNodeProvider(cte.query, providerName)).find(Boolean) ??
+        findNodeProvider(node.body, providerName)
       );
     case "sql":
       return undefined;

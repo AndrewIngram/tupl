@@ -1,7 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
 
 import { TuplPlanningError, type RelNode } from "@tupl/foundation";
-import type { ProvidersMap } from "@tupl/provider-kit";
+import type { ProviderMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
 import { resolveLookupJoinCandidate } from "../provider/conventions";
@@ -15,7 +15,7 @@ import { tryPlanRemoteFragmentResult } from "./remote-fragment-planning";
 export async function planPhysicalNodeResult<TContext>(
   node: RelNode,
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
 ): Promise<BetterResult<string, TuplPlanningError>> {
@@ -112,7 +112,7 @@ export async function planPhysicalNodeResult<TContext>(
 async function planUnaryLocalNodeResult<TContext>(
   node: Extract<RelNode, { kind: "filter" | "project" | "aggregate" | "sort" | "limit_offset" }>,
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
 ): Promise<BetterResult<string, TuplPlanningError>> {
@@ -145,7 +145,7 @@ async function planUnaryLocalNodeResult<TContext>(
 async function planJoinNodeResult<TContext>(
   node: Extract<RelNode, { kind: "join" }>,
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
 ): Promise<BetterResult<string, TuplPlanningError>> {

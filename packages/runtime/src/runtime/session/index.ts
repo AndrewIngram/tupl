@@ -3,7 +3,4 @@
  * Callers should import this subpath only when they need per-step plan or session state.
  */
 export * from "./contracts";
-export {
-  createExecutableSchemaSession,
-  createExecutableSchemaSessionResult,
-} from "./executable-schema-session";
+export { createExecutableSchemaSession } from "./executable-schema-session";

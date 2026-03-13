@@ -3,11 +3,11 @@ import { Result } from "better-result";
 import { validateTableConstraintRows } from "../constraints";
 import { TuplExecutionError } from "@tupl/foundation";
 import {
-  getDataEntityAdapter,
+  getDataEntityProvider,
   normalizeCapability,
   supportsFragmentExecution,
   unwrapProviderOperationResult,
-  type ProviderAdapter,
+  type Provider,
   type ProviderFragment,
 } from "@tupl/provider-kit";
 import {
@@ -56,7 +56,7 @@ export async function executeScanResult<TContext>(
   const normalizedBinding = getNormalizedTableBinding(context.schema, scan.table);
   const providerNameResult = tryExecutionStep(
     "resolve scan provider",
-    () => scan.entity?.provider ?? resolveTableProvider(context.schema, scan.table),
+    () => scan.entity?.provider ?? readResolvedTableProvider(context.schema, scan.table),
   );
   if (Result.isError(providerNameResult)) {
     return providerNameResult;
@@ -65,13 +65,13 @@ export async function executeScanResult<TContext>(
   const provider =
     context.providers[providerName] ??
     (scan.entity
-      ? (getDataEntityAdapter(scan.entity) as ProviderAdapter<TContext> | undefined)
+      ? (getDataEntityProvider(scan.entity) as Provider<TContext> | undefined)
       : undefined);
   if (!provider) {
     return Result.err(
       new TuplExecutionError({
         operation: "execute scan",
-        message: `Missing provider adapter: ${providerName}`,
+        message: `Missing provider: ${providerName}`,
       }),
     );
   }
@@ -183,6 +183,18 @@ export async function executeScanResult<TContext>(
 
   const alias = scan.alias ?? scan.table;
   return Result.ok(projectedResult.value.map((row) => prefixRow(row, alias)));
+}
+
+function readResolvedTableProvider(
+  schema: RelExecutionContext<unknown>["schema"],
+  table: string,
+): string {
+  const result = resolveTableProvider(schema, table);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
 }
 
 function mapLogicalColumnsToSource(

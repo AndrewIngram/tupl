@@ -78,20 +78,21 @@ export type ProviderOperationResult<T, E = Error> = AdapterResult<T, E>;
 export type { ProviderRuntimeBinding };
 
 /**
- * Provider adapter base is the minimum contract every provider implements.
+ * ProviderBase is the runtime provider contract.
+ * This is the provider object registered with the runtime.
  * Capability and estimate methods describe what can be run remotely; they do not execute work.
  */
-export interface ProviderAdapterBase<TContext = unknown> {
+export interface ProviderBase<TContext = unknown> {
   name: string;
-  /** Declared route families summarize the kinds of provider work this adapter is designed for. */
+  /** Declared route families summarize the kinds of provider work this provider is designed for. */
   routeFamilies?: ProviderRouteFamily[];
-  /** Capability atoms describe pushdown features supported by the adapter. */
+  /** Capability atoms describe pushdown features supported by the provider. */
   capabilityAtoms?: ProviderCapabilityAtom[];
   /** Provider-local fallback policy is merged with per-query runtime overrides. */
   fallbackPolicy?: QueryFallbackPolicy;
   /**
    * `canExecute` answers whether the provider can run a fragment remotely.
-   * Returning a report is preferred when the adapter can explain unsupported atoms or cost.
+   * Returning a report is preferred when the provider can explain unsupported atoms or cost.
    */
   canExecute(
     fragment: ProviderFragment,
@@ -100,7 +101,7 @@ export interface ProviderAdapterBase<TContext = unknown> {
   /** `estimate` is optional advisory metadata used when choosing remote vs local execution. */
   estimate?(fragment: ProviderFragment, context: TContext): MaybePromise<ProviderEstimate>;
   /**
-   * Optional source-neutral physical entity handles owned by this adapter.
+   * Optional source-neutral physical entity handles owned by this provider.
    */
   entities?: Record<string, FoundationDataEntityHandle<string>>;
 }
@@ -109,7 +110,7 @@ export interface ProviderAdapterBase<TContext = unknown> {
  * Fragment providers support full fragment compile/execute flows.
  * `compile` must be pure with respect to runtime state; `execute` runs the compiled provider plan.
  */
-export interface FragmentProviderAdapter<TContext = unknown> extends ProviderAdapterBase<TContext> {
+export interface FragmentProvider<TContext = unknown> extends ProviderBase<TContext> {
   compile(
     fragment: ProviderFragment,
     context: TContext,
@@ -124,7 +125,7 @@ export interface FragmentProviderAdapter<TContext = unknown> extends ProviderAda
  * Lookup providers support batched key lookups used by runtime lookup joins.
  * They complement, rather than replace, fragment execution support.
  */
-export interface LookupProviderAdapter<TContext = unknown> extends ProviderAdapterBase<TContext> {
+export interface LookupProvider<TContext = unknown> extends ProviderBase<TContext> {
   lookupMany(
     request: ProviderLookupManyRequest,
     context: TContext,
@@ -132,17 +133,17 @@ export interface LookupProviderAdapter<TContext = unknown> extends ProviderAdapt
 }
 
 /**
- * Provider adapters may support fragment execution, lookup execution, or both.
+ * Providers may support fragment execution, lookup execution, or both.
  * Callers should feature-detect optional capabilities rather than assume one concrete shape.
  */
-export type ProviderAdapter<TContext = unknown> =
-  | FragmentProviderAdapter<TContext>
-  | LookupProviderAdapter<TContext>
-  | (FragmentProviderAdapter<TContext> & LookupProviderAdapter<TContext>);
+export type Provider<TContext = unknown> =
+  | FragmentProvider<TContext>
+  | LookupProvider<TContext>
+  | (FragmentProvider<TContext> & LookupProvider<TContext>);
 
-/** Providers maps are runtime lookup tables keyed by the provider name exposed on the adapter. */
-export type ProvidersMap<TContext = unknown> = Record<string, ProviderAdapter<TContext>>;
-export type DataSourceAdapter<TContext = unknown> = ProviderAdapter<TContext>;
+/** Provider maps are runtime lookup tables keyed by the provider name exposed on the provider. */
+export type ProviderMap<TContext = unknown> = Record<string, Provider<TContext>>;
+export type DataSourceProvider<TContext = unknown> = Provider<TContext>;
 
 export type {
   QueryRow,

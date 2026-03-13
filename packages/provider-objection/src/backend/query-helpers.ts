@@ -1,4 +1,8 @@
-import type { QueryRow, ScanFilterClause } from "@tupl/provider-kit";
+import {
+  UnsupportedSqlRelationalPlanError,
+  type QueryRow,
+  type ScanFilterClause,
+} from "@tupl/provider-kit";
 import { resolveColumnFromFilterColumn, resolveColumnRef } from "@tupl/provider-kit/shapes";
 import type { RelNode } from "@tupl/foundation";
 
@@ -8,8 +12,9 @@ import type {
   ObjectionProviderEntityConfig,
   ResolvedEntityConfig,
 } from "../types";
-import type { ScanBinding } from "../planning/rel-strategy";
-import { UnsupportedSingleQueryPlanError } from "../planning/rel-strategy";
+import type { ScanBinding } from "../planning/rel-builder";
+
+class UnsupportedSingleQueryPlanError extends UnsupportedSqlRelationalPlanError {}
 
 export function toRef(
   alias: string | undefined,
@@ -54,11 +59,11 @@ export function createJoinSource<TContext>(
   binding: ScanBinding<TContext>,
   context: TContext,
 ): unknown {
-  if (!binding.config.base) {
+  if (!binding.resolved.config.base) {
     return { [binding.alias]: binding.table };
   }
 
-  const base = resolveBaseQueryBuilder(binding.config.base, context);
+  const base = resolveBaseQueryBuilder(binding.resolved.config.base, context);
   const cloned = base.clone?.() ?? base;
   return (cloned.as?.(binding.alias) ?? cloned) as unknown;
 }

@@ -20,6 +20,9 @@ export function buildSimpleSelectJoinTree(
   schema: SchemaDefinition,
   tryLowerSelect: (ast: import("../sqlite-parser/ast").SelectAst) => RelNode | null,
 ): RelNode | null {
+  // Push only literal predicates that attach cleanly to one scan alias. Everything else stays as
+  // a residual rel expression so later provider/runtime layers can make one explicit fallback
+  // decision instead of each lowering step inventing its own partial rule.
   const pushableWhereAliases = getPushableWhereAliases(shape.rootBinding.alias, shape.joins);
   const pushableLiteralFilters = shape.whereFilters.literals.filter((filter) =>
     pushableWhereAliases.has(filter.alias),
@@ -69,6 +72,9 @@ export function buildSimpleSelectJoinTree(
   }
 
   for (const inFilter of shape.whereFilters.inSubqueries) {
+    // IN-subqueries become semi-joins only when the subquery is uncorrelated and shape-compatible.
+    // Returning null here intentionally punts the whole select back to the broader lowering path
+    // rather than producing a half-lowered tree with hidden execution constraints.
     const outerAliases = new Set(shape.bindings.map((binding) => binding.alias));
     if (isCorrelatedSubquery(inFilter.subquery, outerAliases)) {
       return null;
@@ -125,6 +131,10 @@ function collectRequiredColumns(
   }
 
   if (shape.aggregateMode) {
+    // Aggregate lowering owns the invariant that every grouped expression, metric input, and
+    // post-aggregate ordering reference is already present on the scan rows feeding the aggregate.
+    // That keeps provider/runtime stages from having to rediscover which pre-aggregate columns are
+    // semantically required to preserve the logical result.
     for (const projection of shape.safeAggregateProjections) {
       if (projection.kind !== "group") {
         continue;
@@ -157,6 +167,10 @@ function collectRequiredColumns(
       }
     }
   } else {
+    // Non-aggregate select lowering follows the same rule for ordinary projections and window
+    // functions: scans must surface every referenced base column before later shaping rewrites the
+    // row. This keeps join-tree construction responsible for physical row shape, while later
+    // project/window stages only decide logical output naming.
     for (const projection of shape.safeProjections) {
       if (projection.kind === "column") {
         if (projection.source.alias) {
@@ -218,6 +232,10 @@ function collectRequiredColumns(
     if (!columns || columns.size > 0) {
       continue;
     }
+    // Even a scan whose columns are not referenced later still needs one stable physical column so
+    // join/filter execution can materialize a row shape. Using the first declared schema column is
+    // intentionally arbitrary but local: it avoids leaking a "synthetic empty row" convention into
+    // provider/runtime execution semantics.
     if (schema.tables[binding.table]) {
       const schemaColumns = Object.keys(schema.tables[binding.table]?.columns ?? {});
       const first = schemaColumns[0];

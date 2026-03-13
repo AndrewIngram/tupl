@@ -31,7 +31,6 @@ export {
   DEFAULT_QUERY_GUARDRAILS,
   TuplDiagnosticError,
   createExecutableSchema,
-  createExecutableSchemaResult,
 } from "@tupl/runtime";
 export type {
   ExecutableSchema,
@@ -40,4 +39,4 @@ export type {
   QueryFallbackPolicy,
   QueryGuardrails,
 } from "@tupl/runtime";
-export type { TuplResult } from "@tupl/runtime";
+export type { TuplResult, TuplSchemaIssue } from "@tupl/runtime";

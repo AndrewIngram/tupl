@@ -7,10 +7,10 @@ import {
   type RelScanNode,
 } from "@tupl/foundation";
 import {
-  getDataEntityAdapter,
+  getDataEntityProvider,
   supportsLookupMany,
   unwrapProviderOperationResult,
-  type ProviderAdapter,
+  type Provider,
 } from "@tupl/provider-kit";
 import {
   createPhysicalBindingFromEntity,
@@ -48,11 +48,11 @@ export async function maybeExecuteLookupJoinResult<TContext>(
 
   const rightBinding = getNormalizedTableBinding(context.schema, rightScan.table);
   const rightProviderName =
-    rightScan.entity?.provider ?? resolveTableProvider(context.schema, rightScan.table);
+    rightScan.entity?.provider ?? readResolvedTableProvider(context.schema, rightScan.table);
   const rightProvider =
     context.providers[rightProviderName] ??
     (rightScan.entity
-      ? (getDataEntityAdapter(rightScan.entity) as ProviderAdapter<TContext> | undefined)
+      ? (getDataEntityProvider(rightScan.entity) as Provider<TContext> | undefined)
       : undefined);
   if (!rightProvider || !supportsLookupMany(rightProvider)) {
     return Result.ok(null);
@@ -233,4 +233,16 @@ function findFirstScan(node: RelNode): RelScanNode | null {
     case "sql":
       return null;
   }
+}
+
+function readResolvedTableProvider(
+  schema: RelExecutionContext<unknown>["schema"],
+  table: string,
+): string {
+  const result = resolveTableProvider(schema, table);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
 }

@@ -71,6 +71,7 @@ export type {
 } from "./types";
 export { createSchemaBuilder, defineTableMethods, isSchemaBuilder } from "./dsl/builder";
 export {
+  buildRegisteredSchemaDefinition,
   createPhysicalBindingFromEntity,
   createTableDefinitionFromEntity,
   finalizeSchemaDefinition,
@@ -79,9 +80,7 @@ export {
   getNormalizedTableBinding,
   resolveNormalizedColumnSource,
   resolveTableProvider,
-  resolveTableProviderResult,
   validateProviderBindings,
-  validateProviderBindingsResult,
 } from "./normalization";
 export {
   coerceValue,
@@ -95,7 +94,7 @@ export {
   type EnumLinkReference,
   type ResolveSchemaLinkedEnumsOptions,
 } from "./enums";
-export { validateRelAgainstSchema } from "./constraints";
+export { validateRelAgainstSchema, validateSchemaConstraints } from "./constraints";
 export {
   getTable,
   resolveColumnDefinition,

@@ -15,12 +15,13 @@ import * as runtimeSession from "@tupl/runtime/session";
 import * as schema from "@tupl/schema";
 import type {
   QueryRow as ProviderQueryRow,
-  RelationalProviderAdapterOptions as ProviderRelationalProviderAdapterOptions,
+  RelationalProviderOptions as ProviderRelationalProviderOptions,
   RelationalProviderCapabilityContext as ProviderRelationalProviderCapabilityContext,
   RelationalProviderEntityConfig as ProviderRelationalProviderEntityConfig,
   RelationalProviderRelCompileStrategy as ProviderRelationalProviderRelCompileStrategy,
   ScanFilterClause as ProviderScanFilterClause,
   ScanOrderBy as ProviderScanOrderBy,
+  SqlRelationalProviderOptions as ProviderSqlRelationalProviderOptions,
   TableAggregateMetric as ProviderTableAggregateMetric,
   TableAggregateRequest as ProviderTableAggregateRequest,
   TableLookupRequest as ProviderTableLookupRequest,
@@ -28,7 +29,7 @@ import type {
 } from "@tupl/provider-kit";
 
 declare const providerQueryRow: ProviderQueryRow;
-declare const providerRelationalProviderAdapterOptions: ProviderRelationalProviderAdapterOptions<
+declare const providerRelationalProviderOptions: ProviderRelationalProviderOptions<
   unknown,
   Record<string, ProviderRelationalProviderEntityConfig>,
   ProviderRelationalProviderRelCompileStrategy
@@ -38,6 +39,20 @@ declare const providerRelationalProviderCapabilityContext: ProviderRelationalPro
   Record<string, ProviderRelationalProviderEntityConfig>,
   ProviderRelationalProviderRelCompileStrategy
 >;
+declare const providerSqlRelationalProviderOptions: ProviderSqlRelationalProviderOptions<
+  unknown,
+  Record<string, ProviderRelationalProviderEntityConfig>,
+  { entity: string; table: string; config: unknown },
+  {
+    alias: string;
+    entity: string;
+    table: string;
+    resolved: { entity: string; table: string; config: unknown };
+    scan: Extract<providerKit.ProviderFragment, { kind: "scan" }>;
+  },
+  unknown,
+  unknown
+>;
 declare const providerScanFilter: ProviderScanFilterClause;
 declare const providerScanOrderBy: ProviderScanOrderBy;
 declare const providerTableScanRequest: ProviderTableScanRequest;
@@ -46,8 +61,9 @@ declare const providerTableAggregateMetric: ProviderTableAggregateMetric;
 declare const providerTableAggregateRequest: ProviderTableAggregateRequest;
 
 void providerQueryRow;
-void providerRelationalProviderAdapterOptions;
+void providerRelationalProviderOptions;
 void providerRelationalProviderCapabilityContext;
+void providerSqlRelationalProviderOptions;
 void providerScanFilter;
 void providerScanOrderBy;
 void providerTableScanRequest;
@@ -85,6 +101,7 @@ describe("public package imports", () => {
   it("exposes adapter-authoring contracts from provider-kit", () => {
     expect(typeof providerKit.createDataEntityHandle).toBe("function");
     expect(typeof providerKit.createRelationalProviderAdapter).toBe("function");
+    expect(typeof providerKit.createSqlRelationalProviderAdapter).toBe("function");
     expect(typeof providerKit.AdapterResult.ok).toBe("function");
   });
 

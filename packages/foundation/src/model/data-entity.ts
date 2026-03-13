@@ -2,7 +2,7 @@ import type { PhysicalDialect, SqlScalarType } from "./primitives";
 
 declare const DATA_ENTITY_COLUMNS_BRAND: unique symbol;
 declare const DATA_ENTITY_ROW_BRAND: unique symbol;
-export const DATA_ENTITY_ADAPTER_BRAND = Symbol("tupl.data_entity.adapter");
+export const DATA_ENTITY_PROVIDER_BRAND = Symbol("tupl.data_entity.provider");
 
 export interface DataEntityColumnMetadata<TRead = unknown> {
   source: string;
@@ -77,5 +77,5 @@ export interface DataEntityHandle<
   readonly __columns__?: TColumns;
   readonly [DATA_ENTITY_ROW_BRAND]?: TRow;
   readonly [DATA_ENTITY_COLUMNS_BRAND]?: TColumns;
-  readonly [DATA_ENTITY_ADAPTER_BRAND]?: unknown;
+  readonly [DATA_ENTITY_PROVIDER_BRAND]?: unknown;
 }

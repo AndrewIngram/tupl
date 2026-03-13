@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { z } from "zod";
 import { createDataEntityHandle } from "@tupl/provider-kit";
 import {
@@ -63,7 +64,17 @@ downstreamInputRowsBuilder.table(
   },
 );
 
-const DOWNSTREAM_INPUT_ROWS_SCHEMA: SchemaDefinition = downstreamInputRowsBuilder.build();
+const DOWNSTREAM_INPUT_ROWS_SCHEMA: SchemaDefinition = unwrapResult(
+  downstreamInputRowsBuilder.build(),
+);
+
+function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
 
 function issuePath(path: Array<string | number>): string {
   if (path.length === 0) {

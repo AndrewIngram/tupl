@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
@@ -408,11 +409,12 @@ export function App(): React.JSX.Element {
       return "";
     }
 
-    try {
-      return toSqlDDL(schemaParse.schema, { ifNotExists: true });
-    } catch {
+    const ddlResult = toSqlDDL(schemaParse.schema, { ifNotExists: true });
+    if (Result.isError(ddlResult)) {
       return "";
     }
+
+    return ddlResult.value;
   }, [schemaParse]);
 
   const downstreamStructureSchema = useMemo(

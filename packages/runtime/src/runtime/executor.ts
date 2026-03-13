@@ -9,7 +9,7 @@ import {
   type TuplPlanningError,
   type RelNode,
 } from "@tupl/foundation";
-import type { ProvidersMap } from "@tupl/provider-kit";
+import type { ProviderMap } from "@tupl/provider-kit";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema-model";
 
 /**
@@ -25,7 +25,7 @@ export interface RelExecutionGuardrails {
 export async function executeRelWithProvidersResult<TContext>(
   rel: RelNode,
   schema: SchemaDefinition,
-  providers: ProvidersMap<TContext>,
+  providers: ProviderMap<TContext>,
   context: TContext,
   guardrails: RelExecutionGuardrails,
   options: {

@@ -1,3 +1,4 @@
+import type { TuplResult } from "@tupl/foundation";
 import type {
   DataEntityColumnMetadata,
   DataEntityReadMetadataMap,
@@ -129,5 +130,5 @@ type SchemaBuilderViewMethods<TContext> = {
 export interface SchemaBuilder<TContext> {
   table: SchemaBuilderTableMethods;
   view: SchemaBuilderViewMethods<TContext>;
-  build(): import("./schema-contracts").SchemaDefinition;
+  build(): TuplResult<import("./schema-contracts").SchemaDefinition>;
 }

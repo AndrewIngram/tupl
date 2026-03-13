@@ -10,7 +10,7 @@ import type { ExecutableSchemaSessionInput, QuerySession } from "./session/contr
  * access bound runtime behavior without widening the public executable-schema interface.
  */
 export interface ExecutableSchemaSessionAccess<TContext> {
-  createSessionResult(input: ExecutableSchemaSessionInput<TContext>): TuplResult<QuerySession>;
+  createSession(input: ExecutableSchemaSessionInput<TContext>): TuplResult<QuerySession>;
 }
 
 const EXECUTABLE_SCHEMA_SESSION_ACCESS = Symbol.for(

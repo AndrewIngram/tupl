@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { defaultSqlAstParser, lowerSqlToRel } from "@tupl/planner";
 import type { QueryExecutionPlan, QuerySession, QueryStepEvent } from "@tupl/runtime/session";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema";
@@ -129,18 +130,18 @@ export async function preparePlaygroundInput(
       }
 
       let schema = schemaResult.schema;
-      try {
-        schema = resolveSchemaLinkedEnums(schema, {
-          resolveEnumValues: (ref) => resolveDownstreamEnumValues(ref),
-          onUnresolved: "throw",
-          strictUnmapped: true,
-        });
-      } catch (error) {
+      const linkedEnumsResult = resolveSchemaLinkedEnums(schema, {
+        resolveEnumValues: (ref) => resolveDownstreamEnumValues(ref),
+        onUnresolved: "error",
+        strictUnmapped: true,
+      });
+      if (Result.isError(linkedEnumsResult)) {
         return {
           ok: false,
-          issues: [error instanceof Error ? error.message : "Invalid enum linkage in schema."],
+          issues: [linkedEnumsResult.error.message],
         };
       }
+      schema = linkedEnumsResult.value;
 
       const rowsResult = parseDownstreamRowsText(rowsText);
       const parsedRows = rowsResult.rows;

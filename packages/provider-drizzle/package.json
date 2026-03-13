@@ -1,7 +1,7 @@
 {
   "name": "@tupl/provider-drizzle",
   "version": "0.7.0",
-  "description": "Drizzle adapter helpers for tupl",
+  "description": "Drizzle provider for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/provider-drizzle#readme",
   "license": "MIT",
   "repository": {

@@ -1,7 +1,7 @@
 import type { QueryRow, TableScanRequest } from "@tupl/provider-kit";
 import type { KyselyDatabaseLike, ResolvedEntityConfig } from "../types";
 import { applyBase, applyWhereClause } from "../backend/query-helpers";
-import type { ScanBinding } from "../planning/rel-strategy";
+import type { ScanBinding } from "../planning/rel-builder";
 
 export async function executeScan<TContext>(
   db: KyselyDatabaseLike,
@@ -37,7 +37,7 @@ export async function executeScan<TContext>(
           ...(request.where ? { where: request.where } : {}),
           output: [],
         },
-        config: binding.config,
+        resolved: binding,
       },
     ],
   ]);
