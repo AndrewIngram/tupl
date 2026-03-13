@@ -10,12 +10,12 @@ import {
 import { expandRelViewsResult, lowerSqlToRelResult } from "@tupl/planner";
 import {
   resolveSchemaLinkedEnums,
-  validateProviderBindingsResult,
+  validateProviderBindings,
   type QueryRow,
 } from "@tupl/schema-model";
 
 import type { ExplainResult, QueryInput } from "./contracts";
-import { unwrapQueryResult, tryQueryStep } from "./diagnostics";
+import { unwrapQueryResult } from "./diagnostics";
 import { executeRelWithProvidersResult } from "./executor";
 import {
   enforceExecutionRowLimitResult,
@@ -31,22 +31,16 @@ import {
 /**
  * Query runner owns SQL-to-execution orchestration and explain/query entrypoints for the runtime.
  */
-function normalizeRuntimeSchema<TContext>(input: QueryInput<TContext>): QueryInput<TContext> {
-  const schema = resolveSchemaLinkedEnums(input.schema);
-  return {
-    ...input,
-    schema,
-  };
-}
-
 export function normalizeRuntimeSchemaResult<TContext>(
   input: QueryInput<TContext>,
 ): BetterResult<QueryInput<TContext>, TuplError> {
   return Result.gen(function* () {
-    const normalizedInput = yield* tryQueryStep("normalize runtime schema", () =>
-      normalizeRuntimeSchema(input),
-    );
-    yield* validateProviderBindingsResult(normalizedInput.schema, normalizedInput.providers);
+    const schema = yield* resolveSchemaLinkedEnums(input.schema);
+    const normalizedInput = {
+      ...input,
+      schema,
+    };
+    yield* validateProviderBindings(normalizedInput.schema, normalizedInput.providers);
     return Result.ok(normalizedInput);
   });
 }
@@ -124,14 +118,6 @@ export async function queryInternalResult<TContext>(
 
     return enforceExecutionRowLimitResult(rows, guardrails);
   });
-}
-
-export async function queryInternal<TContext>(input: QueryInput<TContext>): Promise<QueryRow[]> {
-  return unwrapQueryResult(await queryInternalResult(input));
-}
-
-export function explainInternal<TContext>(input: QueryInput<TContext>): ExplainResult {
-  return unwrapQueryResult(explainInternalResult(input));
 }
 
 export function explainInternalResult<TContext>(

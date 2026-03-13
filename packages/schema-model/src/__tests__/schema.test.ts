@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import { createDataEntityHandle } from "@tupl/provider-kit";
@@ -13,6 +14,14 @@ import {
   toSqlDDL,
 } from "@tupl/schema-model";
 import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
+
+function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
 
 describe("createSchemaBuilder", () => {
   it("supports source-neutral physical entity lens mappings", () => {
@@ -509,7 +518,7 @@ describe("createSchemaBuilder", () => {
       },
     });
 
-    const resolved = resolveSchemaLinkedEnums(schema);
+    const resolved = unwrapResult(resolveSchemaLinkedEnums(schema));
     const status = resolveTableColumnDefinition(resolved, "my_orders", "status");
     expect(status.enum).toEqual(["open", "settled"]);
   });
@@ -537,22 +546,30 @@ describe("createSchemaBuilder", () => {
       },
     });
 
-    expect(() => resolveSchemaLinkedEnums(schema)).toThrow("Unmapped enumFrom value");
+    const result = resolveSchemaLinkedEnums(schema);
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected enum resolution to fail.");
+    }
+    expect(result.error.message).toContain("Unmapped enumFrom value");
   });
 
   it("fails fast when finalizing a schema without hidden normalized bindings", () => {
-    expect(() =>
-      finalizeSchemaDefinition({
-        tables: {
-          orders: {
-            provider: "warehouse",
-            columns: {
-              id: { type: "text", nullable: false },
-            },
+    const result = finalizeSchemaDefinition({
+      tables: {
+        orders: {
+          provider: "warehouse",
+          columns: {
+            id: { type: "text", nullable: false },
           },
         },
-      }),
-    ).toThrow(
+      },
+    });
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected schema finalization to fail.");
+    }
+    expect(result.error.message).toContain(
       "Physical tables must be declared via createSchemaBuilder().table(name, provider.entities.someTable, config).",
     );
   });
@@ -579,7 +596,12 @@ describe("createSchemaBuilder", () => {
 
     myOrders.provider = "analytics";
 
-    expect(() => finalizeSchemaDefinition(schema)).toThrow(
+    const result = finalizeSchemaDefinition(schema);
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected schema finalization to fail.");
+    }
+    expect(result.error.message).toContain(
       "Table myOrders must define provider warehouse to match its entity-backed physical binding.",
     );
   });
@@ -598,7 +620,7 @@ describe("createSchemaBuilder", () => {
       });
     });
 
-    const finalized = finalizeSchemaDefinition(schema);
+    const finalized = unwrapResult(finalizeSchemaDefinition(schema));
 
     expect(getNormalizedTableBinding(finalized, "myOrders")).toMatchObject({
       kind: "physical",
@@ -622,7 +644,7 @@ describe("createSchemaBuilder", () => {
       },
     });
 
-    const ddl = toSqlDDL(schema, { ifNotExists: true });
+    const ddl = unwrapResult(toSqlDDL(schema, { ifNotExists: true }));
     expect(ddl).toContain('CREATE TABLE IF NOT EXISTS "orders"');
     expect(ddl).toContain('"id" TEXT NOT NULL /* tupl: description:"Order id" */');
     expect(ddl).toContain('"status" TEXT NOT NULL');
@@ -650,7 +672,7 @@ describe("createSchemaBuilder", () => {
       },
     });
 
-    expect(toSqlDDL(schema)).toContain(
+    expect(unwrapResult(toSqlDDL(schema))).toContain(
       'CONSTRAINT "invoices_amount_due_allowed" CHECK ("amount_due" IN (0, 1000, 2000))',
     );
   });
@@ -684,7 +706,7 @@ describe("createSchemaBuilder", () => {
       },
     });
 
-    const ddl = toSqlDDL(schema);
+    const ddl = unwrapResult(toSqlDDL(schema));
     expect(ddl).toContain('FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE');
   });
 
@@ -699,7 +721,7 @@ describe("createSchemaBuilder", () => {
       },
     });
 
-    const ddl = toSqlDDL(schema);
+    const ddl = unwrapResult(toSqlDDL(schema));
     expect(ddl).toContain('PRIMARY KEY ("id")');
     expect(ddl).toContain('UNIQUE ("sku")');
     expect(ddl).toContain('"id" TEXT NOT NULL');
@@ -818,7 +840,7 @@ describe("createSchemaBuilder", () => {
       },
     });
 
-    expect(toSqlDDL(schema)).toContain('PRIMARY KEY ("org_id", "user_id")');
+    expect(unwrapResult(toSqlDDL(schema))).toContain('PRIMARY KEY ("org_id", "user_id")');
   });
 
   it("rejects constraints that reference unknown columns/tables or mismatched arity", () => {
@@ -1009,7 +1031,7 @@ describe("createSchemaBuilder", () => {
         },
       }),
     });
-    const schema = builder.build();
+    const schema = unwrapResult(builder.build());
 
     const resolved = resolveTableColumnDefinition(schema, "my_orders", "vendor_id");
     expect(resolved.foreignKey).toEqual({
@@ -1017,7 +1039,7 @@ describe("createSchemaBuilder", () => {
       column: "id",
     });
 
-    const ddl = toSqlDDL(schema);
+    const ddl = unwrapResult(toSqlDDL(schema));
     expect(ddl).toContain('FOREIGN KEY ("vendor_id") REFERENCES "my_vendors" ("id")');
   });
 });

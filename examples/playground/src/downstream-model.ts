@@ -1,6 +1,15 @@
+import { Result } from "better-result";
 import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createDataEntityHandle } from "@tupl/provider-kit";
 import { createSchemaBuilder, type SchemaDefinition } from "@tupl/schema";
+
+function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
 
 export const orgsTable = pgTable("orgs", {
   id: text("id").primaryKey().notNull(),
@@ -270,4 +279,6 @@ downstreamRowsSchemaBuilder.table("user_product_access", downstreamEntity("user_
   },
 });
 
-export const DOWNSTREAM_ROWS_SCHEMA: SchemaDefinition = downstreamRowsSchemaBuilder.build();
+export const DOWNSTREAM_ROWS_SCHEMA: SchemaDefinition = unwrapResult(
+  downstreamRowsSchemaBuilder.build(),
+);

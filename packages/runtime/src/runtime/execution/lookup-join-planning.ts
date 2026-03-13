@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { supportsLookupMany } from "@tupl/provider-kit";
 import type { RelNode } from "@tupl/foundation";
 import { getNormalizedTableBinding, resolveTableProvider } from "@tupl/schema-model";
@@ -43,9 +44,9 @@ export function resolveSyncLookupJoinCandidate<TContext>(
   }
 
   const leftProvider =
-    leftScan.entity?.provider ?? resolveTableProvider(input.schema, leftScan.table);
+    leftScan.entity?.provider ?? readResolvedTableProvider(input.schema, leftScan.table);
   const rightProvider =
-    rightScan.entity?.provider ?? resolveTableProvider(input.schema, rightScan.table);
+    rightScan.entity?.provider ?? readResolvedTableProvider(input.schema, rightScan.table);
 
   const rightAdapter = input.providers[rightProvider];
   if (!rightAdapter || !supportsLookupMany(rightAdapter)) {
@@ -98,4 +99,16 @@ function findFirstScanForPlan(node: RelNode): Extract<RelNode, { kind: "scan" }>
     case "sql":
       return null;
   }
+}
+
+function readResolvedTableProvider(
+  schema: QuerySessionInput<unknown>["schema"],
+  table: string,
+): string {
+  const result = resolveTableProvider(schema, table);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
 }

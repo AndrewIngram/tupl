@@ -1,5 +1,9 @@
+import { Result, type Result as BetterResult } from "better-result";
+import type { TuplResult, TuplSchemaNormalizationError } from "@tupl/foundation";
+
 import { resolveColumnDefinition } from "./definition";
 import { copyNormalizedSchemaBindings, finalizeSchemaDefinition } from "./normalization";
+import { createSchemaNormalizationError } from "./schema-errors";
 import type { ColumnDefinition, SchemaDefinition, TableColumns, TableDefinition } from "./types";
 
 /**
@@ -15,16 +19,16 @@ export interface ResolveSchemaLinkedEnumsOptions {
     ref: EnumLinkReference,
     schema: SchemaDefinition,
   ) => readonly string[] | undefined;
-  onUnresolved?: "throw" | "ignore";
+  onUnresolved?: "error" | "ignore";
   strictUnmapped?: boolean;
 }
 
 export function resolveSchemaLinkedEnums(
   schema: SchemaDefinition,
   options: ResolveSchemaLinkedEnumsOptions = {},
-): SchemaDefinition {
+): TuplResult<SchemaDefinition> {
   const resolveEnumValues = options.resolveEnumValues ?? defaultResolveLinkedEnumValues;
-  const onUnresolved = options.onUnresolved ?? "throw";
+  const onUnresolved = options.onUnresolved ?? "error";
   const strictUnmapped = options.strictUnmapped ?? true;
 
   let changed = false;
@@ -45,12 +49,22 @@ export function resolveSchemaLinkedEnums(
         continue;
       }
 
-      const ref = parseEnumLinkReference(resolved.enumFrom, tableName, columnName);
+      const refResult = parseEnumLinkReference(resolved.enumFrom, tableName, columnName);
+      if (Result.isError(refResult)) {
+        return refResult;
+      }
+      const ref = refResult.value;
+
       const upstreamEnum = resolveEnumValues(ref, schema);
       if (!upstreamEnum || upstreamEnum.length === 0) {
-        if (onUnresolved === "throw") {
-          throw new Error(
-            `Unable to resolve enumFrom for ${tableName}.${columnName} from ${ref.table}.${ref.column}.`,
+        if (onUnresolved === "error") {
+          return Result.err(
+            createSchemaNormalizationError({
+              operation: "resolve schema linked enums",
+              message: `Unable to resolve enumFrom for ${tableName}.${columnName} from ${ref.table}.${ref.column}.`,
+              table: tableName,
+              column: columnName,
+            }),
           );
         }
         columns[columnName] = columnDefinition;
@@ -63,8 +77,13 @@ export function resolveSchemaLinkedEnums(
           const mapped = resolved.enumMap[upstreamValue];
           if (!mapped) {
             if (strictUnmapped) {
-              throw new Error(
-                `Unmapped enumFrom value "${upstreamValue}" for ${tableName}.${columnName}.`,
+              return Result.err(
+                createSchemaNormalizationError({
+                  operation: "resolve schema linked enums",
+                  message: `Unmapped enumFrom value "${upstreamValue}" for ${tableName}.${columnName}.`,
+                  table: tableName,
+                  column: columnName,
+                }),
               );
             }
             continue;
@@ -77,16 +96,26 @@ export function resolveSchemaLinkedEnums(
 
       const inferredEnum = [...new Set(mappedValues)];
       if (inferredEnum.length === 0 && strictUnmapped) {
-        throw new Error(
-          `enumFrom resolution for ${tableName}.${columnName} produced no facade values.`,
+        return Result.err(
+          createSchemaNormalizationError({
+            operation: "resolve schema linked enums",
+            message: `enumFrom resolution for ${tableName}.${columnName} produced no facade values.`,
+            table: tableName,
+            column: columnName,
+          }),
         );
       }
 
       if (resolved.enum) {
         for (const enumValue of inferredEnum) {
           if (!resolved.enum.includes(enumValue)) {
-            throw new Error(
-              `enumFrom mapping produced value "${enumValue}" not listed in enum for ${tableName}.${columnName}.`,
+            return Result.err(
+              createSchemaNormalizationError({
+                operation: "resolve schema linked enums",
+                message: `enumFrom mapping produced value "${enumValue}" not listed in enum for ${tableName}.${columnName}.`,
+                table: tableName,
+                column: columnName,
+              }),
             );
           }
         }
@@ -107,7 +136,7 @@ export function resolveSchemaLinkedEnums(
   }
 
   if (!changed) {
-    return schema;
+    return Result.ok(schema);
   }
 
   const resolvedSchema: SchemaDefinition = { tables };
@@ -119,21 +148,28 @@ function parseEnumLinkReference(
   enumFrom: string,
   tableName: string,
   columnName: string,
-): EnumLinkReference {
+): BetterResult<EnumLinkReference, TuplSchemaNormalizationError> {
   const idx = enumFrom.lastIndexOf(".");
   if (idx < 0) {
-    return {
+    return Result.ok({
       table: tableName,
       column: enumFrom,
-    };
+    });
   }
 
   const table = enumFrom.slice(0, idx).trim();
   const column = enumFrom.slice(idx + 1).trim();
   if (!table || !column) {
-    throw new Error(`Invalid enumFrom reference on ${tableName}.${columnName}: "${enumFrom}".`);
+    return Result.err(
+      createSchemaNormalizationError({
+        operation: "parse enum link reference",
+        message: `Invalid enumFrom reference on ${tableName}.${columnName}: "${enumFrom}".`,
+        table: tableName,
+        column: columnName,
+      }),
+    );
   }
-  return { table, column };
+  return Result.ok({ table, column });
 }
 
 function defaultResolveLinkedEnumValues(

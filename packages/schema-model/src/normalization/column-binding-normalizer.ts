@@ -1,3 +1,6 @@
+import { Result, type Result as BetterResult } from "better-result";
+import type { TuplSchemaNormalizationError } from "@tupl/foundation";
+
 import {
   isColumnLensDefinition,
   isSchemaCalculatedColumnDefinition,
@@ -27,15 +30,18 @@ export function normalizeColumnBinding(
     resolveEntityToken: (entity: SchemaDataEntityHandle<string>) => string;
     entity?: SchemaDataEntityHandle<string>;
   },
-): {
-  definition: TableColumnDefinition;
-  binding: NormalizedColumnBinding;
-} {
+): BetterResult<
+  {
+    definition: TableColumnDefinition;
+    binding: NormalizedColumnBinding;
+  },
+  TuplSchemaNormalizationError
+> {
   if (isSchemaCalculatedColumnDefinition(rawColumn)) {
-    return {
+    return Result.ok({
       definition: rawColumn.definition,
       binding: {
-        kind: "expr",
+        kind: "expr" as const,
         expr: resolveColumnExpr(
           rawColumn.expr,
           options.resolveTableToken,
@@ -44,54 +50,71 @@ export function normalizeColumnBinding(
         definition: rawColumn.definition,
         ...(rawColumn.coerce ? { coerce: rawColumn.coerce } : {}),
       },
-    };
+    });
   }
 
   if (isSchemaTypedColumnDefinition(rawColumn)) {
     const source = options.entity
       ? resolveEntityColumnSource(rawColumn.sourceColumn, options.entity)
       : rawColumn.sourceColumn;
-    assertColumnCompatibility(
+    const compatibilityResult = assertColumnCompatibility(
       rawColumn.sourceColumn,
       rawColumn.definition,
       rawColumn.coerce,
       options.entity,
     );
-    return {
+    if (Result.isError(compatibilityResult)) {
+      return compatibilityResult;
+    }
+
+    return Result.ok({
       definition: rawColumn.definition,
       binding: {
-        kind: "source",
+        kind: "source" as const,
         source,
         definition: rawColumn.definition,
         ...(rawColumn.coerce ? { coerce: rawColumn.coerce } : {}),
       },
-    };
+    });
   }
 
   if (isSchemaColRefToken(rawColumn)) {
-    const ref = resolveColRefToken(
+    const refResult = resolveColRefToken(
       rawColumn,
       options.resolveTableToken,
       options.resolveEntityToken,
     );
-    return {
+    if (Result.isError(refResult)) {
+      return refResult;
+    }
+
+    const ref = refResult.value;
+    return Result.ok({
       definition: "text",
       binding: {
-        kind: "source",
+        kind: "source" as const,
         source: options.preserveQualifiedRef ? ref : parseColumnSource(ref),
         definition: "text",
       },
-    };
+    });
   }
 
   if (isColumnLensDefinition(rawColumn)) {
-    const sourceRef = isSchemaColRefToken(rawColumn.source)
+    const sourceRefResult = isSchemaColRefToken(rawColumn.source)
       ? resolveColRefToken(rawColumn.source, options.resolveTableToken, options.resolveEntityToken)
-      : rawColumn.source;
-    const enumFromRef = rawColumn.enumFrom
+      : Result.ok(rawColumn.source);
+    if (Result.isError(sourceRefResult)) {
+      return sourceRefResult;
+    }
+    const enumFromRefResult = rawColumn.enumFrom
       ? resolveEnumRef(rawColumn.enumFrom, options.resolveTableToken, options.resolveEntityToken)
-      : undefined;
+      : Result.ok<string | undefined, TuplSchemaNormalizationError>(undefined);
+    if (Result.isError(enumFromRefResult)) {
+      return enumFromRefResult;
+    }
 
+    const sourceRef = sourceRefResult.value;
+    const enumFromRef = enumFromRefResult.value;
     const definition = {
       type: rawColumn.type ?? "text",
       ...(rawColumn.nullable != null ? { nullable: rawColumn.nullable } : {}),
@@ -114,48 +137,52 @@ export function normalizeColumnBinding(
       ...(rawColumn.description ? { description: rawColumn.description } : {}),
     } as TableColumnDefinition;
 
-    return {
+    return Result.ok({
       definition,
       binding: {
-        kind: "source",
+        kind: "source" as const,
         source: options.preserveQualifiedRef ? sourceRef : parseColumnSource(sourceRef),
         definition,
         ...(rawColumn.coerce ? { coerce: rawColumn.coerce } : {}),
       },
-    };
+    });
   }
 
   if (typeof rawColumn !== "string") {
     const definitionInput = rawColumn as Exclude<TableColumnDefinition, string> & {
       enumFrom?: SchemaColRefToken | string;
     };
-    const enumFromRef = definitionInput.enumFrom
+    const enumFromRefResult = definitionInput.enumFrom
       ? resolveEnumRef(
           definitionInput.enumFrom,
           options.resolveTableToken,
           options.resolveEntityToken,
         )
-      : undefined;
+      : Result.ok<string | undefined, TuplSchemaNormalizationError>(undefined);
+    if (Result.isError(enumFromRefResult)) {
+      return enumFromRefResult;
+    }
+
     const definition = {
       ...definitionInput,
-      ...(enumFromRef ? { enumFrom: enumFromRef } : {}),
+      ...(enumFromRefResult.value ? { enumFrom: enumFromRefResult.value } : {}),
     } satisfies TableColumnDefinition;
-    return {
+    return Result.ok({
       definition,
       binding: {
-        kind: "source",
+        kind: "source" as const,
         source: columnName,
         definition,
       },
-    };
+    });
   }
 
-  return {
+  return Result.ok({
     definition: rawColumn as TableColumnDefinition,
     binding: {
-      kind: "source",
+      kind: "source" as const,
       source: columnName,
       definition: rawColumn as TableColumnDefinition,
     },
-  };
+  });
 }

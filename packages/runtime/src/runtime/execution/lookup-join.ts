@@ -48,7 +48,7 @@ export async function maybeExecuteLookupJoinResult<TContext>(
 
   const rightBinding = getNormalizedTableBinding(context.schema, rightScan.table);
   const rightProviderName =
-    rightScan.entity?.provider ?? resolveTableProvider(context.schema, rightScan.table);
+    rightScan.entity?.provider ?? readResolvedTableProvider(context.schema, rightScan.table);
   const rightProvider =
     context.providers[rightProviderName] ??
     (rightScan.entity
@@ -233,4 +233,16 @@ function findFirstScan(node: RelNode): RelScanNode | null {
     case "sql":
       return null;
   }
+}
+
+function readResolvedTableProvider(
+  schema: RelExecutionContext<unknown>["schema"],
+  table: string,
+): string {
+  const result = resolveTableProvider(schema, table);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
 }

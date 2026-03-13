@@ -1,3 +1,5 @@
+import { Result, type Result as BetterResult } from "better-result";
+import type { TuplResult, TuplSchemaNormalizationError } from "@tupl/foundation";
 import { getDataEntityProvider } from "@tupl/provider-kit";
 
 import { type SchemaBuilderState } from "../dsl/builder-state";
@@ -6,6 +8,7 @@ import {
   isDslTableDefinition,
   isDslViewDefinition,
 } from "../dsl/builder-helpers";
+import { createSchemaNormalizationError } from "../schema-errors";
 import type {
   NormalizedColumnBinding,
   NormalizedTableBinding,
@@ -32,7 +35,7 @@ import { resolveViewRelDefinition } from "./view-normalization";
  */
 export function buildRegisteredSchemaDefinition<TContext>(
   state: SchemaBuilderState<TContext>,
-): SchemaDefinition {
+): TuplResult<SchemaDefinition> {
   const tables: Record<string, TableDefinition> = {};
   const bindings: Record<string, NormalizedTableBinding> = {};
   const tableTokenToName = buildTableTokenMap(state);
@@ -42,21 +45,29 @@ export function buildRegisteredSchemaDefinition<TContext>(
 
   for (const [tableName, rawTable] of state.definitions.entries()) {
     if (isDslTableDefinition(rawTable)) {
-      const { definition, binding } = buildPhysicalTableDefinition(tableName, rawTable, {
+      const builtResult = buildPhysicalTableDefinition(tableName, rawTable, {
         resolveTableToken,
         resolveEntityToken,
       });
+      if (Result.isError(builtResult)) {
+        return builtResult;
+      }
+      const { definition, binding } = builtResult.value;
       tables[tableName] = definition;
       bindings[tableName] = binding;
       continue;
     }
 
     if (isDslViewDefinition(rawTable)) {
-      const { definition, binding } = buildViewTableDefinition(tableName, rawTable, {
+      const builtResult = buildViewTableDefinition(tableName, rawTable, {
         resolveTableToken,
         resolveEntityToken,
         viewRelHelpers,
       });
+      if (Result.isError(builtResult)) {
+        return builtResult;
+      }
+      const { definition, binding } = builtResult.value;
       tables[tableName] = definition;
       bindings[tableName] = binding;
       continue;
@@ -70,7 +81,7 @@ export function buildRegisteredSchemaDefinition<TContext>(
   return finalizeSchemaDefinition(schema);
 }
 
-function buildTableTokenMap<TContext>(state: SchemaBuilderState<TContext>): Map<symbol, string> {
+function buildTableTokenMap<TContext>(state: SchemaBuilderState<TContext>) {
   const tableTokenToName = new Map<symbol, string>();
 
   for (const [tableName, rawTable] of state.definitions.entries()) {
@@ -83,19 +94,25 @@ function buildTableTokenMap<TContext>(state: SchemaBuilderState<TContext>): Map<
 }
 
 function createTableTokenResolver(tableTokenToName: Map<symbol, string>) {
-  return (token: SchemaDslTableToken<string>): string => {
+  return (token: SchemaDslTableToken<string>) => {
     const tableName = tableTokenToName.get(token.__id);
     if (!tableName) {
-      throw new Error("Schema DSL table token could not be resolved to a table name.");
+      throw createSchemaNormalizationError({
+        operation: "resolve schema table token",
+        message: "Schema DSL table token could not be resolved to a table name.",
+      });
     }
     return tableName;
   };
 }
 
 function createEntityTokenResolver() {
-  return (entity: SchemaDataEntityHandle<string>): string => {
+  return (entity: SchemaDataEntityHandle<string>) => {
     if (!entity.entity || entity.entity.length === 0) {
-      throw new Error("Schema DSL data entity handle is missing entity name.");
+      throw createSchemaNormalizationError({
+        operation: "resolve schema data entity",
+        message: "Schema DSL data entity handle is missing entity name.",
+      });
     }
     return entity.entity;
   };
@@ -111,13 +128,24 @@ function buildPhysicalTableDefinition<TContext>(
     resolveTableToken: (token: SchemaDslTableToken<string>) => string;
     resolveEntityToken: (entity: SchemaDataEntityHandle<string>) => string;
   },
-): { definition: TableDefinition; binding: NormalizedTableBinding } {
-  const { normalizedColumns, columnBindings } = normalizeTableColumns(rawTable.columns, {
+): BetterResult<
+  { definition: TableDefinition; binding: NormalizedTableBinding },
+  TuplSchemaNormalizationError
+> {
+  const normalizedColumnsResult = normalizeTableColumns(rawTable.columns, {
     preserveQualifiedRef: false,
     ...resolvers,
     entity: rawTable.from,
   });
-  validateCalculatedColumnDependencies(tableName, columnBindings);
+  if (Result.isError(normalizedColumnsResult)) {
+    return normalizedColumnsResult;
+  }
+
+  const { normalizedColumns, columnBindings } = normalizedColumnsResult.value;
+  const dependencyResult = validateCalculatedColumnDependencies(tableName, columnBindings);
+  if (Result.isError(dependencyResult)) {
+    return dependencyResult;
+  }
 
   const definition: TableDefinition = {
     provider: rawTable.from.provider,
@@ -126,17 +154,17 @@ function buildPhysicalTableDefinition<TContext>(
   };
   const providerInstance = getDataEntityProvider(rawTable.from);
 
-  return {
+  return Result.ok({
     definition,
     binding: {
-      kind: "physical",
+      kind: "physical" as const,
       provider: rawTable.from.provider,
       entity: rawTable.from.entity,
       columnBindings,
       columnToSource: buildColumnSourceMapFromBindings(columnBindings),
       ...(providerInstance ? { providerInstance } : {}),
     },
-  };
+  });
 }
 
 function buildViewTableDefinition<TContext>(
@@ -150,34 +178,49 @@ function buildViewTableDefinition<TContext>(
     resolveEntityToken: (entity: SchemaDataEntityHandle<string>) => string;
     viewRelHelpers: SchemaDslViewRelHelpers;
   },
-): { definition: TableDefinition; binding: NormalizedTableBinding } {
-  const { normalizedColumns, columnBindings } = normalizeTableColumns(rawTable.columns, {
+): BetterResult<
+  { definition: TableDefinition; binding: NormalizedTableBinding },
+  TuplSchemaNormalizationError
+> {
+  const normalizedColumnsResult = normalizeTableColumns(rawTable.columns, {
     preserveQualifiedRef: true,
     resolveTableToken: input.resolveTableToken,
     resolveEntityToken: input.resolveEntityToken,
   });
-  validateCalculatedColumnDependencies(tableName, columnBindings);
+  if (Result.isError(normalizedColumnsResult)) {
+    return normalizedColumnsResult;
+  }
 
-  return {
+  const { normalizedColumns, columnBindings } = normalizedColumnsResult.value;
+  const dependencyResult = validateCalculatedColumnDependencies(tableName, columnBindings);
+  if (Result.isError(dependencyResult)) {
+    return dependencyResult;
+  }
+
+  return Result.ok({
     definition: {
       provider: "__view__",
       columns: normalizedColumns,
       ...(rawTable.constraints ? { constraints: rawTable.constraints } : {}),
     },
     binding: {
-      kind: "view",
+      kind: "view" as const,
       rel: (context: unknown) => {
         const definition = rawTable.rel(context as TContext, input.viewRelHelpers);
-        return resolveViewRelDefinition(
+        const relResult = resolveViewRelDefinition(
           definition,
           input.resolveTableToken,
           input.resolveEntityToken,
         );
+        if (Result.isError(relResult)) {
+          throw relResult.error;
+        }
+        return relResult.value;
       },
       columnBindings,
       columnToSource: buildColumnSourceMapFromBindings(columnBindings),
     },
-  };
+  });
 }
 
 function normalizeTableColumns(
@@ -188,18 +231,25 @@ function normalizeTableColumns(
     resolveEntityToken: (entity: SchemaDataEntityHandle<string>) => string;
     entity?: SchemaDataEntityHandle<string>;
   },
-): {
-  normalizedColumns: TableColumns;
-  columnBindings: Record<string, NormalizedColumnBinding>;
-} {
+): BetterResult<
+  {
+    normalizedColumns: TableColumns;
+    columnBindings: Record<string, NormalizedColumnBinding>;
+  },
+  TuplSchemaNormalizationError
+> {
   const normalizedColumns: TableColumns = {};
   const columnBindings: Record<string, NormalizedColumnBinding> = {};
 
   for (const [columnName, rawColumn] of Object.entries(columns)) {
-    const normalized = normalizeColumnBinding(columnName, rawColumn, options);
+    const normalizedResult = normalizeColumnBinding(columnName, rawColumn, options);
+    if (Result.isError(normalizedResult)) {
+      return normalizedResult;
+    }
+    const normalized = normalizedResult.value;
     normalizedColumns[columnName] = normalized.definition;
     columnBindings[columnName] = normalized.binding;
   }
 
-  return { normalizedColumns, columnBindings };
+  return Result.ok({ normalizedColumns, columnBindings });
 }

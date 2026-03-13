@@ -1,3 +1,7 @@
+import { Result, type Result as BetterResult } from "better-result";
+import type { TuplSchemaNormalizationError } from "@tupl/foundation";
+
+import { createSchemaNormalizationError } from "../schema-errors";
 import type { NormalizedColumnBinding } from "../types";
 import { collectUnqualifiedExprColumns } from "./view-normalization";
 
@@ -7,7 +11,7 @@ import { collectUnqualifiedExprColumns } from "./view-normalization";
 export function validateCalculatedColumnDependencies(
   tableName: string,
   columnBindings: Record<string, NormalizedColumnBinding>,
-): void {
+): BetterResult<void, TuplSchemaNormalizationError> {
   const exprColumns = new Set(
     Object.entries(columnBindings)
       .filter(([, binding]) => binding.kind === "expr")
@@ -23,9 +27,16 @@ export function validateCalculatedColumnDependencies(
       if (!exprColumns.has(dependency)) {
         continue;
       }
-      throw new Error(
-        `Calculated column ${tableName}.${columnName} cannot reference calculated sibling ${tableName}.${dependency} in the same columns block.`,
+      return Result.err(
+        createSchemaNormalizationError({
+          operation: "validate calculated column dependencies",
+          message: `Calculated column ${tableName}.${columnName} cannot reference calculated sibling ${tableName}.${dependency} in the same columns block.`,
+          table: tableName,
+          column: columnName,
+        }),
       );
     }
   }
+
+  return Result.ok(undefined);
 }

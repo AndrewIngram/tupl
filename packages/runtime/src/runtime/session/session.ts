@@ -4,4 +4,4 @@
  */
 export { createProviderFragmentSession } from "../provider/provider-fragment-session";
 export { createRelExecutionSession } from "./rel-execution-session";
-export { createQuerySessionInternal, createQuerySessionResult } from "./query-session-factory";
+export { createQuerySession } from "./query-session-factory";

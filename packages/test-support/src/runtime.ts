@@ -13,7 +13,9 @@ import {
 import {
   type ConstraintValidationOptions,
   createExecutableSchema,
+  type ExecutableSchemaQueryInput,
   type ExecutableSchema,
+  type ExplainResult,
   type QueryGuardrails,
 } from "@tupl/runtime";
 import {
@@ -64,6 +66,14 @@ type ProviderInput<TContext> = {
   compile?(fragment: ProviderFragment, context: TContext): unknown;
   execute?(plan: unknown, context: TContext): unknown;
   lookupMany?(request: unknown, context: TContext): unknown;
+};
+
+type UnwrappedExecutableSchema<
+  TContext,
+  TSchema extends SchemaDefinition = SchemaDefinition,
+> = Omit<ExecutableSchema<TContext, TSchema>, "query" | "explain"> & {
+  query(input: ExecutableSchemaQueryInput<TContext>): Promise<QueryRow[]>;
+  explain(input: ExecutableSchemaQueryInput<TContext>): ExplainResult;
 };
 
 export function finalizeProviders<TContext>(
@@ -220,7 +230,7 @@ function getCalculatedColumnOptions(
 export function createExecutableSchemaFromProviders<TContext, TSchema extends SchemaDefinition>(
   schema: TSchema,
   providers: Record<string, ProviderInput<TContext>>,
-) {
+): UnwrappedExecutableSchema<TContext> {
   const providerEntries = Object.entries(providers);
   const singleProviderName = providerEntries.length === 1 ? providerEntries[0]?.[0] : undefined;
 
@@ -347,7 +357,7 @@ export function createExecutableSchemaFromProviders<TContext, TSchema extends Sc
     });
   }
 
-  return createExecutableSchema(builder);
+  return withUnwrappedExecutableSchema(unwrapResult(createExecutableSchema(builder)));
 }
 
 export function createMethodsProvider<TContext>(
@@ -441,7 +451,7 @@ export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDe
   schema: TSchema,
   methods: TableMethodsMap<TContext>,
   providerName = "memory",
-) {
+): UnwrappedExecutableSchema<TContext> {
   const provider = createMethodsProvider(schema, methods, providerName);
   const builder = createSchemaBuilder<TContext>();
 
@@ -460,7 +470,7 @@ export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDe
     });
   }
 
-  return createExecutableSchema(builder);
+  return withUnwrappedExecutableSchema(unwrapResult(createExecutableSchema(builder)));
 }
 
 async function executePlannedScan<TContext>(
@@ -884,20 +894,30 @@ export function createMethodsSession<TContext>(input: {
   constraintValidation?: ConstraintValidationOptions;
   options?: QuerySessionOptions;
 }) {
-  return createExecutableSchemaSession(createExecutableMethodsSchema(input.schema, input.methods), {
-    context: input.context,
-    sql: input.sql,
-    ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),
-    ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
-    ...(input.options ? { options: input.options } : {}),
-  });
+  return unwrapResult(
+    createExecutableSchemaSession(
+      createExecutableMethodsSchema(
+        input.schema,
+        input.methods,
+      ) as unknown as ExecutableSchema<TContext>,
+      {
+        context: input.context,
+        sql: input.sql,
+        ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),
+        ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
+        ...(input.options ? { options: input.options } : {}),
+      },
+    ),
+  );
 }
 
 export function createSessionFromExecutableSchema<TContext>(
-  executableSchema: ExecutableSchema<TContext>,
+  executableSchema: UnwrappedExecutableSchema<TContext>,
   input: ExecutableSchemaSessionInput<TContext>,
 ) {
-  return createExecutableSchemaSession(executableSchema, input);
+  return unwrapResult(
+    createExecutableSchemaSession(executableSchema as unknown as ExecutableSchema<TContext>, input),
+  );
 }
 
 export type RowsByTable<TSchema extends SchemaDefinition> = {
@@ -976,7 +996,7 @@ function createControlDatabase<TSchema extends SchemaDefinition>(
   rowsByTable: RowsByTable<TSchema>,
 ): InstanceType<typeof Database> {
   const db = new Database(":memory:");
-  db.exec(toSqlDDL(schema, { ifNotExists: true }));
+  db.exec(unwrapResult(toSqlDDL(schema, { ifNotExists: true })));
 
   for (const [tableName, table] of Object.entries(schema.tables)) {
     const columns = Object.keys(table.columns);
@@ -998,6 +1018,34 @@ function createControlDatabase<TSchema extends SchemaDefinition>(
   }
 
   return db;
+}
+
+function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
+
+async function unwrapPromiseResult<T, E>(result: Promise<Result<T, E>>): Promise<T> {
+  return unwrapResult(await result);
+}
+
+function withUnwrappedExecutableSchema<TContext, TSchema extends SchemaDefinition>(
+  executableSchema: ExecutableSchema<TContext, TSchema>,
+): UnwrappedExecutableSchema<TContext, TSchema> {
+  const originalQuery = executableSchema.query.bind(executableSchema);
+  const originalExplain = executableSchema.explain.bind(executableSchema);
+
+  return Object.assign(executableSchema, {
+    query(input: Parameters<typeof originalQuery>[0]) {
+      return unwrapPromiseResult(originalQuery(input));
+    },
+    explain(input: Parameters<typeof originalExplain>[0]) {
+      return unwrapResult(originalExplain(input));
+    },
+  }) as UnwrappedExecutableSchema<TContext, TSchema>;
 }
 
 function quoteIdentifier(name: string): string {

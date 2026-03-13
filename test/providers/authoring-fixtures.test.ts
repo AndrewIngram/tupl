@@ -11,6 +11,14 @@ import {
 } from "../provider-fixtures/sql-like";
 import { createUnusualScanLookupFixtureProvider } from "../provider-fixtures/unusual-scan-lookup";
 
+function unwrapResult<T>(result: Result<T, Error>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
+
 describe("third-party authoring fixtures", () => {
   describe("ordinary SQL-like provider", () => {
     for (const conformanceCase of createProviderConformanceCases(
@@ -33,8 +41,8 @@ describe("third-party authoring fixtures", () => {
         },
       });
 
-      const executableSchema = createExecutableSchema(builder);
-      const result = await executableSchema.queryResult({
+      const executableSchema = unwrapResult(createExecutableSchema(builder));
+      const result = await executableSchema.query({
         context: {},
         sql: "SELECT id, total_cents FROM orders WHERE customer_id = 'c1' ORDER BY total_cents DESC LIMIT 1",
       });
@@ -61,8 +69,8 @@ describe("third-party authoring fixtures", () => {
         },
       });
 
-      const executableSchema = createExecutableSchema(builder);
-      const result = await executableSchema.queryResult({
+      const executableSchema = unwrapResult(createExecutableSchema(builder));
+      const result = await executableSchema.query({
         context: {},
         sql: "SELECT id, total_cents FROM orders WHERE customer_id = 'c1' ORDER BY total_cents DESC LIMIT 2",
       });

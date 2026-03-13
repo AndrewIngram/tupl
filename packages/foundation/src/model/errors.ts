@@ -2,6 +2,15 @@ import { TaggedError, type Result as BetterResult } from "better-result";
 
 import type { TuplDiagnostic } from "./diagnostics";
 
+export interface TuplSchemaIssue {
+  code: string;
+  message: string;
+  table?: string;
+  column?: string;
+  constraint?: string;
+  path?: readonly string[];
+}
+
 export class TuplDiagnosticError extends TaggedError("TuplDiagnosticError")<{
   diagnostics: TuplDiagnostic[];
   message: string;
@@ -52,6 +61,19 @@ export class TuplProviderBindingError extends TaggedError("TuplProviderBindingEr
   table?: string;
 }>() {}
 
+export class TuplSchemaValidationError extends TaggedError("TuplSchemaValidationError")<{
+  issues: readonly TuplSchemaIssue[];
+  message: string;
+}>() {}
+
+export class TuplSchemaNormalizationError extends TaggedError("TuplSchemaNormalizationError")<{
+  cause?: unknown;
+  message: string;
+  operation: string;
+  table?: string;
+  column?: string;
+}>() {}
+
 export type TuplError =
   | TuplDiagnosticError
   | TuplGuardrailError
@@ -60,6 +82,8 @@ export type TuplError =
   | TuplParseError
   | TuplPlanningError
   | TuplExecutionError
-  | TuplProviderBindingError;
+  | TuplProviderBindingError
+  | TuplSchemaValidationError
+  | TuplSchemaNormalizationError;
 
 export type TuplResult<T> = BetterResult<T, TuplError>;

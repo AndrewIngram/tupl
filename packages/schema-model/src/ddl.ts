@@ -1,3 +1,6 @@
+import { Result, type Result as BetterResult } from "better-result";
+import type { TuplSchemaNormalizationError, TuplSchemaValidationError } from "@tupl/foundation";
+
 import {
   resolveColumnDefinition,
   resolveTableForeignKeys,
@@ -5,6 +8,7 @@ import {
   resolveTableUniqueConstraints,
 } from "./definition";
 import { validateSchemaConstraints } from "./constraints";
+import { createSchemaNormalizationError } from "./schema-errors";
 import type { ResolvedColumnDefinition as ResolvedColumnDefinitionType } from "./definition";
 import type { SchemaDefinition, SqlScalarType, TableDefinition } from "./types";
 
@@ -21,62 +25,73 @@ interface CheckConstraintForDDL {
 /**
  * DDL generation owns the SQL rendering of a fully validated logical schema.
  */
-export function toSqlDDL(schema: SchemaDefinition, options: SqlDdlOptions = {}): string {
-  validateSchemaConstraints(schema);
+export function toSqlDDL(
+  schema: SchemaDefinition,
+  options: SqlDdlOptions = {},
+): BetterResult<string, TuplSchemaValidationError | TuplSchemaNormalizationError> {
+  return Result.gen(function* () {
+    yield* validateSchemaConstraints(schema);
 
-  const createPrefix = options.ifNotExists ? "CREATE TABLE IF NOT EXISTS" : "CREATE TABLE";
-  const statements: string[] = [];
+    const createPrefix = options.ifNotExists ? "CREATE TABLE IF NOT EXISTS" : "CREATE TABLE";
+    const statements: string[] = [];
 
-  for (const [tableName, table] of Object.entries(schema.tables)) {
-    if (table.provider === "__view__") {
-      continue;
-    }
+    for (const [tableName, table] of Object.entries(schema.tables)) {
+      if (table.provider === "__view__") {
+        continue;
+      }
 
-    const columnEntries = Object.entries(table.columns);
-    if (columnEntries.length === 0) {
-      throw new Error(`Cannot generate DDL for table ${tableName} with no columns.`);
-    }
+      const columnEntries = Object.entries(table.columns);
+      if (columnEntries.length === 0) {
+        return Result.err(
+          createSchemaNormalizationError({
+            operation: "render SQL DDL",
+            message: `Cannot generate DDL for table ${tableName} with no columns.`,
+            table: tableName,
+          }),
+        );
+      }
 
-    const definitionLines = columnEntries.map(([columnName, columnDefinition]) => {
-      const resolved = resolveColumnDefinition(columnDefinition);
-      const nullability = resolved.nullable ? "" : " NOT NULL";
-      const metadataComment = renderColumnMetadataComment(resolved);
-      return `  ${escapeIdentifier(columnName)} ${toSqlType(resolved.type)}${nullability}${metadataComment}`;
-    });
+      const definitionLines = columnEntries.map(([columnName, columnDefinition]) => {
+        const resolved = resolveColumnDefinition(columnDefinition);
+        const nullability = resolved.nullable ? "" : " NOT NULL";
+        const metadataComment = renderColumnMetadataComment(resolved);
+        return `  ${escapeIdentifier(columnName)} ${toSqlType(resolved.type)}${nullability}${metadataComment}`;
+      });
 
-    const primaryKey = resolveTablePrimaryKeyConstraint(table);
-    if (primaryKey) {
-      definitionLines.push(
-        `  ${renderConstraintPrefix(primaryKey.name)}PRIMARY KEY (${renderColumnList(primaryKey.columns)})`,
+      const primaryKey = resolveTablePrimaryKeyConstraint(table);
+      if (primaryKey) {
+        definitionLines.push(
+          `  ${renderConstraintPrefix(primaryKey.name)}PRIMARY KEY (${renderColumnList(primaryKey.columns)})`,
+        );
+      }
+
+      for (const uniqueConstraint of resolveTableUniqueConstraints(table)) {
+        definitionLines.push(
+          `  ${renderConstraintPrefix(uniqueConstraint.name)}UNIQUE (${renderColumnList(uniqueConstraint.columns)})`,
+        );
+      }
+
+      for (const foreignKey of resolveTableForeignKeys(table)) {
+        const onDelete = foreignKey.onDelete ? ` ON DELETE ${foreignKey.onDelete}` : "";
+        const onUpdate = foreignKey.onUpdate ? ` ON UPDATE ${foreignKey.onUpdate}` : "";
+        definitionLines.push(
+          `  ${renderConstraintPrefix(foreignKey.name)}FOREIGN KEY (${renderColumnList(foreignKey.columns)}) REFERENCES ${escapeIdentifier(foreignKey.references.table)} (${renderColumnList(foreignKey.references.columns)})${onDelete}${onUpdate}`,
+        );
+      }
+
+      for (const checkConstraint of buildCheckConstraints(tableName, table)) {
+        definitionLines.push(
+          `  ${renderConstraintPrefix(checkConstraint.name)}CHECK (${renderCheckExpression(checkConstraint)})`,
+        );
+      }
+
+      statements.push(
+        `${createPrefix} ${escapeIdentifier(tableName)} (\n${definitionLines.join(",\n")}\n);`,
       );
     }
 
-    for (const uniqueConstraint of resolveTableUniqueConstraints(table)) {
-      definitionLines.push(
-        `  ${renderConstraintPrefix(uniqueConstraint.name)}UNIQUE (${renderColumnList(uniqueConstraint.columns)})`,
-      );
-    }
-
-    for (const foreignKey of resolveTableForeignKeys(table)) {
-      const onDelete = foreignKey.onDelete ? ` ON DELETE ${foreignKey.onDelete}` : "";
-      const onUpdate = foreignKey.onUpdate ? ` ON UPDATE ${foreignKey.onUpdate}` : "";
-      definitionLines.push(
-        `  ${renderConstraintPrefix(foreignKey.name)}FOREIGN KEY (${renderColumnList(foreignKey.columns)}) REFERENCES ${escapeIdentifier(foreignKey.references.table)} (${renderColumnList(foreignKey.references.columns)})${onDelete}${onUpdate}`,
-      );
-    }
-
-    for (const checkConstraint of buildCheckConstraints(tableName, table)) {
-      definitionLines.push(
-        `  ${renderConstraintPrefix(checkConstraint.name)}CHECK (${renderCheckExpression(checkConstraint)})`,
-      );
-    }
-
-    statements.push(
-      `${createPrefix} ${escapeIdentifier(tableName)} (\n${definitionLines.join(",\n")}\n);`,
-    );
-  }
-
-  return statements.join("\n\n");
+    return Result.ok(statements.join("\n\n"));
+  });
 }
 
 function buildCheckConstraints(tableName: string, table: TableDefinition): CheckConstraintForDDL[] {

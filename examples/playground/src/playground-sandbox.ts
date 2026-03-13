@@ -3,10 +3,11 @@ import * as drizzlePgCoreModule from "drizzle-orm/pg-core";
 import * as drizzlePgliteModule from "drizzle-orm/pglite";
 import * as pgliteModule from "@electric-sql/pglite";
 import * as betterResultModule from "better-result";
+import type { Result as BetterResult } from "better-result";
 import type { FragmentProvider, Provider } from "@tupl/provider-kit";
 import { lowerSqlToRel, planPhysicalQuery } from "@tupl/planner";
 import {
-  createExecutableSchemaSessionResult,
+  createExecutableSchemaSession,
   type QueryExecutionPlan,
   type QuerySession,
   type QueryStepEvent,
@@ -82,8 +83,8 @@ interface SessionRecord {
   session: QuerySession;
 }
 
-interface ExecutableSchemaModuleExports<TContext> {
-  executableSchema?: ExecutableSchema<TContext, SchemaDefinition>;
+interface ExecutableSchemaModuleExports {
+  executableSchema?: unknown;
 }
 
 interface ProviderModuleExports<TContext> {
@@ -167,20 +168,33 @@ function extractSchemaExport(
       "[SCHEMA_EXPORT_MISSING] Schema module must export `executableSchema` via `export const executableSchema = createExecutableSchema(...)`.",
     );
   }
-  const executableSchema = (
-    exportsRecord as ExecutableSchemaModuleExports<PlaygroundRuntimeContext>
-  ).executableSchema;
-  if (
-    !executableSchema ||
-    typeof executableSchema !== "object" ||
-    !("schema" in executableSchema) ||
-    typeof executableSchema.query !== "function"
-  ) {
+  const exportedSchema = (exportsRecord as ExecutableSchemaModuleExports).executableSchema;
+  const maybeResult = exportedSchema as BetterResult<unknown, unknown>;
+  const executableSchema = betterResultModule.Result.isError(maybeResult)
+    ? (() => {
+        throw maybeResult.error;
+      })()
+    : betterResultModule.Result.isOk(maybeResult)
+      ? maybeResult.value
+      : exportedSchema;
+  if (!isExecutableSchema(executableSchema)) {
     throw new Error(
       "[SCHEMA_EXPORT_INVALID] Schema module must export `executableSchema` created via createExecutableSchema(...).",
     );
   }
   return executableSchema;
+}
+
+function isExecutableSchema(
+  value: unknown,
+): value is ExecutableSchema<PlaygroundRuntimeContext, SchemaDefinition> {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "schema" in value &&
+    typeof (value as { query?: unknown }).query === "function" &&
+    typeof (value as { explain?: unknown }).explain === "function"
+  );
 }
 
 function readProviderExportOrThrow<TContext>(
@@ -420,7 +434,7 @@ export async function createSandboxSession(
   const { executableSchema } = runtime;
 
   const sessionResult = await runSandboxPhase("CREATE_SESSION", async () =>
-    createExecutableSchemaSessionResult(executableSchema, {
+    createExecutableSchemaSession(executableSchema, {
       context: runtimeContext,
       sql: compiled.sql,
       options: {
@@ -430,13 +444,12 @@ export async function createSandboxSession(
     }),
   );
   if (betterResultModule.Result.isError(sessionResult)) {
+    const error = sessionResult.error as { message: string; _tag?: string };
     return {
       ok: false,
       error: {
-        message: sessionResult.error.message,
-        ...("_tag" in sessionResult.error && typeof sessionResult.error._tag === "string"
-          ? { tag: sessionResult.error._tag }
-          : {}),
+        message: error.message,
+        ...(typeof error._tag === "string" ? { tag: error._tag } : {}),
       },
     };
   }

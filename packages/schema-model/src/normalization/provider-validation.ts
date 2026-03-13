@@ -1,4 +1,4 @@
-import { Result } from "better-result";
+import { Result, type Result as BetterResult } from "better-result";
 import { TuplProviderBindingError } from "@tupl/foundation";
 import type { ProviderMap } from "@tupl/provider-kit";
 
@@ -8,16 +8,10 @@ import { getNormalizedTableBinding } from "./schema-finalization";
 /**
  * Provider validation owns provider resolution and schema/provider registration checks.
  */
-export function resolveTableProvider(schema: SchemaDefinition, table: string): string {
-  const result = resolveTableProviderResult(schema, table);
-  if (Result.isError(result)) {
-    throw result.error;
-  }
-
-  return result.value;
-}
-
-export function resolveTableProviderResult(schema: SchemaDefinition, table: string) {
+export function resolveTableProvider(
+  schema: SchemaDefinition,
+  table: string,
+): BetterResult<string, TuplProviderBindingError> {
   const normalized = getNormalizedTableBinding(schema, table);
   if (normalized?.kind === "physical" && normalized.provider) {
     return Result.ok(normalized.provider);
@@ -57,17 +51,7 @@ export function resolveTableProviderResult(schema: SchemaDefinition, table: stri
 export function validateProviderBindings<TContext>(
   schema: SchemaDefinition,
   providers: ProviderMap<TContext>,
-): void {
-  const result = validateProviderBindingsResult(schema, providers);
-  if (Result.isError(result)) {
-    throw result.error;
-  }
-}
-
-export function validateProviderBindingsResult<TContext>(
-  schema: SchemaDefinition,
-  providers: ProviderMap<TContext>,
-) {
+): BetterResult<void, TuplProviderBindingError> {
   for (const tableName of Object.keys(schema.tables)) {
     const normalized = getNormalizedTableBinding(schema, tableName);
     if (normalized?.kind === "view") {
@@ -77,7 +61,7 @@ export function validateProviderBindingsResult<TContext>(
     const providerNameResult =
       normalized?.kind === "physical" && normalized.provider
         ? Result.ok(normalized.provider)
-        : resolveTableProviderResult(schema, tableName);
+        : resolveTableProvider(schema, tableName);
     if (Result.isError(providerNameResult)) {
       return providerNameResult;
     }

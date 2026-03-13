@@ -1,18 +1,18 @@
 import type { Result as BetterResult } from "better-result";
 
-import { createExecutableSchemaResult, type ExecutableSchema, type TuplResult } from "@tupl/schema";
+import { createExecutableSchema, type ExecutableSchema, type TuplResult } from "@tupl/schema";
 import { AdapterResult, type ProviderOperationResult } from "@tupl/provider-kit";
 import type { TuplProviderBindingError } from "@tupl/runtime";
-import { createExecutableSchemaSessionResult, type QuerySession } from "@tupl/runtime/session";
+import { createExecutableSchemaSession, type QuerySession } from "@tupl/runtime/session";
 import { createSchemaBuilder, type QueryRow, type SchemaDefinition } from "@tupl/schema";
-import { resolveTableProviderResult } from "@tupl/schema-model";
+import { resolveTableProvider } from "@tupl/schema-model";
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Expect<T extends true> = T;
 
 const builder = createSchemaBuilder<Record<string, never>>();
-const createExecutableSchemaResultValue = createExecutableSchemaResult(builder);
+const createExecutableSchemaResultValue = createExecutableSchema(builder);
 
 type _createExecutableSchemaResultStaysExplicit = Expect<
   Equal<
@@ -28,10 +28,10 @@ declare const sessionInput: {
 };
 
 type _queryResultStaysExplicit = Expect<
-  Equal<ReturnType<typeof executableSchema.queryResult>, Promise<TuplResult<QueryRow[]>>>
+  Equal<ReturnType<typeof executableSchema.query>, Promise<TuplResult<QueryRow[]>>>
 >;
 
-const createExecutableSchemaSessionResultValue = createExecutableSchemaSessionResult(
+const createExecutableSchemaSessionResultValue = createExecutableSchemaSession(
   executableSchema,
   sessionInput,
 );
@@ -40,7 +40,7 @@ type _createSessionResultStaysExplicit = Expect<
   Equal<typeof createExecutableSchemaSessionResultValue, TuplResult<QuerySession>>
 >;
 
-declare const resolveTableProviderResultValue: ReturnType<typeof resolveTableProviderResult>;
+declare const resolveTableProviderResultValue: ReturnType<typeof resolveTableProvider>;
 const _resolveTableProviderResultNarrows: BetterResult<string, TuplProviderBindingError> =
   resolveTableProviderResultValue;
 

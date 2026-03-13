@@ -1,9 +1,15 @@
-import { Result } from "better-result";
+import { Result, type Result as BetterResult } from "better-result";
 
-import { createSqlRel, type RelNode } from "@tupl/foundation";
+import {
+  createSqlRel,
+  type RelNode,
+  type TuplParseError,
+  type TuplPlanningError,
+  type TuplSchemaNormalizationError,
+} from "@tupl/foundation";
 import { validateRelAgainstSchema, type SchemaDefinition } from "@tupl/schema-model";
-import { parseSqliteSelectAstResult } from "./sqlite-parser/parser";
 import { toTuplPlanningError } from "./planner-errors";
+import { parseSqliteSelectAstResult } from "./sqlite-parser/parser";
 import { assertNoUnsupportedQueryShapes } from "./query-shape-validation";
 import { collectTablesFromSelectAst, tryLowerStructuredSelect } from "./structured-select-lowering";
 
@@ -24,17 +30,40 @@ export function lowerSqlToRel(sql: string, schema: SchemaDefinition): RelLowerin
   return result.value;
 }
 
-export function lowerSqlToRelResult(sql: string, schema: SchemaDefinition) {
+export function lowerSqlToRelResult(
+  sql: string,
+  schema: SchemaDefinition,
+): BetterResult<
+  RelLoweringResult,
+  TuplParseError | TuplPlanningError | TuplSchemaNormalizationError
+> {
   return Result.gen(function* () {
     const ast = yield* parseSqliteSelectAstResult(sql);
-    return Result.try({
-      try: () => lowerSqlAstToRel(ast, sql, schema),
-      catch: (error) => toTuplPlanningError(error, "lower SQL to relational plan"),
-    });
+    const lowered = yield* lowerSqlAstToRel(ast, sql, schema);
+    return Result.ok(lowered);
   });
 }
 
 function lowerSqlAstToRel(
+  ast: import("./sqlite-parser/ast").SelectAst,
+  sql: string,
+  schema: SchemaDefinition,
+): BetterResult<RelLoweringResult, TuplPlanningError | TuplSchemaNormalizationError> {
+  const lowered = Result.try({
+    try: () => lowerSqlAstToRelUnchecked(ast, sql, schema),
+    catch: (error) => toTuplPlanningError(error, "lower SQL to relational plan"),
+  });
+  if (Result.isError(lowered)) {
+    return lowered;
+  }
+
+  return Result.gen(function* () {
+    yield* validateRelAgainstSchema(lowered.value.rel, schema);
+    return Result.ok(lowered.value);
+  });
+}
+
+function lowerSqlAstToRelUnchecked(
   ast: import("./sqlite-parser/ast").SelectAst,
   sql: string,
   schema: SchemaDefinition,
@@ -43,7 +72,6 @@ function lowerSqlAstToRel(
 
   const structured = tryLowerStructuredSelect(ast, schema, new Set<string>());
   if (structured) {
-    validateRelAgainstSchema(structured, schema);
     return {
       rel: structured,
       tables: collectTablesFromSelectAst(ast),
@@ -51,10 +79,8 @@ function lowerSqlAstToRel(
   }
 
   const tables = collectTablesFromSelectAst(ast);
-  const rel = createSqlRel(sql, tables);
-  validateRelAgainstSchema(rel, schema);
   return {
-    rel,
+    rel: createSqlRel(sql, tables),
     tables,
   };
 }

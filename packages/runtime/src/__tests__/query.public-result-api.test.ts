@@ -1,8 +1,8 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import { createExecutableSchemaResult } from "@tupl/runtime";
-import { createExecutableSchemaSessionResult } from "@tupl/runtime/session";
+import { createExecutableSchema } from "@tupl/runtime";
+import { createExecutableSchemaSession } from "@tupl/runtime/session";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema-model";
 import {
   createDataEntityHandle,
@@ -10,14 +10,14 @@ import {
   type LookupProvider,
   type ProviderFragment,
 } from "@tupl/provider-kit";
-import { createSchemaBuilder, resolveTableProviderResult } from "@tupl/schema-model";
-import { createExecutableSchemaFromProviders } from "@tupl/test-support/runtime";
-import { buildEntitySchema, buildSchema } from "@tupl/test-support/schema";
+import { createSchemaBuilder, resolveTableProvider } from "@tupl/schema-model";
+import { buildSchema } from "@tupl/test-support/schema";
 
-type TestProvider = Omit<FragmentProvider, "name"> & Partial<Pick<LookupProvider, "lookupMany">>;
+type TestProvider = FragmentProvider & Partial<Pick<LookupProvider, "lookupMany">>;
 
 function createRowsProvider(rows: QueryRow[] = [{ id: "u1" }]): TestProvider {
   return {
+    name: "warehouse",
     canExecute(fragment: ProviderFragment) {
       return fragment.kind === "scan";
     },
@@ -34,29 +34,42 @@ function createRowsProvider(rows: QueryRow[] = [{ id: "u1" }]): TestProvider {
   };
 }
 
-describe("public result APIs", () => {
-  it("returns tagged parse errors from queryResult", async () => {
-    const schema = buildEntitySchema({
-      users: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-        },
+function createUsersExecutableSchema(provider: TestProvider) {
+  const builder = createSchemaBuilder<Record<string, never>>();
+  builder.table(
+    "users",
+    createDataEntityHandle({
+      entity: "users",
+      provider: "warehouse",
+      providerInstance: provider as FragmentProvider,
+    }),
+    {
+      columns: {
+        id: "text",
       },
-    });
+    },
+  );
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: createRowsProvider(),
-    });
+  const result = createExecutableSchema(builder);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
 
-    const result = await executableSchema.queryResult({
+  return result.value;
+}
+
+describe("public result APIs", () => {
+  it("returns tagged parse errors from query", async () => {
+    const executableSchema = createUsersExecutableSchema(createRowsProvider());
+
+    const result = await executableSchema.query({
       context: {},
       sql: "INSERT INTO users VALUES ('u1')",
     });
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected queryResult to fail.");
+      throw new Error("Expected query to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -65,28 +78,17 @@ describe("public result APIs", () => {
     });
   });
 
-  it("returns tagged planning errors from queryResult", async () => {
-    const schema = buildEntitySchema({
-      users: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-        },
-      },
-    });
+  it("returns tagged schema-normalization errors from query", async () => {
+    const executableSchema = createUsersExecutableSchema(createRowsProvider());
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: createRowsProvider(),
-    });
-
-    const result = await executableSchema.queryResult({
+    const result = await executableSchema.query({
       context: {},
       sql: "SELECT id FROM missing_table",
     });
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected queryResult to fail.");
+      throw new Error("Expected query to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -95,42 +97,32 @@ describe("public result APIs", () => {
     });
   });
 
-  it("returns tagged runtime errors from queryResult", async () => {
-    const schema = buildEntitySchema({
-      users: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-        },
+  it("returns tagged runtime errors from query", async () => {
+    const executableSchema = createUsersExecutableSchema({
+      name: "warehouse",
+      canExecute(fragment: ProviderFragment) {
+        return fragment.kind === "scan";
       },
-    });
+      async compile(fragment: ProviderFragment) {
+        return Result.ok({
+          provider: "warehouse",
+          kind: fragment.kind,
+          payload: fragment,
+        });
+      },
+      async execute() {
+        return Result.err(new Error("warehouse exploded"));
+      },
+    } satisfies TestProvider);
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
-        },
-        async compile(fragment: ProviderFragment) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: fragment.kind,
-            payload: fragment,
-          });
-        },
-        async execute() {
-          return Result.err(new Error("warehouse exploded"));
-        },
-      } satisfies TestProvider,
-    });
-
-    const result = await executableSchema.queryResult({
+    const result = await executableSchema.query({
       context: {},
       sql: "SELECT id FROM users",
     });
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected queryResult to fail.");
+      throw new Error("Expected query to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -172,11 +164,11 @@ describe("public result APIs", () => {
       },
     );
 
-    const result = createExecutableSchemaResult(builder);
+    const result = createExecutableSchema(builder);
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected createExecutableSchemaResult to fail.");
+      throw new Error("Expected createExecutableSchema to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -186,21 +178,10 @@ describe("public result APIs", () => {
     });
   });
 
-  it("returns tagged setup errors from createExecutableSchemaSessionResult", () => {
-    const schema = buildEntitySchema({
-      users: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-        },
-      },
-    });
+  it("returns tagged setup errors from createExecutableSchemaSession", () => {
+    const executableSchema = createUsersExecutableSchema(createRowsProvider());
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: createRowsProvider(),
-    });
-
-    const result = createExecutableSchemaSessionResult(executableSchema, {
+    const result = createExecutableSchemaSession(executableSchema, {
       context: {},
       sql: "INSERT INTO users VALUES ('u1')",
     });
@@ -216,7 +197,7 @@ describe("public result APIs", () => {
     });
   });
 
-  it("returns tagged errors from createExecutableSchemaResult", () => {
+  it("returns tagged errors from createExecutableSchema", () => {
     const builder = createSchemaBuilder<Record<string, never>>();
     builder.table(
       "users",
@@ -231,10 +212,10 @@ describe("public result APIs", () => {
       },
     );
 
-    const result = createExecutableSchemaResult(builder);
+    const result = createExecutableSchema(builder);
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected createExecutableSchemaResult to fail.");
+      throw new Error("Expected createExecutableSchema to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -245,7 +226,7 @@ describe("public result APIs", () => {
   });
 });
 
-describe("resolveTableProviderResult", () => {
+describe("resolveTableProvider", () => {
   it("returns a tagged error for views without a direct provider", () => {
     const schema = buildSchema((builder) => {
       builder.view("active_users", ({ scan }) => scan("users"), {
@@ -255,10 +236,10 @@ describe("resolveTableProviderResult", () => {
       });
     });
 
-    const result = resolveTableProviderResult(schema, "active_users");
+    const result = resolveTableProvider(schema, "active_users");
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected resolveTableProviderResult to fail.");
+      throw new Error("Expected resolveTableProvider to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -272,10 +253,10 @@ describe("resolveTableProviderResult", () => {
       tables: {},
     };
 
-    const result = resolveTableProviderResult(schema, "missing");
+    const result = resolveTableProvider(schema, "missing");
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected resolveTableProviderResult to fail.");
+      throw new Error("Expected resolveTableProvider to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -295,10 +276,10 @@ describe("resolveTableProviderResult", () => {
       },
     };
 
-    const result = resolveTableProviderResult(schema, "users");
+    const result = resolveTableProvider(schema, "users");
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected resolveTableProviderResult to fail.");
+      throw new Error("Expected resolveTableProvider to fail.");
     }
 
     expect(result.error).toMatchObject({

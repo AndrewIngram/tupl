@@ -15,7 +15,7 @@ import {
   type ScanFilterClause,
   type TableScanRequest,
 } from "@tupl/provider-kit";
-import { getNormalizedTableBinding, validateProviderBindingsResult } from "@tupl/schema-model";
+import { getNormalizedTableBinding, validateProviderBindings } from "@tupl/schema-model";
 import {
   createExecutableSchemaFromProviders,
   createSessionFromExecutableSchema,
@@ -2400,7 +2400,7 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const result = validateProviderBindingsResult(schema, {});
+    const result = validateProviderBindings(schema, {});
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
       throw new Error("Expected provider binding validation to fail.");

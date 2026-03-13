@@ -1,7 +1,10 @@
+import { Result, type Result as BetterResult } from "better-result";
+import type { TuplSchemaNormalizationError } from "@tupl/foundation";
 import type { DataEntityColumnMetadata } from "@tupl/foundation";
 import { getDataEntityProvider } from "@tupl/provider-kit";
 
 import { resolveColumnDefinition } from "../definition";
+import { createSchemaNormalizationError } from "../schema-errors";
 import type {
   NormalizedPhysicalTableBinding,
   NormalizedSourceColumnBinding,
@@ -116,20 +119,27 @@ export function assertColumnCompatibility(
   definition: TableColumnDefinition,
   coerce: SchemaValueCoercion | undefined,
   entity: SchemaDataEntityHandle<string> | undefined,
-): void {
+): BetterResult<void, TuplSchemaNormalizationError> {
   if (!entity || coerce) {
-    return;
+    return Result.ok(undefined);
   }
 
   const sourceMetadata = entity.columns?.[logicalColumn];
   if (!sourceMetadata?.type) {
-    return;
+    return Result.ok(undefined);
   }
 
   const targetType = resolveColumnDefinition(definition).type;
   if (!sourceTypeMatchesTargetType(sourceMetadata.type, targetType)) {
-    throw new Error(
-      `Column ${entity.entity}.${sourceMetadata.source} is exposed as ${sourceMetadata.type}, but the schema declared ${targetType}. Add a coerce function or align the declared type.`,
+    return Result.err(
+      createSchemaNormalizationError({
+        operation: "normalize column binding",
+        message: `Column ${entity.entity}.${sourceMetadata.source} is exposed as ${sourceMetadata.type}, but the schema declared ${targetType}. Add a coerce function or align the declared type.`,
+        table: entity.entity,
+        column: logicalColumn,
+      }),
     );
   }
+
+  return Result.ok(undefined);
 }

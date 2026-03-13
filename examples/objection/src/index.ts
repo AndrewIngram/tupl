@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { createObjectionProvider, type ObjectionProviderShape } from "@tupl/provider-objection";
 import { SQLITE_DDL, SQLITE_SEED, type DemoContext } from "@tupl/example-shared";
 import { createExecutableSchema, createSchemaBuilder } from "@tupl/schema";
@@ -27,6 +28,18 @@ type DemoObjectionEntities = ObjectionProviderShape<
   },
   DemoContext
 >;
+
+function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
+
+async function unwrapPromiseResult<T, E>(result: Promise<Result<T, E>>): Promise<T> {
+  return unwrapResult(await result);
+}
 
 function getOrdersQueryBuilder(knex: ReturnType<typeof createKnex>, context: DemoContext) {
   return knex("orders_raw").where({
@@ -163,44 +176,50 @@ async function main(): Promise<void> {
     },
   );
 
-  const executableSchema = createExecutableSchema(schemaBuilder);
+  const executableSchema = unwrapResult(createExecutableSchema(schemaBuilder));
 
-  const virtualRows = await executableSchema.query({
-    context: {
-      orgId: "org_1",
-      userId: "u1",
-    },
-    sql: `
+  const virtualRows = await unwrapPromiseResult(
+    executableSchema.query({
+      context: {
+        orgId: "org_1",
+        userId: "u1",
+      },
+      sql: `
       SELECT id, totalDollars, isLargeOrder
       FROM myOrders
       WHERE totalDollars >= 20
       ORDER BY totalDollars DESC
     `,
-  });
+    }),
+  );
 
-  const orderFactRows = await executableSchema.query({
-    context: {
-      orgId: "org_1",
-      userId: "u1",
-    },
-    sql: `
+  const orderFactRows = await unwrapPromiseResult(
+    executableSchema.query({
+      context: {
+        orgId: "org_1",
+        userId: "u1",
+      },
+      sql: `
       SELECT orderId, vendorName, totalDollars, isLargeOrder
       FROM myOrderFacts
       ORDER BY totalDollars DESC
     `,
-  });
+    }),
+  );
 
-  const spendRows = await executableSchema.query({
-    context: {
-      orgId: "org_1",
-      userId: "u1",
-    },
-    sql: `
+  const spendRows = await unwrapPromiseResult(
+    executableSchema.query({
+      context: {
+        orgId: "org_1",
+        userId: "u1",
+      },
+      sql: `
       SELECT vendorName, totalSpendCents, orderCount
       FROM myVendorSpend
       ORDER BY totalSpendCents DESC
     `,
-  });
+    }),
+  );
 
   console.log("myOrders with virtual columns:");
   console.log(virtualRows);

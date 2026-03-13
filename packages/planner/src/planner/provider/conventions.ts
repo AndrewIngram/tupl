@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import type { RelJoinNode, RelNode, RelScanNode } from "@tupl/foundation";
 import { supportsLookupMany, type ProviderMap } from "@tupl/provider-kit";
 import {
@@ -29,7 +30,7 @@ export function resolveSingleProvider(
         if (normalized?.kind === "view") {
           return false;
         }
-        providers.add(current.entity?.provider ?? resolveTableProvider(schema, current.table));
+        providers.add(current.entity?.provider ?? readResolvedTableProvider(schema, current.table));
         return true;
       }
       case "sql": {
@@ -41,7 +42,7 @@ export function resolveSingleProvider(
           if (normalized?.kind === "view") {
             return false;
           }
-          providers.add(resolveTableProvider(schema, table));
+          providers.add(readResolvedTableProvider(schema, table));
         }
         return true;
       }
@@ -90,7 +91,7 @@ export function assignConventions(
       if (normalized?.kind === "view") {
         return { ...node, convention: "local" };
       }
-      const provider = node.entity?.provider ?? resolveTableProvider(schema, node.table);
+      const provider = node.entity?.provider ?? readResolvedTableProvider(schema, node.table);
       return {
         ...node,
         convention: `provider:${provider}`,
@@ -179,8 +180,10 @@ export function resolveLookupJoinCandidate<TContext>(
     return null;
   }
 
-  const leftProvider = leftScan.entity?.provider ?? resolveTableProvider(schema, leftScan.table);
-  const rightProvider = rightScan.entity?.provider ?? resolveTableProvider(schema, rightScan.table);
+  const leftProvider =
+    leftScan.entity?.provider ?? readResolvedTableProvider(schema, leftScan.table);
+  const rightProvider =
+    rightScan.entity?.provider ?? readResolvedTableProvider(schema, rightScan.table);
   if (leftProvider === rightProvider) {
     return null;
   }
@@ -220,4 +223,13 @@ function findFirstScanNode(node: RelNode): RelScanNode | null {
     case "sql":
       return null;
   }
+}
+
+function readResolvedTableProvider(schema: SchemaDefinition, table: string): string {
+  const result = resolveTableProvider(schema, table);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
 }

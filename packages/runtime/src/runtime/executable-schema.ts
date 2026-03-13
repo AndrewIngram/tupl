@@ -11,10 +11,9 @@ import {
 } from "@tupl/schema-model";
 
 import type { ExecutableSchema } from "./contracts";
-import { unwrapQueryResult, tryQueryStep } from "./diagnostics";
 import { bindExecutableSchemaSessionAccess } from "./executable-schema-runtime";
-import { explainInternal, queryInternal, queryInternalResult } from "./query-runner";
-import { createQuerySessionResult } from "./session/query-session-factory";
+import { explainInternalResult, queryInternalResult } from "./query-runner";
+import { createQuerySession } from "./session/query-session-factory";
 
 /**
  * Executable schema owns schema-to-runtime binding and the public executable facade constructors.
@@ -62,12 +61,12 @@ function collectExecutableProvidersResult<TContext>(schema: SchemaDefinition) {
   return Result.ok(providers);
 }
 
-function createExecutableSchemaResultInternal<TContext, TSchema extends SchemaDefinition>(
+function createExecutableSchemaInternal<TContext, TSchema extends SchemaDefinition>(
   input: TSchema | SchemaBuilder<TContext>,
 ): TuplResult<ExecutableSchema<TContext, TSchema | SchemaDefinition>> {
-  const schemaResult = tryQueryStep("create executable schema", () =>
-    isSchemaBuilder<TContext>(input) ? input.build() : finalizeSchemaDefinition(input as TSchema),
-  );
+  const schemaResult = isSchemaBuilder<TContext>(input)
+    ? input.build()
+    : finalizeSchemaDefinition(input as TSchema);
   if (Result.isError(schemaResult)) {
     return schemaResult as TuplResult<ExecutableSchema<TContext, TSchema | SchemaDefinition>>;
   }
@@ -87,13 +86,6 @@ function createExecutableSchemaResultInternal<TContext, TSchema extends SchemaDe
   const executableSchema = {
     schema,
     query(input) {
-      return queryInternal({
-        schema: runtime.schema,
-        providers: runtime.providers,
-        ...input,
-      });
-    },
-    queryResult(input) {
       return queryInternalResult({
         schema: runtime.schema,
         providers: runtime.providers,
@@ -101,7 +93,7 @@ function createExecutableSchemaResultInternal<TContext, TSchema extends SchemaDe
       });
     },
     explain(input) {
-      return explainInternal({
+      return explainInternalResult({
         schema: runtime.schema,
         providers: runtime.providers,
         ...input,
@@ -110,8 +102,8 @@ function createExecutableSchemaResultInternal<TContext, TSchema extends SchemaDe
   } satisfies ExecutableSchema<TContext, TSchema | SchemaDefinition>;
 
   bindExecutableSchemaSessionAccess(executableSchema, {
-    createSessionResult(input) {
-      return createQuerySessionResult({
+    createSession(input) {
+      return createQuerySession({
         schema: runtime.schema,
         providers: runtime.providers,
         ...input,
@@ -121,26 +113,14 @@ function createExecutableSchemaResultInternal<TContext, TSchema extends SchemaDe
   return Result.ok(executableSchema);
 }
 
-export function createExecutableSchemaResult<TContext>(
-  builder: SchemaBuilder<TContext>,
-): TuplResult<ExecutableSchema<TContext, SchemaDefinition>>;
-export function createExecutableSchemaResult<TContext, TSchema extends SchemaDefinition>(
-  schema: TSchema,
-): TuplResult<ExecutableSchema<TContext, TSchema>>;
-export function createExecutableSchemaResult<TContext, TSchema extends SchemaDefinition>(
-  input: TSchema | SchemaBuilder<TContext>,
-): TuplResult<ExecutableSchema<TContext, TSchema | SchemaDefinition>> {
-  return createExecutableSchemaResultInternal(input);
-}
-
 export function createExecutableSchema<TContext>(
   builder: SchemaBuilder<TContext>,
-): ExecutableSchema<TContext, SchemaDefinition>;
+): TuplResult<ExecutableSchema<TContext, SchemaDefinition>>;
 export function createExecutableSchema<TContext, TSchema extends SchemaDefinition>(
   schema: TSchema,
-): ExecutableSchema<TContext, TSchema>;
+): TuplResult<ExecutableSchema<TContext, TSchema>>;
 export function createExecutableSchema<TContext, TSchema extends SchemaDefinition>(
   input: TSchema | SchemaBuilder<TContext>,
-): ExecutableSchema<TContext, TSchema | SchemaDefinition> {
-  return unwrapQueryResult(createExecutableSchemaResultInternal(input));
+): TuplResult<ExecutableSchema<TContext, TSchema | SchemaDefinition>> {
+  return createExecutableSchemaInternal(input);
 }

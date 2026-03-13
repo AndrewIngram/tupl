@@ -80,9 +80,8 @@ export interface ExecutableSchemaQueryInput<TContext> {
  */
 export interface ExecutableSchema<TContext, TSchema extends SchemaDefinition = SchemaDefinition> {
   schema: TSchema;
-  query(input: ExecutableSchemaQueryInput<TContext>): Promise<QueryRow[]>;
-  queryResult(input: ExecutableSchemaQueryInput<TContext>): Promise<TuplResult<QueryRow[]>>;
-  explain(input: ExecutableSchemaQueryInput<TContext>): ExplainResult;
+  query(input: ExecutableSchemaQueryInput<TContext>): Promise<TuplResult<QueryRow[]>>;
+  explain(input: ExecutableSchemaQueryInput<TContext>): TuplResult<ExplainResult>;
 }
 
 /**

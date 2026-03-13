@@ -18,7 +18,5 @@ export {
 } from "./normalization/entity-bindings";
 export {
   resolveTableProvider,
-  resolveTableProviderResult,
   validateProviderBindings,
-  validateProviderBindingsResult,
 } from "./normalization/provider-validation";

@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { and, eq } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -19,6 +20,18 @@ const ordersRawTable = sqliteTable("orders_raw", {
   totalCents: integer("total_cents").notNull(),
   createdAt: text("created_at").notNull(),
 });
+
+function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
+
+async function unwrapPromiseResult<T, E>(result: Promise<Result<T, E>>): Promise<T> {
+  return unwrapResult(await result);
+}
 
 async function main(): Promise<void> {
   const sqlite = createSeededSqliteDatabase();
@@ -104,47 +117,53 @@ async function main(): Promise<void> {
     },
   );
 
-  const executableSchema = createExecutableSchema(schemaBuilder);
+  const executableSchema = unwrapResult(createExecutableSchema(schemaBuilder));
 
-  const virtualRows = await executableSchema.query({
-    context: {
-      orgId: "org_1",
-      userId: "u1",
-      db,
-    },
-    sql: `
+  const virtualRows = await unwrapPromiseResult(
+    executableSchema.query({
+      context: {
+        orgId: "org_1",
+        userId: "u1",
+        db,
+      },
+      sql: `
       SELECT id, totalDollars, isLargeOrder
       FROM myOrders
       WHERE totalDollars >= 20
       ORDER BY totalDollars DESC
     `,
-  });
+    }),
+  );
 
-  const orderFactRows = await executableSchema.query({
-    context: {
-      orgId: "org_1",
-      userId: "u1",
-      db,
-    },
-    sql: `
+  const orderFactRows = await unwrapPromiseResult(
+    executableSchema.query({
+      context: {
+        orgId: "org_1",
+        userId: "u1",
+        db,
+      },
+      sql: `
       SELECT orderId, vendorName, totalDollars, isLargeOrder
       FROM myOrderFacts
       ORDER BY totalDollars DESC
     `,
-  });
+    }),
+  );
 
-  const spendRows = await executableSchema.query({
-    context: {
-      orgId: "org_1",
-      userId: "u1",
-      db,
-    },
-    sql: `
+  const spendRows = await unwrapPromiseResult(
+    executableSchema.query({
+      context: {
+        orgId: "org_1",
+        userId: "u1",
+        db,
+      },
+      sql: `
       SELECT vendorName, totalSpendCents, orderCount
       FROM myVendorSpend
       ORDER BY totalSpendCents DESC
     `,
-  });
+    }),
+  );
 
   console.log("myOrders with virtual columns:");
   console.log(virtualRows);

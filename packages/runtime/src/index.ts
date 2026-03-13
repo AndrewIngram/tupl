@@ -13,6 +13,8 @@ export {
   TuplPlanningError,
   TuplProviderBindingError,
   TuplRuntimeError,
+  TuplSchemaNormalizationError,
+  TuplSchemaValidationError,
   TuplTimeoutError,
 } from "@tupl/foundation";
-export type { TuplError, TuplResult } from "@tupl/foundation";
+export type { TuplError, TuplResult, TuplSchemaIssue } from "@tupl/foundation";

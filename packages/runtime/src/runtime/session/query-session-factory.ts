@@ -3,7 +3,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import type { TuplError } from "@tupl/foundation";
 
 import type { QuerySession, QuerySessionInput } from "./contracts";
-import { tryQueryStep, unwrapQueryResult } from "../diagnostics";
+import { tryQueryStep } from "../diagnostics";
 import { createRelExecutionSession } from "./rel-execution-session";
 import {
   type PreparedSession,
@@ -13,7 +13,7 @@ import {
 /**
  * Query-session factory owns end-to-end session preparation and chooses the concrete session kind.
  */
-export function createQuerySessionResult<TContext>(
+export function createQuerySession<TContext>(
   input: QuerySessionInput<TContext>,
 ): BetterResult<QuerySession, TuplError> {
   const preparationResult = resolveSessionPreparationResult(input);
@@ -34,10 +34,4 @@ export function createQuerySessionResult<TContext>(
       prepared.diagnostics,
     ),
   );
-}
-
-export function createQuerySessionInternal<TContext>(
-  input: QuerySessionInput<TContext>,
-): QuerySession {
-  return unwrapQueryResult(createQuerySessionResult(input));
 }
