@@ -18,7 +18,7 @@ export function resolveSingleProvider(node: RelNode, schema: SchemaDefinition): 
       case "values":
         return false;
       case "cte_ref":
-        return true;
+        return false;
       case "scan": {
         if (!schema.tables[current.table] && !current.entity) {
           return true;

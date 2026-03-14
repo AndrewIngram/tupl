@@ -1143,4 +1143,89 @@ describe("query/translation-snapshots", () => {
       }
     `);
   });
+
+  it("keeps cte_ref-consuming subtrees local during provider assignment", async () => {
+    const schema = buildEntitySchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          user_id: "text",
+        },
+      },
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          email: "text",
+        },
+      },
+    });
+    const providers = finalizeProviders({
+      warehouse: {
+        canExecute() {
+          return true;
+        },
+        async compile(rel) {
+          return {
+            ok: true as const,
+            value: { provider: "warehouse", kind: "rel", payload: rel },
+          };
+        },
+        async execute() {
+          return { ok: true as const, value: [] };
+        },
+      },
+    });
+
+    const logicalPlan = buildLogicalQueryPlan(
+      `
+        WITH recent_orders AS (
+          SELECT id, user_id
+          FROM orders
+        )
+        SELECT r.id, u.email
+        FROM recent_orders r
+        JOIN users u ON r.user_id = u.id
+      `,
+      schema,
+    );
+
+    const physical = await planPhysicalQuery(
+      logicalPlan.rewrittenRel,
+      schema,
+      providers,
+      {},
+      `
+        WITH recent_orders AS (
+          SELECT id, user_id
+          FROM orders
+        )
+        SELECT r.id, u.email
+        FROM recent_orders r
+        JOIN users u ON r.user_id = u.id
+      `,
+    );
+
+    expect(physical.rel.kind).toBe("with");
+    if (physical.rel.kind !== "with") {
+      throw new Error("Expected WITH root.");
+    }
+
+    expect(physical.rel.convention).toBe("local");
+    expect(physical.rel.ctes[0]?.query.convention).toBe("provider:warehouse");
+    expect(physical.rel.body.kind).toBe("project");
+    if (physical.rel.body.kind !== "project") {
+      throw new Error("Expected project body.");
+    }
+    expect(physical.rel.body.input.kind).toBe("join");
+    if (physical.rel.body.input.kind !== "join") {
+      throw new Error("Expected join body input.");
+    }
+    expect(physical.rel.body.input.convention).toBe("local");
+    expect(physical.rel.body.input.left.kind).toBe("cte_ref");
+    expect(physical.rel.body.input.left.convention).toBe("local");
+    expect(physical.rel.body.input.right.kind).toBe("scan");
+    expect(physical.rel.body.input.right.convention).toBe("provider:warehouse");
+  });
 });

@@ -38,7 +38,6 @@ describe("playground/provider-pushdown", () => {
         "paid_orders",
         "preferred_vendor_orders",
         "activity_union",
-        "vendor_rank",
       ] as const;
 
       const prepared = await preparePlaygroundInput(
@@ -104,9 +103,6 @@ describe("playground/provider-pushdown", () => {
         }
         if (presetId === "activity_union") {
           expect(sqlText).toContain("union all");
-        }
-        if (presetId === "vendor_rank") {
-          expect(sqlText).toContain("dense_rank");
         }
       }
     },
