@@ -6,7 +6,6 @@ import {
 } from "@tupl/foundation";
 
 import type {
-  ProviderCapabilityAtom,
   ProviderCapabilityReport,
   ProviderRouteFamily,
   QueryFallbackPolicy,
@@ -251,8 +250,6 @@ export interface SqlRelationalSupportArgs<
   resolvedEntities: Record<string, TResolvedEntity>;
   rel: RelNode;
   routeFamily: ProviderRouteFamily;
-  requiredAtoms: ProviderCapabilityAtom[];
-  missingAtoms: ProviderCapabilityAtom[];
   strategy: SqlRelationalCompileStrategy | null;
   runtime: TRuntime;
 }
@@ -312,9 +309,7 @@ interface SqlRelationalProviderOptionsBase<
   compileOptions?: {
     requireColumnProjectMappings?: boolean;
   };
-  declaredAtoms?: readonly ProviderCapabilityAtom[];
   fallbackPolicy?: QueryFallbackPolicy;
-  routeFamilies?: readonly ProviderRouteFamily[];
   unsupportedRelReasonMessage?: string;
   unsupportedRelCompileMessage?: string;
   resolveEntityColumns?<TEntityName extends Extract<keyof TEntities, string>>(args: {
@@ -512,9 +507,7 @@ export function createSqlRelationalProviderAdapter<
   const baseOptions = {
     name: options.name,
     entities: options.entities,
-    ...(options.declaredAtoms ? { declaredAtoms: options.declaredAtoms } : {}),
     ...(options.fallbackPolicy ? { fallbackPolicy: options.fallbackPolicy } : {}),
-    ...(options.routeFamilies ? { routeFamilies: options.routeFamilies } : {}),
     ...(resolveEntityColumns ? { resolveEntityColumns } : {}),
     ...(options.unsupportedRelReasonMessage
       ? { unsupportedRelReasonMessage: options.unsupportedRelReasonMessage }
@@ -532,8 +525,6 @@ export function createSqlRelationalProviderAdapter<
             entities: TEntities;
             rel: RelNode;
             routeFamily: ProviderRouteFamily;
-            requiredAtoms: ProviderCapabilityAtom[];
-            missingAtoms: ProviderCapabilityAtom[];
             strategy: SqlRelationalCompileStrategy | null;
           }) {
             const runtime = options.resolveRuntime(args.context);
@@ -545,8 +536,6 @@ export function createSqlRelationalProviderAdapter<
                   resolvedEntities,
                   rel: args.rel,
                   routeFamily: args.routeFamily,
-                  requiredAtoms: args.requiredAtoms,
-                  missingAtoms: args.missingAtoms,
                   strategy: args.strategy as SqlRelationalCompileStrategy | null,
                   runtime: resolvedRuntime,
                 }),
@@ -559,8 +548,6 @@ export function createSqlRelationalProviderAdapter<
               resolvedEntities,
               rel: args.rel,
               routeFamily: args.routeFamily,
-              requiredAtoms: args.requiredAtoms,
-              missingAtoms: args.missingAtoms,
               strategy: args.strategy as SqlRelationalCompileStrategy | null,
               runtime,
             });

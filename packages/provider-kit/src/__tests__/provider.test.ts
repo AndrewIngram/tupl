@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { RelNode } from "@tupl/foundation";
 
 import {
+  buildCapabilityReport,
+  checkRequiredCapabilities,
   createDataEntityHandle,
   createRelationalProviderAdapter,
   type FragmentProviderAdapter,
@@ -223,7 +225,6 @@ describe("query/provider runtime", () => {
   it("creates and binds relational provider entity handles automatically", () => {
     const adapter = createRelationalProviderAdapter({
       name: "warehouse",
-      declaredAtoms: ["scan.project"] as const,
       entities: {
         orders: {
           shape: {
@@ -260,15 +261,20 @@ describe("query/provider runtime", () => {
     const requiredAtomsByCheck: ProviderCapabilityAtom[][] = [];
     const adapter = createRelationalProviderAdapter({
       name: "warehouse",
-      declaredAtoms: ["scan.project"] as const,
       entities: {
         orders: {},
       },
-      resolveRelCompileStrategy() {
+      resolveRelCompileStrategy({ rel }) {
+        const requirements = checkRequiredCapabilities(rel, ["scan.project"]);
+        requiredAtomsByCheck.push(requirements.requiredAtoms);
         return null;
       },
-      unsupportedRelReason() {
-        return "Rel fragment is not supported for this provider.";
+      unsupportedRelReason(args) {
+        return buildCapabilityReport(
+          args.rel,
+          ["scan.project"],
+          "Rel fragment is not supported for this provider.",
+        );
       },
       async compileRelFragment() {
         return Result.ok({
@@ -279,10 +285,6 @@ describe("query/provider runtime", () => {
       },
       async executeCompiledPlan() {
         return Result.ok([]);
-      },
-      isRelStrategySupported(args) {
-        requiredAtomsByCheck.push(args.requiredAtoms ?? []);
-        return true;
       },
     });
 
@@ -316,7 +318,7 @@ describe("query/provider runtime", () => {
       {},
     );
 
-    expect(requiredAtomsByCheck).toEqual([]);
+    expect(requiredAtomsByCheck).toEqual([["join.inner", "scan.project"]]);
     expect(capability).toEqual({
       supported: false,
       routeFamily: "rel-core",
@@ -335,7 +337,6 @@ describe("query/provider runtime", () => {
     }[] = [];
     const adapter = createRelationalProviderAdapter({
       name: "warehouse",
-      declaredAtoms: ["scan.project", "join.inner"] as const,
       entities: {
         orders: {},
       },
@@ -343,10 +344,11 @@ describe("query/provider runtime", () => {
         return "basic";
       },
       isRelStrategySupported(args) {
+        const requirements = checkRequiredCapabilities(args.rel, ["scan.project", "join.inner"]);
         observed.push({
           routeFamily: args.routeFamily,
-          requiredAtoms: args.requiredAtoms ?? [],
-          missingAtoms: args.missingAtoms ?? [],
+          requiredAtoms: requirements.requiredAtoms,
+          missingAtoms: requirements.missingAtoms,
           strategy: args.strategy,
         });
         return true;
@@ -407,7 +409,6 @@ describe("query/provider runtime", () => {
   it("bases scan fragment support on registered relational entities", async () => {
     const adapter = createRelationalProviderAdapter({
       name: "warehouse",
-      declaredAtoms: ["scan.project"] as const,
       entities: {
         orders: {},
       },
@@ -456,7 +457,6 @@ describe("query/provider runtime", () => {
   it("wires lookupMany only when relational lookup hooks are provided", async () => {
     const withoutLookup = createRelationalProviderAdapter({
       name: "warehouse",
-      declaredAtoms: ["scan.project"] as const,
       entities: {
         orders: {},
       },
@@ -476,7 +476,6 @@ describe("query/provider runtime", () => {
     });
     const withLookup = createRelationalProviderAdapter({
       name: "warehouse",
-      declaredAtoms: ["scan.project", "lookup.bulk"] as const,
       entities: {
         orders: {},
       },
@@ -2211,7 +2210,7 @@ describe("query/provider runtime", () => {
     );
   });
 
-  it("omits relational capability atoms unless the adapter declares them", () => {
+  it("keeps capability analysis out of the relational adapter surface", () => {
     const adapter = createRelationalProviderAdapter({
       name: "warehouse",
       entities: {
@@ -2224,8 +2223,7 @@ describe("query/provider runtime", () => {
         return Result.ok([]);
       },
     });
-
-    expect(adapter.capabilityAtoms).toBeUndefined();
+    expect("capabilityAtoms" in adapter).toBe(false);
   });
 
   it("builds the default relational compiled-plan payload when no custom compiler is provided", async () => {

@@ -11,7 +11,6 @@ import type {
 } from "@tupl/foundation";
 
 import type {
-  ProviderCapabilityAtom,
   ProviderCapabilityReport,
   ProviderEstimate,
   QueryFallbackPolicy,
@@ -54,8 +53,6 @@ export type { ProviderRuntimeBinding };
  */
 export interface ProviderAdapterBase<TContext = unknown> {
   name: string;
-  /** Capability atoms describe pushdown features supported by the adapter. */
-  capabilityAtoms?: ProviderCapabilityAtom[];
   /** Provider-local fallback policy is merged with per-query runtime overrides. */
   fallbackPolicy?: QueryFallbackPolicy;
   /**

@@ -11,7 +11,6 @@ import type {
   ProviderLookupManyRequest,
 } from "../shapes/lookup-optimization";
 import type {
-  ProviderCapabilityAtom,
   ProviderCapabilityReport,
   ProviderRouteFamily,
   QueryFallbackPolicy,
@@ -38,8 +37,6 @@ export interface RelationalProviderCapabilityContext<
   entities: TEntities;
   rel: RelNode;
   routeFamily: ProviderRouteFamily;
-  requiredAtoms?: ProviderCapabilityAtom[];
-  missingAtoms?: ProviderCapabilityAtom[];
   strategy: TStrategy | null;
 }
 
@@ -106,8 +103,6 @@ interface RelationalProviderAdapterOptionsBase<
   TStrategy extends RelationalProviderRelCompileStrategy,
 > {
   name: string;
-  /** Optional coarse metadata only; canExecute remains the source of truth. */
-  declaredAtoms?: readonly ProviderCapabilityAtom[];
   entities: TEntities;
   fallbackPolicy?: QueryFallbackPolicy;
   resolveEntityColumns?<TEntityName extends Extract<keyof TEntities, string>>(
@@ -120,7 +115,7 @@ interface RelationalProviderAdapterOptionsBase<
   }): MaybePromise<TStrategy | null>;
   unsupportedRelReason?(
     args: RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>,
-  ): string;
+  ): string | ProviderCapabilityReport;
   unsupportedRelReasonMessage?: string;
   unsupportedRelCompileMessage?: string;
   isRelStrategySupported?(

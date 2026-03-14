@@ -42,7 +42,7 @@ Implemented:
   - ranking: `ROW_NUMBER`, `RANK`, `DENSE_RANK`
   - aggregate windows: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
   - `PARTITION BY` + `ORDER BY` with default frame behavior
-- Provider capability atoms and route-family metadata for pushdown/rejection decisions
+- Provider capability helper vocabulary and route-family diagnostics for pushdown/rejection decisions
 - Structured fallback diagnostics with SQLSTATE-like classes
 - Query/runtime fallback policy controls for unsupported or expensive provider pushdown
 - Aggregate route (`aggregate(...)`) with local fallback when route is unavailable

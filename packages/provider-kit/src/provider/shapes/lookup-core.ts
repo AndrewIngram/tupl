@@ -1,8 +1,8 @@
 import { Result } from "better-result";
 
 import {
-  collectCapabilityAtomsForRel,
-  inferRouteFamilyForRel,
+  buildCapabilityReport,
+  type ProviderCapabilityAtom,
   type ProviderOperationResult,
   type ProviderCapabilityReport,
 } from "..";
@@ -17,16 +17,9 @@ export interface LookupEntityBinding<TColumns extends string = string> {
 export function buildLookupOnlyUnsupportedReport(
   rel: RelNode,
   reason: string,
-  supportedAtoms: readonly string[] = ["lookup.bulk"],
+  supportedAtoms: readonly ProviderCapabilityAtom[] = ["lookup.bulk"],
 ): ProviderCapabilityReport {
-  const requiredAtoms = collectCapabilityAtomsForRel(rel);
-  return {
-    supported: false,
-    reason,
-    routeFamily: inferRouteFamilyForRel(rel),
-    requiredAtoms,
-    missingAtoms: requiredAtoms.filter((atom) => !supportedAtoms.includes(atom)),
-  };
+  return buildCapabilityReport(rel, supportedAtoms, reason);
 }
 
 export function validateLookupRequest<TColumns extends string>(

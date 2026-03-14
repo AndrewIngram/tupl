@@ -1,9 +1,5 @@
 import type { RelNode } from "@tupl/foundation";
-import {
-  collectCapabilityAtomsForRel,
-  inferRouteFamilyForRel,
-  type ProviderCapabilityReport,
-} from "../capabilities";
+import { inferRouteFamilyForRel, type ProviderCapabilityReport } from "../capabilities";
 import type { MaybePromise } from "../operations";
 import type {
   RelationalProviderAdapterOptions,
@@ -40,7 +36,6 @@ export async function resolveRelationalCapabilityContext<
   rel: RelNode,
   context: TContext,
 ): Promise<RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>> {
-  const atomMetadata = buildAtomMetadata(options, rel);
   const routeFamily = inferRouteFamilyForRel(rel);
   const strategy = await options.resolveRelCompileStrategy({
     context,
@@ -52,7 +47,6 @@ export async function resolveRelationalCapabilityContext<
     entities: options.entities,
     rel,
     routeFamily,
-    ...atomMetadata,
     strategy,
   };
 
@@ -68,7 +62,6 @@ function evaluateRelationalCapability<
   rel: RelNode,
   context: TContext,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
-  const atomMetadata = buildAtomMetadata(options, rel);
   const routeFamily = inferRouteFamilyForRel(rel);
   const strategy = options.resolveRelCompileStrategy({
     context,
@@ -82,7 +75,6 @@ function evaluateRelationalCapability<
         entities: options.entities,
         rel,
         routeFamily,
-        ...atomMetadata,
         strategy: resolvedStrategy,
       }),
     );
@@ -93,7 +85,6 @@ function evaluateRelationalCapability<
     entities: options.entities,
     rel,
     routeFamily,
-    ...atomMetadata,
     strategy,
   });
 }
@@ -107,17 +98,17 @@ function evaluateRelationalCapabilityWithContext<
   capabilityContext: RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
   if (!capabilityContext.strategy) {
+    const unsupported =
+      options.unsupportedRelReason?.(capabilityContext) ??
+      options.unsupportedRelReasonMessage ??
+      "Rel fragment is not supported for this provider.";
+    if (typeof unsupported !== "string") {
+      return unsupported;
+    }
     return {
       supported: false,
       routeFamily: capabilityContext.routeFamily,
-      ...(capabilityContext.requiredAtoms
-        ? { requiredAtoms: capabilityContext.requiredAtoms }
-        : {}),
-      ...(capabilityContext.missingAtoms ? { missingAtoms: capabilityContext.missingAtoms } : {}),
-      reason:
-        options.unsupportedRelReason?.(capabilityContext) ??
-        options.unsupportedRelReasonMessage ??
-        "Rel fragment is not supported for this provider.",
+      reason: unsupported,
     };
   }
 
@@ -145,28 +136,8 @@ function normalizeCapabilitySupport<
     return {
       supported: false,
       routeFamily: capabilityContext.routeFamily,
-      ...(capabilityContext.requiredAtoms
-        ? { requiredAtoms: capabilityContext.requiredAtoms }
-        : {}),
-      ...(capabilityContext.missingAtoms ? { missingAtoms: capabilityContext.missingAtoms } : {}),
       reason: support,
     };
   }
   return support;
-}
-
-function buildAtomMetadata<
-  TContext,
-  TEntities extends Record<string, RelationalProviderEntityConfig>,
-  TStrategy extends string,
->(options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>, rel: RelNode) {
-  if (!options.declaredAtoms) {
-    return null;
-  }
-
-  const requiredAtoms = collectCapabilityAtomsForRel(rel);
-  return {
-    requiredAtoms,
-    missingAtoms: requiredAtoms.filter((atom) => !options.declaredAtoms?.includes(atom)),
-  };
 }

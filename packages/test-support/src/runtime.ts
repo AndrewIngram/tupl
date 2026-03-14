@@ -66,7 +66,6 @@ import { aggregateArrayRows, scanArrayRows } from "./methods";
 type ProviderInput<TContext> = {
   name?: string;
   entities?: Record<string, unknown>;
-  capabilityAtoms?: readonly string[];
   fallbackPolicy?: unknown;
   canExecute(rel: RelNode, context: TContext): unknown;
   estimate?(rel: RelNode, context: TContext): unknown;

@@ -2,7 +2,7 @@
 
 This document maps route families, capability atoms, and practical SQL coverage.
 
-Route families are coarse. Capability atoms are the real unit of support.
+Route families are coarse. Capability atoms are a reusable helper vocabulary for capability analysis inside `canExecute(...)`, not declared adapter metadata.
 
 ## Route Families
 

@@ -1,6 +1,6 @@
 import {
-  collectCapabilityAtomsForRel,
-  inferRouteFamilyForRel,
+  buildCapabilityReport,
+  type ProviderCapabilityAtom,
   type ProviderCapabilityReport,
 } from "..";
 import type { RelNode } from "@tupl/foundation";
@@ -11,15 +11,8 @@ export interface ScanEntityBinding {
 
 export function buildScanUnsupportedReport(
   rel: RelNode,
-  supportedAtoms: readonly string[],
+  supportedAtoms: readonly ProviderCapabilityAtom[],
   reason: string,
 ): ProviderCapabilityReport {
-  const requiredAtoms = collectCapabilityAtomsForRel(rel);
-  return {
-    supported: false,
-    reason,
-    routeFamily: inferRouteFamilyForRel(rel),
-    requiredAtoms,
-    missingAtoms: requiredAtoms.filter((atom) => !supportedAtoms.includes(atom)),
-  };
+  return buildCapabilityReport(rel, supportedAtoms, reason);
 }

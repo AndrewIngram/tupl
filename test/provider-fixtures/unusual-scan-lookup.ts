@@ -30,14 +30,6 @@ const entities = {
 export function createUnusualScanLookupFixtureProvider() {
   return createRelationalProviderAdapter({
     name: "fixture_scan_lookup",
-    declaredAtoms: [
-      "scan.project",
-      "scan.filter.basic",
-      "scan.filter.set_membership",
-      "scan.sort",
-      "scan.limit_offset",
-      "lookup.bulk",
-    ] as const,
     entities,
     resolveRelCompileStrategy({ rel }) {
       return extractSimpleRelScanRequest(rel) ? "simple_scan" : null;

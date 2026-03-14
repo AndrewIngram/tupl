@@ -6,10 +6,9 @@ import {
 import {
   AdapterResult,
   bindProviderEntities,
-  collectCapabilityAtomsForRel,
+  buildCapabilityReport,
   createDataEntityHandle,
   extractSimpleRelScanRequest,
-  inferRouteFamilyForRel,
   normalizeDataEntityShape,
   type DataEntityHandle,
   type DataEntityShape,
@@ -145,14 +144,7 @@ function isValidRedis(redis: RedisLike | null | undefined): redis is RedisLike {
 }
 
 function buildUnsupportedCapabilityReport(rel: RelNode, reason: string): ProviderCapabilityReport {
-  const requiredAtoms = collectCapabilityAtomsForRel(rel);
-  return {
-    supported: false,
-    reason,
-    routeFamily: inferRouteFamilyForRel(rel),
-    requiredAtoms,
-    missingAtoms: requiredAtoms.filter((atom) => !REDIS_CAPABILITY_ATOMS.includes(atom)),
-  };
+  return buildCapabilityReport(rel, REDIS_CAPABILITY_ATOMS, reason);
 }
 
 function resolveRedisResult<TContext>(
@@ -541,7 +533,6 @@ export function createIoredisProvider<
 
   const adapter = {
     name: providerName,
-    capabilityAtoms: [...REDIS_CAPABILITY_ATOMS],
     entities: handles,
     canExecute(rel) {
       const payload = buildRelExecutionPayload(rel, entitiesByName, providerName);

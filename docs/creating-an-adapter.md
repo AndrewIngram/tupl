@@ -9,7 +9,7 @@ The core contract is intentionally small:
 - `describeCompiledPlan?(plan)`: optional explain/debug surface
 - `execute(plan)`: runs the provider-specific plan and returns canonical rows
 
-Capability atoms are optional metadata only. They can help explain or cheaply prefilter, but they are not the semantic contract.
+Capability atoms are optional helper vocabulary only. If they are useful, use provider-kit helpers inside `canExecute(...)` to collect required atoms or build structured unsupported reports. They are not declared adapter metadata.
 
 ## Minimal Adapter Skeleton
 
@@ -140,19 +140,19 @@ Use it when it materially simplifies provider code:
 
 If a provider never needs these helpers, that is fine.
 
-## Optional Atoms
+## Optional Capability Helpers
 
-Atoms are coarse metadata only.
+Atoms are coarse helper vocabulary only.
 
 They are useful for:
 
 - explain diagnostics
-- cheap prefiltering before a deeper `canExecute` check
-- documenting broad provider intent
+- cheap first-pass checks inside `canExecute(...)`
+- documenting broad provider intent in provider-local code
 
 They should stay broad. If support depends on entity, field, operator, or operator combination, that logic belongs in `canExecute(...)`.
 
-If atoms stop pulling their weight for a provider, omit them.
+If they help, prefer helper calls such as `checkRequiredCapabilities(rel, supportedAtoms)` or `buildCapabilityReport(rel, supportedAtoms, reason)` instead of exposing separate adapter metadata.
 
 ## Wiring the Adapter Into a Facade Schema
 

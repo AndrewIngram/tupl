@@ -69,6 +69,13 @@ export interface ProviderEstimate {
   cost: number;
 }
 
+export interface ProviderCapabilityRequirementReport {
+  supported: boolean;
+  routeFamily: ProviderRouteFamily;
+  requiredAtoms: ProviderCapabilityAtom[];
+  missingAtoms: ProviderCapabilityAtom[];
+}
+
 export function normalizeCapability(
   capability: boolean | ProviderCapabilityReport,
 ): ProviderCapabilityReport {
@@ -93,6 +100,49 @@ export function collectCapabilityAtomsForRel(rel: RelNode): ProviderCapabilityAt
   const atoms = new Set<ProviderCapabilityAtom>();
   collectCapabilityAtomsForNode(rel, atoms);
   return [...atoms];
+}
+
+export function checkRequiredCapabilities(
+  rel: RelNode,
+  supportedAtoms: readonly ProviderCapabilityAtom[],
+): ProviderCapabilityRequirementReport {
+  const requiredAtoms = collectCapabilityAtomsForRel(rel);
+  const missingAtoms = requiredAtoms.filter((atom) => !supportedAtoms.includes(atom));
+
+  return {
+    supported: missingAtoms.length === 0,
+    routeFamily: inferRouteFamilyForRel(rel),
+    requiredAtoms,
+    missingAtoms,
+  };
+}
+
+export function hasAnyRequiredCapabilities(
+  rel: RelNode,
+  atoms: readonly ProviderCapabilityAtom[],
+): boolean {
+  if (atoms.length === 0) {
+    return false;
+  }
+
+  const atomSet = new Set(atoms);
+  return collectCapabilityAtomsForRel(rel).some((atom) => atomSet.has(atom));
+}
+
+export function buildCapabilityReport(
+  rel: RelNode,
+  supportedAtoms: readonly ProviderCapabilityAtom[],
+  reason: string,
+): ProviderCapabilityReport {
+  const requirements = checkRequiredCapabilities(rel, supportedAtoms);
+
+  return {
+    supported: false,
+    reason,
+    routeFamily: requirements.routeFamily,
+    requiredAtoms: requirements.requiredAtoms,
+    missingAtoms: requirements.missingAtoms,
+  };
 }
 
 function collectCapabilityAtomsForNode(node: RelNode, atoms: Set<ProviderCapabilityAtom>): void {

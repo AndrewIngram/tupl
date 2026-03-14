@@ -95,7 +95,7 @@ That keeps the public authoring model small while still allowing runtime optimiz
 
 Only add scan support if your backend has a rational way to do it.
 
-Typical coarse atoms, if you choose to declare them:
+Typical coarse atoms, if you choose to use helper-based checks inside `canExecute(...)`:
 
 - `scan.project`
 - `scan.filter.basic`
@@ -140,9 +140,9 @@ A good KV provider is usually stricter than a relational one here. Silent fallba
 
 ## Practical Capability Shape
 
-A healthy KV provider might declare no atoms at all and still work correctly.
+A healthy KV provider might use no atoms at all and still work correctly.
 
-If it does declare atoms, keep them sparse:
+If it does use atom helpers, keep them sparse:
 
 - maybe `scan.project`
 - maybe `scan.filter.basic`

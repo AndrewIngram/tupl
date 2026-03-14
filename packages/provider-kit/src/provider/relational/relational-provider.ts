@@ -21,8 +21,6 @@ import type {
   RelationalProviderRelCompileStrategy,
 } from "./relational-adapter-types";
 
-const LOOKUP_CAPABILITY_ATOM = "lookup.bulk" as const;
-
 export type {
   LookupCapableRelationalProviderAdapter,
   RelationalProviderAdapterOptions,
@@ -37,16 +35,6 @@ export type {
   RelationalProviderRelCompileStrategy,
   RelationalProviderSupportArgs,
 } from "./relational-adapter-types";
-
-function getCapabilityAtoms<TAtoms extends readonly string[] | undefined>(
-  declaredAtoms: TAtoms,
-  includeLookupAtom: boolean,
-) {
-  const atoms = [
-    ...new Set([...(declaredAtoms ?? []), ...(includeLookupAtom ? [LOOKUP_CAPABILITY_ATOM] : [])]),
-  ];
-  return atoms.length > 0 ? atoms : undefined;
-}
 
 function resolveLookupManyHandler<
   TContext,
@@ -127,11 +115,8 @@ export function createRelationalProviderAdapter<
     | RelationalLookupProviderAdapterOptions<TContext, TEntities, TStrategy>,
 ): RelationalProviderAdapter<TContext, TEntities> {
   const lookupManyHandler = resolveLookupManyHandler(options);
-  const hasLookupMany = lookupManyHandler != null;
-  const capabilityAtoms = getCapabilityAtoms(options.declaredAtoms, hasLookupMany);
   const adapter = {
     name: options.name,
-    ...(capabilityAtoms ? { capabilityAtoms } : {}),
     ...(options.fallbackPolicy ? { fallbackPolicy: options.fallbackPolicy } : {}),
     canExecute(rel: RelNode, context: TContext) {
       return canExecuteRelationalFragment(options, rel, context);
