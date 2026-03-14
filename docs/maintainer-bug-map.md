@@ -18,7 +18,7 @@ This guide is the fastest route to the owning module when a bug report lands.
   start in the provider package `planning/rel-builder.ts` backend hooks
 - Drizzle pushdown or SQL-expression translation bug:
   start in `packages/provider-drizzle/src/planning`
-- Scan/lookup execution bug inside one provider:
+- Scan or keyed-helper execution bug inside one provider:
   start in that provider package `execution/`
 - SQL lowering bug for joins, pushed filters, or semi-joins:
   start in `packages/planner/src/planner/select/select-join-tree.ts`
