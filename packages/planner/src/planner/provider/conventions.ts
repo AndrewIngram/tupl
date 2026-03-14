@@ -41,6 +41,8 @@ export function resolveSingleProvider(
       case "sort":
       case "limit_offset":
         return visit(current.input, scopedCteNames);
+      case "correlate":
+        return false;
       case "join":
       case "set_op":
         return visit(current.left, scopedCteNames) && visit(current.right, scopedCteNames);
@@ -101,6 +103,16 @@ export function assignConventions(
         ...node,
         input,
         convention: provider ? (`provider:${provider}` as const) : "local",
+      };
+    }
+    case "correlate": {
+      const left = assignConventions(node.left, schema, cteNames);
+      const right = assignConventions(node.right, schema, cteNames);
+      return {
+        ...node,
+        left,
+        right,
+        convention: "local",
       };
     }
     case "join":
@@ -207,6 +219,8 @@ function findFirstScanNode(node: RelNode): RelScanNode | null {
     case "sort":
     case "limit_offset":
       return findFirstScanNode(node.input);
+    case "correlate":
+      return findFirstScanNode(node.left) ?? findFirstScanNode(node.right);
     case "join":
     case "set_op":
       return findFirstScanNode(node.left) ?? findFirstScanNode(node.right);

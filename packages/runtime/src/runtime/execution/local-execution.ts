@@ -124,6 +124,13 @@ export async function executeRelNodeResult<TContext>(
       return executeScanResult(node, context);
     case "values":
       return executeValuesResult(node);
+    case "correlate":
+      return Result.err(
+        new TuplExecutionError({
+          operation: "execute relational node",
+          message: "Correlate nodes must be decorrelated before execution.",
+        }),
+      );
     case "join":
       return executeJoinResult(node, context);
     case "filter":

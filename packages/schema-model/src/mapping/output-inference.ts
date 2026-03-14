@@ -27,6 +27,8 @@ export function inferRelOutputDefinitions(
     case "sort":
     case "limit_offset":
       return inferRelOutputDefinitions(rel.input, schema, cteDefinitions);
+    case "correlate":
+      return inferRelOutputDefinitions(rel.left, schema, cteDefinitions);
     case "project": {
       const inputDefinitions = inferRelOutputDefinitions(rel.input, schema, cteDefinitions);
       return Object.fromEntries(

@@ -45,6 +45,22 @@ export async function planPhysicalNodeResult<TContext>(
             summary: `Local fallback scan for ${node.table}`,
           }),
         );
+      case "correlate": {
+        const left = yield* Result.await(
+          planPhysicalNodeResult(node.left, schema, providers, context, state),
+        );
+        const right = yield* Result.await(
+          planPhysicalNodeResult(node.right, schema, providers, context, state),
+        );
+        return Result.ok(
+          recordPhysicalStep(state, {
+            id: nextPhysicalStepId("local_filter"),
+            kind: "local_filter",
+            dependsOn: [left, right],
+            summary: "Local correlated subquery rewrite",
+          }),
+        );
+      }
       case "filter":
       case "project":
       case "aggregate":

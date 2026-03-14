@@ -90,6 +90,8 @@ export function canCompileBasicRel(
     case "sort":
     case "limit_offset":
       return canCompileBasicRel(node.input, isKnownScan, options);
+    case "correlate":
+      return false;
     case "join":
       return (
         canCompileBasicRel(node.left, isKnownScan, options) &&
@@ -269,6 +271,10 @@ export function extractRelPipeline(node: RelNode): RelationalPipeline {
         limitOffset = current;
         current = current.input;
         continue;
+      case "correlate":
+        throw new UnsupportedRelationalPlanError(
+          'Rel node "correlate" is not supported in single-query pushdown.',
+        );
       case "scan":
       case "join":
         return {
@@ -318,6 +324,8 @@ export function unwrapSetOpRel(node: RelNode): RelationalSetOpWrapper | null {
         limitOffset = current;
         current = current.input;
         continue;
+      case "correlate":
+        return null;
       case "set_op":
         return {
           setOp: current,
@@ -373,6 +381,8 @@ export function unwrapWithBodyRel(node: RelNode): RelationalWithBodyWrapper | nu
         window = current;
         current = current.input;
         continue;
+      case "correlate":
+        return null;
       case "scan":
         return {
           cteScan: current,

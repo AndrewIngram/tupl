@@ -117,4 +117,25 @@ describe("rel model", () => {
 
     expect(collectRelTables(rel)).toEqual(["edges", "nodes"]);
   });
+
+  it("counts correlate nodes while preserving only physical table references", () => {
+    const rel: RelNode = {
+      id: "correlate_1",
+      kind: "correlate",
+      convention: "logical",
+      left: buildScan("orders"),
+      right: buildScan("users"),
+      correlation: {
+        outer: { alias: "orders", column: "user_id" },
+        inner: { alias: "users", column: "id" },
+      },
+      apply: {
+        kind: "semi",
+      },
+      output: [{ name: "orders.id" }],
+    };
+
+    expect(countRelNodes(rel)).toBe(3);
+    expect(collectRelTables(rel)).toEqual(["orders", "users"]);
+  });
 });

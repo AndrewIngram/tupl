@@ -55,6 +55,23 @@ export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition)
                 },
           ),
         };
+      case "correlate":
+        return {
+          ...current,
+          left: visit(current.left),
+          right: visit(current.right),
+          correlation: {
+            outer: mapColumnRefForAlias(current.correlation.outer, aliasToSource),
+            inner: mapColumnRefForAlias(current.correlation.inner, aliasToSource),
+          },
+          apply:
+            current.apply.kind === "scalar_filter"
+              ? {
+                  ...current.apply,
+                  outerCompare: mapColumnRefForAlias(current.apply.outerCompare, aliasToSource),
+                }
+              : current.apply,
+        };
       case "join":
         return {
           ...current,
@@ -147,6 +164,12 @@ function simplifyProviderProjects(node: RelNode): RelNode {
       return {
         ...node,
         input: simplifyProviderProjects(node.input),
+      };
+    case "correlate":
+      return {
+        ...node,
+        left: simplifyProviderProjects(node.left),
+        right: simplifyProviderProjects(node.right),
       };
     case "join":
     case "set_op":

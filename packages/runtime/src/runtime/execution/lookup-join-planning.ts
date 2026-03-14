@@ -93,6 +93,8 @@ function findFirstScanForPlan(node: RelNode): Extract<RelNode, { kind: "scan" }>
     case "sort":
     case "limit_offset":
       return findFirstScanForPlan(node.input);
+    case "correlate":
+      return null;
     case "join":
     case "set_op":
       return findFirstScanForPlan(node.left) ?? findFirstScanForPlan(node.right);

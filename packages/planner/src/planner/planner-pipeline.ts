@@ -5,7 +5,9 @@ import type { PhysicalPlan } from "./physical/physical";
 import type { ProvidersMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
 import { lowerSqlToRelResult, type RelLoweringResult } from "./sql-lowering";
+import { toRelRewriteError } from "./planner-errors";
 import { planPhysicalQueryResult } from "./physical-planning";
+import { decorrelateRel } from "./subqueries/decorrelation";
 import { expandRelViewsResult } from "./view-expansion";
 
 export interface LogicalQueryPlan {
@@ -29,7 +31,14 @@ export function rewriteLogicalRelResult<TContext>(
   schema: SchemaDefinition,
   context?: TContext,
 ) {
-  return expandRelViewsResult(rel, schema, context);
+  return Result.gen(function* () {
+    const decorrelated = yield* Result.try({
+      try: () => decorrelateRel(rel),
+      catch: (error) => toRelRewriteError(error, "decorrelate logical rel"),
+    });
+
+    return expandRelViewsResult(decorrelated, schema, context);
+  });
 }
 
 export function buildLogicalQueryPlanResult<TContext>(

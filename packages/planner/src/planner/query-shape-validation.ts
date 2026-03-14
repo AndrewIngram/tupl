@@ -7,7 +7,7 @@ import {
   parseSupportedCorrelatedExistsSubquery,
   parseSupportedCorrelatedInSubquery,
   parseSupportedCorrelatedScalarAggregateSubquery,
-} from "./expr/expr-subqueries";
+} from "./subqueries/analysis";
 
 /**
  * Query-shape validation owns the unsupported SQL checks that run before relational lowering.

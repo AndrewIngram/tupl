@@ -2,6 +2,7 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildLogicalQueryPlanResult,
   buildProviderFragmentForRelResult,
   expandRelViewsResult,
   lowerSqlToRelResult,
@@ -12,6 +13,13 @@ import { finalizeProviders } from "@tupl/test-support/runtime";
 
 function lowerSqlToRel(sql: string, schema: Parameters<typeof lowerSqlToRelResult>[1]) {
   return lowerSqlToRelResult(sql, schema).unwrap();
+}
+
+function buildLogicalQueryPlan(
+  sql: string,
+  schema: Parameters<typeof buildLogicalQueryPlanResult>[1],
+) {
+  return buildLogicalQueryPlanResult(sql, schema, {}).unwrap();
 }
 
 async function planPhysicalQuery<TContext>(
@@ -586,7 +594,7 @@ describe("query/planning", () => {
     expect(lowered.rel.input.joinType).toBe("semi");
   });
 
-  it("lowers supported correlated EXISTS to a semi join", () => {
+  it("lowers supported correlated EXISTS to an explicit correlate node", () => {
     const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
@@ -622,16 +630,61 @@ describe("query/planning", () => {
     if (lowered.rel.kind !== "project") {
       throw new Error("Expected project root.");
     }
-    expect(lowered.rel.input.kind).toBe("join");
-    if (lowered.rel.input.kind !== "join") {
-      throw new Error("Expected semi join input.");
+    expect(lowered.rel.input.kind).toBe("correlate");
+    if (lowered.rel.input.kind !== "correlate") {
+      throw new Error("Expected correlate input.");
     }
-    expect(lowered.rel.input.joinType).toBe("semi");
-    expect(lowered.rel.input.leftKey).toEqual({ alias: "o", column: "user_id" });
-    expect(lowered.rel.input.right.output.some((column) => column.name === "u.id")).toBe(true);
+    expect(lowered.rel.input.apply).toEqual({ kind: "semi" });
+    expect(lowered.rel.input.correlation).toEqual({
+      outer: { alias: "o", column: "user_id" },
+      inner: { alias: "u", column: "id" },
+    });
   });
 
-  it("lowers supported correlated NOT EXISTS to a left join plus null filter", () => {
+  it("lowers supported correlated EXISTS to a semi join after rewrite", () => {
+    const schema = buildEntitySchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          user_id: "text",
+        },
+      },
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          team_id: "text",
+        },
+      },
+    });
+
+    const planned = buildLogicalQueryPlan(
+      `
+        SELECT o.id
+        FROM orders o
+        WHERE EXISTS (
+          SELECT 1
+          FROM users u
+          WHERE u.id = o.user_id
+            AND u.team_id = 'team_smb'
+        )
+      `,
+      schema,
+    );
+
+    expect(planned.rewrittenRel.kind).toBe("project");
+    if (planned.rewrittenRel.kind !== "project") {
+      throw new Error("Expected project root.");
+    }
+    expect(planned.rewrittenRel.input.kind).toBe("join");
+    if (planned.rewrittenRel.input.kind !== "join") {
+      throw new Error("Expected semi join input.");
+    }
+    expect(planned.rewrittenRel.input.joinType).toBe("semi");
+  });
+
+  it("lowers supported correlated NOT EXISTS to an explicit correlate node", () => {
     const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
@@ -667,22 +720,65 @@ describe("query/planning", () => {
     if (lowered.rel.kind !== "project") {
       throw new Error("Expected project root.");
     }
-    expect(lowered.rel.input.kind).toBe("project");
-    if (lowered.rel.input.kind !== "project") {
-      throw new Error("Expected cleanup project after anti-join emulation.");
+    expect(lowered.rel.input.kind).toBe("correlate");
+    if (lowered.rel.input.kind !== "correlate") {
+      throw new Error("Expected correlate input.");
     }
-    expect(lowered.rel.input.input.kind).toBe("filter");
-    if (lowered.rel.input.input.kind !== "filter") {
-      throw new Error("Expected is-null filter above left join.");
-    }
-    expect(lowered.rel.input.input.input.kind).toBe("join");
-    if (lowered.rel.input.input.input.kind !== "join") {
-      throw new Error("Expected left join input.");
-    }
-    expect(lowered.rel.input.input.input.joinType).toBe("left");
+    expect(lowered.rel.input.apply).toEqual({ kind: "anti" });
   });
 
-  it("lowers supported correlated IN to a semi join", () => {
+  it("lowers supported correlated NOT EXISTS to anti-join rewrite shape", () => {
+    const schema = buildEntitySchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          user_id: "text",
+        },
+      },
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          team_id: "text",
+        },
+      },
+    });
+
+    const planned = buildLogicalQueryPlan(
+      `
+        SELECT o.id
+        FROM orders o
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM users u
+          WHERE u.id = o.user_id
+            AND u.team_id = 'team_smb'
+        )
+      `,
+      schema,
+    );
+
+    expect(planned.rewrittenRel.kind).toBe("project");
+    if (planned.rewrittenRel.kind !== "project") {
+      throw new Error("Expected project root.");
+    }
+    expect(planned.rewrittenRel.input.kind).toBe("project");
+    if (planned.rewrittenRel.input.kind !== "project") {
+      throw new Error("Expected cleanup project after anti-join emulation.");
+    }
+    expect(planned.rewrittenRel.input.input.kind).toBe("filter");
+    if (planned.rewrittenRel.input.input.kind !== "filter") {
+      throw new Error("Expected is-null filter above left join.");
+    }
+    expect(planned.rewrittenRel.input.input.input.kind).toBe("join");
+    if (planned.rewrittenRel.input.input.input.kind !== "join") {
+      throw new Error("Expected left join input.");
+    }
+    expect(planned.rewrittenRel.input.input.input.joinType).toBe("left");
+  });
+
+  it("lowers supported correlated IN to an explicit correlate node", () => {
     const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
@@ -718,15 +814,18 @@ describe("query/planning", () => {
     if (lowered.rel.kind !== "project") {
       throw new Error("Expected project root.");
     }
-    expect(lowered.rel.input.kind).toBe("join");
-    if (lowered.rel.input.kind !== "join") {
-      throw new Error("Expected semi join input.");
+    expect(lowered.rel.input.kind).toBe("correlate");
+    if (lowered.rel.input.kind !== "correlate") {
+      throw new Error("Expected correlate input.");
     }
-    expect(lowered.rel.input.joinType).toBe("semi");
-    expect(lowered.rel.input.leftKey).toEqual({ alias: "o", column: "user_id" });
+    expect(lowered.rel.input.apply).toEqual({ kind: "semi" });
+    expect(lowered.rel.input.correlation).toEqual({
+      outer: { alias: "o", column: "user_id" },
+      inner: { alias: "u", column: "id" },
+    });
   });
 
-  it("lowers supported correlated scalar aggregate predicates to join plus filter", () => {
+  it("lowers supported correlated scalar aggregate predicates to an explicit correlate node", () => {
     const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
@@ -755,19 +854,61 @@ describe("query/planning", () => {
     if (lowered.rel.kind !== "project") {
       throw new Error("Expected project root.");
     }
-    expect(lowered.rel.input.kind).toBe("filter");
-    if (lowered.rel.input.kind !== "filter") {
+    expect(lowered.rel.input.kind).toBe("correlate");
+    if (lowered.rel.input.kind !== "correlate") {
+      throw new Error("Expected correlate input.");
+    }
+    expect(lowered.rel.input.apply).toEqual({
+      kind: "scalar_filter",
+      comparison: "=",
+      outerCompare: { alias: "o", column: "total_cents" },
+      correlationColumn: "__tupl_scalar_corr_key",
+      metricColumn: "__tupl_scalar_metric",
+    });
+  });
+
+  it("lowers supported correlated scalar aggregate predicates to join plus filter after rewrite", () => {
+    const schema = buildEntitySchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          user_id: "text",
+          total_cents: "integer",
+        },
+      },
+    });
+
+    const planned = buildLogicalQueryPlan(
+      `
+        SELECT o.id
+        FROM orders o
+        WHERE o.total_cents = (
+          SELECT MAX(i.total_cents)
+          FROM orders i
+          WHERE i.user_id = o.user_id
+        )
+      `,
+      schema,
+    );
+
+    expect(planned.rewrittenRel.kind).toBe("project");
+    if (planned.rewrittenRel.kind !== "project") {
+      throw new Error("Expected project root.");
+    }
+    expect(planned.rewrittenRel.input.kind).toBe("project");
+    if (planned.rewrittenRel.input.kind !== "project") {
+      throw new Error("Expected cleanup project after scalar correlate rewrite.");
+    }
+    expect(planned.rewrittenRel.input.input.kind).toBe("filter");
+    if (planned.rewrittenRel.input.input.kind !== "filter") {
       throw new Error("Expected comparison filter above join.");
     }
-    expect(lowered.rel.input.input.kind).toBe("join");
-    if (lowered.rel.input.input.kind !== "join") {
+    expect(planned.rewrittenRel.input.input.input.kind).toBe("join");
+    if (planned.rewrittenRel.input.input.input.kind !== "join") {
       throw new Error("Expected join input.");
     }
-    expect(lowered.rel.input.input.joinType).toBe("inner");
-    expect(lowered.rel.input.input.right.output.map((column) => column.name)).toEqual([
-      "__tupl_scalar_corr_key",
-      "__tupl_scalar_metric",
-    ]);
+    expect(planned.rewrittenRel.input.input.input.joinType).toBe("inner");
   });
 
   it("lowers UNION ALL to structured set_op rel", () => {

@@ -116,6 +116,8 @@ function getExplainFragmentChildren(node: RelNode): RelNode[] {
     case "sort":
     case "limit_offset":
       return [node.input];
+    case "correlate":
+      return [node.left, node.right];
     case "join":
     case "set_op":
       return [node.left, node.right];

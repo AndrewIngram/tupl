@@ -60,6 +60,13 @@ export async function prepareSubqueryResultsResult<TContext>(
     case "scan":
     case "values":
       return Result.ok(undefined);
+    case "correlate": {
+      const leftResult = await prepareSubqueryResultsResult(node.left, context);
+      if (Result.isError(leftResult)) {
+        return leftResult;
+      }
+      return prepareSubqueryResultsResult(node.right, context);
+    }
     case "filter": {
       const inputResult = await prepareSubqueryResultsResult(node.input, context);
       if (Result.isError(inputResult)) {

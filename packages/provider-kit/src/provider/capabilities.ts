@@ -155,6 +155,10 @@ function collectCapabilityAtomsForRel(node: RelNode, atoms: Set<ProviderCapabili
       }
       collectCapabilityAtomsForRel(node.input, atoms);
       return;
+    case "correlate":
+      collectCapabilityAtomsForRel(node.left, atoms);
+      collectCapabilityAtomsForRel(node.right, atoms);
+      return;
     case "join":
       atoms.add(node.joinType === "inner" ? "join.inner" : "join.left");
       if (node.joinType === "right" || node.joinType === "full") {
@@ -331,6 +335,7 @@ function addFilterAtom(atoms: Set<ProviderCapabilityAtom>, op: ScanFilterClause[
 function hasAdvancedRelFeatures(node: RelNode): boolean {
   switch (node.kind) {
     case "window":
+    case "correlate":
     case "with":
     case "repeat_union":
     case "set_op":

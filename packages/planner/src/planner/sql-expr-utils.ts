@@ -14,13 +14,12 @@ export {
   resolveColumnRef,
   toRawColumnRef,
 } from "./expr/expr-column-refs";
+export { isCorrelatedSubquery, parseSubqueryAst } from "./subqueries/analysis";
 export {
-  isCorrelatedSubquery,
   parseNamedWindowSpecifications,
   parseWindowFrameClause,
-  parseSubqueryAst,
   parseWindowOver,
-} from "./expr/expr-subqueries";
+} from "./windows/window-specifications";
 export {
   mapBinaryOperatorToRelFunction,
   readWindowFunctionName,

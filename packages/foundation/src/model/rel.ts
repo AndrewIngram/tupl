@@ -133,6 +133,31 @@ export interface RelJoinNode extends RelNodeBase {
   rightKey: RelColumnRef;
 }
 
+/** Correlate nodes preserve explicit outer-scope dependency until the planner decorrelates them. */
+export interface RelCorrelateNode extends RelNodeBase {
+  kind: "correlate";
+  left: RelNode;
+  right: RelNode;
+  correlation: {
+    outer: RelColumnRef;
+    inner: RelColumnRef;
+  };
+  apply:
+    | {
+        kind: "semi";
+      }
+    | {
+        kind: "anti";
+      }
+    | {
+        kind: "scalar_filter";
+        comparison: string;
+        outerCompare: RelColumnRef;
+        correlationColumn: string;
+        metricColumn: string;
+      };
+}
+
 /** Rank window functions compute rank-style outputs over one partitioned and ordered input. */
 export interface RelWindowFrame {
   mode: "rows" | "range" | "groups";
@@ -243,6 +268,7 @@ export type RelNode =
   | RelFilterNode
   | RelProjectNode
   | RelJoinNode
+  | RelCorrelateNode
   | RelAggregateNode
   | RelWindowNode
   | RelSortNode
@@ -308,6 +334,8 @@ export function countRelNodes(node: RelNode): number {
     case "sort":
     case "limit_offset":
       return 1 + countRelNodes(node.input);
+    case "correlate":
+      return 1 + countRelNodes(node.left) + countRelNodes(node.right);
     case "join":
     case "set_op":
       return 1 + countRelNodes(node.left) + countRelNodes(node.right);
@@ -353,6 +381,10 @@ export function collectRelTables(node: RelNode): string[] {
       case "sort":
       case "limit_offset":
         visit(current.input, scopedCteNames);
+        return;
+      case "correlate":
+        visit(current.left, scopedCteNames);
+        visit(current.right, scopedCteNames);
         return;
       case "join":
       case "set_op":

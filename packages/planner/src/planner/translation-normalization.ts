@@ -163,6 +163,26 @@ function normalizeRelNode(rel: RelNode, state: RelNormalizationState): unknown {
         left: normalizeRelNode(rel.left, state),
         right: normalizeRelNode(rel.right, state),
       };
+    case "correlate":
+      return {
+        ...base,
+        correlation: {
+          outer: normalizeColumnRef(rel.correlation.outer),
+          inner: normalizeColumnRef(rel.correlation.inner),
+        },
+        apply:
+          rel.apply.kind === "scalar_filter"
+            ? {
+                kind: "scalar_filter",
+                comparison: rel.apply.comparison,
+                outerCompare: normalizeColumnRef(rel.apply.outerCompare),
+                correlationColumn: rel.apply.correlationColumn,
+                metricColumn: rel.apply.metricColumn,
+              }
+            : rel.apply,
+        left: normalizeRelNode(rel.left, state),
+        right: normalizeRelNode(rel.right, state),
+      };
     case "aggregate":
       return {
         ...base,

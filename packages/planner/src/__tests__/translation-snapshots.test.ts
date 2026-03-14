@@ -2,6 +2,7 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildLogicalQueryPlanResult,
   expandRelViewsResult,
   lowerSqlToRelResult,
   normalizePhysicalPlanForSnapshot,
@@ -13,6 +14,13 @@ import { finalizeProviders } from "@tupl/test-support/runtime";
 
 function lowerSqlToRel(sql: string, schema: Parameters<typeof lowerSqlToRelResult>[1]) {
   return lowerSqlToRelResult(sql, schema).unwrap();
+}
+
+function buildLogicalQueryPlan(
+  sql: string,
+  schema: Parameters<typeof buildLogicalQueryPlanResult>[1],
+) {
+  return buildLogicalQueryPlanResult(sql, schema, {}).unwrap();
 }
 
 async function planPhysicalQuery<TContext>(
@@ -626,7 +634,7 @@ describe("query/translation-snapshots", () => {
     `);
   });
 
-  it("captures correlated exists after decorrelation into a semi join tree", () => {
+  it("captures correlated exists before and after decorrelation", () => {
     const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
@@ -644,7 +652,7 @@ describe("query/translation-snapshots", () => {
       },
     });
 
-    const lowered = lowerSqlToRel(
+    const planned = buildLogicalQueryPlan(
       `
         SELECT o.id
         FROM orders o
@@ -658,7 +666,117 @@ describe("query/translation-snapshots", () => {
       schema,
     );
 
-    expect(normalizeRelForSnapshot(lowered.rel)).toMatchInlineSnapshot(`
+    expect(normalizeRelForSnapshot(planned.initialRel)).toMatchInlineSnapshot(`
+      {
+        "columns": [
+          {
+            "kind": "column",
+            "output": "id",
+            "source": {
+              "alias": "o",
+              "column": "id",
+            },
+          },
+        ],
+        "convention": "local",
+        "id": "project_1",
+        "input": {
+          "apply": {
+            "kind": "semi",
+          },
+          "convention": "logical",
+          "correlation": {
+            "inner": {
+              "alias": "u",
+              "column": "id",
+            },
+            "outer": {
+              "alias": "o",
+              "column": "user_id",
+            },
+          },
+          "id": "correlate_2",
+          "kind": "correlate",
+          "left": {
+            "alias": "o",
+            "convention": "local",
+            "id": "scan_3",
+            "kind": "scan",
+            "output": [
+              {
+                "name": "o.id",
+              },
+              {
+                "name": "o.user_id",
+              },
+            ],
+            "select": [
+              "id",
+              "user_id",
+            ],
+            "table": "orders",
+          },
+          "output": [
+            {
+              "name": "o.id",
+            },
+            {
+              "name": "o.user_id",
+            },
+          ],
+          "right": {
+            "columns": [
+              {
+                "expr": {
+                  "kind": "literal",
+                  "value": 1,
+                },
+                "kind": "expr",
+                "output": "expr",
+              },
+            ],
+            "convention": "local",
+            "id": "project_4",
+            "input": {
+              "alias": "u",
+              "convention": "local",
+              "id": "scan_5",
+              "kind": "scan",
+              "output": [
+                {
+                  "name": "u.team_id",
+                },
+              ],
+              "select": [
+                "team_id",
+              ],
+              "table": "users",
+              "where": [
+                {
+                  "column": "team_id",
+                  "op": "eq",
+                  "value": "team_smb",
+                },
+              ],
+            },
+            "kind": "project",
+            "output": [
+              {
+                "name": "expr",
+              },
+            ],
+          },
+        },
+        "kind": "project",
+        "output": [
+          {
+            "name": "id",
+          },
+        ],
+      }
+    `);
+
+    expect(normalizeRelForSnapshot(planned.rewrittenRel)).toMatchInlineSnapshot(`
       {
         "columns": [
           {

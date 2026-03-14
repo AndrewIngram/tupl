@@ -39,6 +39,28 @@ export function buildExecutionGraph<TContext>(
         return buildFilterStep(state, node, scopeId, visit);
       case "project":
         return buildProjectStep(state, node, scopeId, visit);
+      case "correlate": {
+        const leftId = visit(node.left, scopeId);
+        const rightId = visit(node.right, scopeId);
+        const id = `correlate_${state.steps.length + 1}`;
+        state.steps.push({
+          id,
+          kind: "projection",
+          dependsOn: [leftId, rightId],
+          summary: "Correlated subquery rewrite",
+          phase: "transform",
+          operation: {
+            name: "correlate",
+            details: {
+              apply: node.apply.kind,
+            },
+          },
+          outputs: node.output.map((column) => column.name),
+          sqlOrigin: "WHERE",
+          scopeId,
+        });
+        return id;
+      }
       case "join":
         return buildJoinStep(state, input, node, scopeId, visit);
       case "aggregate":

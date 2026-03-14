@@ -71,6 +71,8 @@ export function appearsInRel(node: RelNode, alias: string): boolean {
     case "sort":
     case "limit_offset":
       return appearsInRel(node.input, alias);
+    case "correlate":
+      return appearsInRel(node.left, alias) || appearsInRel(node.right, alias);
     case "join":
     case "set_op":
       return appearsInRel(node.left, alias) || appearsInRel(node.right, alias);

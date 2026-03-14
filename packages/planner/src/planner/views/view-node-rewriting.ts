@@ -128,6 +128,30 @@ export function rewriteExpandedViewNode<TContext>(
         aliases: input.aliases,
       };
     }
+    case "correlate": {
+      const left = expandRelViewsInternal(node.left, schema, context);
+      const right = expandRelViewsInternal(node.right, schema, context);
+      const aliases = mergeAliasMaps(left.aliases, right.aliases);
+      return {
+        node: {
+          ...node,
+          left: left.node,
+          right: right.node,
+          correlation: {
+            outer: resolveMappedColumnRef(node.correlation.outer, aliases),
+            inner: resolveMappedColumnRef(node.correlation.inner, aliases),
+          },
+          apply:
+            node.apply.kind === "scalar_filter"
+              ? {
+                  ...node.apply,
+                  outerCompare: resolveMappedColumnRef(node.apply.outerCompare, aliases),
+                }
+              : node.apply,
+        },
+        aliases,
+      };
+    }
     case "join": {
       const left = expandRelViewsInternal(node.left, schema, context);
       const right = expandRelViewsInternal(node.right, schema, context);

@@ -227,6 +227,7 @@ function findLookupEligibleScan(node: RelNode): RelScanNode | null {
       return findLookupEligibleScan(node.input);
     case "aggregate":
     case "window":
+    case "correlate":
     case "join":
     case "set_op":
     case "repeat_union":
@@ -248,6 +249,8 @@ function findFirstScan(node: RelNode): RelScanNode | null {
     case "sort":
     case "limit_offset":
       return findFirstScan(node.input);
+    case "correlate":
+      return findFirstScan(node.left) ?? findFirstScan(node.right);
     case "join":
     case "set_op":
       return findFirstScan(node.left) ?? findFirstScan(node.right);

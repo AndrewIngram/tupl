@@ -1,14 +1,6 @@
 import type { RelExpr } from "@tupl/foundation";
 
-import type {
-  Binding,
-  CorrelatedExistsFilter,
-  CorrelatedInSubqueryFilter,
-  CorrelatedScalarAggregateFilter,
-  InSubqueryFilter,
-  LiteralFilter,
-  ParsedWhereFilters,
-} from "./planner-types";
+import type { Binding, InSubqueryFilter, LiteralFilter, ParsedWhereFilters } from "./planner-types";
 import type { SqlExprLoweringContext } from "./sql-expr-lowering";
 import { lowerSqlAstToRelExpr } from "./sql-expr-lowering";
 import { flattenConjunctiveWhere, parseLiteralFilter } from "./expr/literal-filter-parser";
@@ -16,8 +8,13 @@ import {
   parseSupportedCorrelatedExistsSubquery,
   parseSupportedCorrelatedInSubquery,
   parseSupportedCorrelatedScalarAggregateSubquery,
-} from "./expr/expr-subqueries";
+} from "./subqueries/analysis";
 import { literalFilterToRelExpr } from "./expr/literal-filter-operators";
+import type {
+  CorrelatedExistsFilter,
+  CorrelatedInSubqueryFilter,
+  CorrelatedScalarAggregateFilter,
+} from "./subqueries/correlated-predicate-types";
 
 /**
  * Literal filter lowering owns pushdown-friendly predicate extraction and residual expr fallback.
