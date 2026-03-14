@@ -22,7 +22,8 @@ import {
   resolveGuardrails,
 } from "./policy";
 import {
-  maybeExecuteWholeQueryFragmentResult,
+  maybeRejectFallbackResult,
+  resolveProviderCapabilityForRel,
   resolveSyncProviderCapabilityForRelResult,
   withTimeoutResult,
 } from "./provider/provider-execution";
@@ -63,22 +64,10 @@ export async function queryInternalResult<TContext>(
     );
 
     yield* enforcePlannerNodeLimitResult(logicalPlan.plannerNodeCount, guardrails);
-    // Prefer a single whole-query provider fragment before local execution. This keeps fully
-    // pushdownable queries on the provider path and only falls back once that route is unavailable.
-    const remoteRows = yield* Result.await(
-      withTimeoutResult(
-        "execute whole provider fragment",
-        () =>
-          maybeExecuteWholeQueryFragmentResult(resolvedInput, logicalPlan.rewrittenRel).then(
-            unwrapQueryResult,
-          ),
-        guardrails.timeoutMs,
-      ),
+    const capabilityResolution = yield* Result.await(
+      resolveProviderCapabilityForRel(resolvedInput, logicalPlan.rewrittenRel),
     );
-
-    if (remoteRows) {
-      return enforceExecutionRowLimitResult(remoteRows, guardrails);
-    }
+    yield* maybeRejectFallbackResult(resolvedInput, capabilityResolution);
 
     const rows = yield* Result.await(
       withTimeoutResult(
