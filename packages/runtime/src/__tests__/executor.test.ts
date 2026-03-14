@@ -10,7 +10,7 @@ import {
 import { type QueryRow, type ScanFilterClause, type TableScanRequest } from "@tupl/schema-model";
 import { executeRelWithProvidersResult } from "@tupl/runtime/executor";
 import { finalizeProviders } from "@tupl/test-support/runtime";
-import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
+import { buildEntitySchema } from "@tupl/test-support/schema";
 
 type TestProvider = Omit<FragmentProviderAdapter, "name"> &
   Partial<LookupManyCapableProviderAdapter>;
@@ -478,49 +478,6 @@ describe("query/local executor", () => {
       _tag: "TuplExecutionError",
       message: "ADD expects numeric values.",
       operation: "evaluate relational expression",
-    });
-  });
-
-  it("returns tagged planning errors for invalid view lowering", async () => {
-    const schema = buildSchema((builder) => {
-      builder.view("broken_view", ({ scan }) => scan("missing_table"), {
-        columns: {
-          id: { source: "missing_table.id" },
-        },
-      });
-    });
-
-    const rel: RelNode = {
-      id: "scan_1",
-      kind: "scan",
-      convention: "local",
-      table: "broken_view",
-      alias: "v",
-      select: ["id"],
-      output: [{ name: "v.id" }],
-    };
-
-    const result = await executeRelWithProvidersResult(
-      rel,
-      schema,
-      {},
-      {},
-      {
-        maxExecutionRows: 1000,
-        maxLookupKeysPerBatch: 1000,
-        maxLookupBatches: 10,
-      },
-    );
-
-    expect(Result.isError(result)).toBe(true);
-    if (Result.isOk(result)) {
-      throw new Error("Expected broken view execution to fail.");
-    }
-
-    expect(result.error).toMatchObject({
-      _tag: "RelRewriteError",
-      message: "Unknown table in view rel scan: missing_table",
-      operation: "expand relational views",
     });
   });
 

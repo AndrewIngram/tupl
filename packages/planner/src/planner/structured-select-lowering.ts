@@ -30,34 +30,23 @@ export function tryLowerStructuredSelect(
             typeof (rawName as { value?: unknown }).value === "string"
           ? (rawName as { value: string }).value
           : null;
-    if (!cteName) {
-      return null;
-    }
-    scopedCteNames.add(cteName);
-  }
-
-  for (const clause of withClauses) {
-    const rawName = (clause as { name?: unknown }).name;
-    const cteName =
-      typeof rawName === "string"
-        ? rawName
-        : rawName &&
-            typeof rawName === "object" &&
-            typeof (rawName as { value?: unknown }).value === "string"
-          ? (rawName as { value: string }).value
-          : null;
     const cteAst = (clause as { stmt?: { ast?: unknown } }).stmt?.ast;
     if (!cteName || !cteAst || typeof cteAst !== "object") {
       return null;
     }
+    const visibleCteNames = new Set(scopedCteNames);
+    if (clause.recursive) {
+      visibleCteNames.add(cteName);
+    }
     const loweredCte =
       clause.recursive && isRecursiveCteBody(cteAst as SelectAst, cteName)
-        ? lowerRecursiveCte(cteName, cteAst as SelectAst, schema, scopedCteNames)
-        : tryLowerStructuredSelect(cteAst as SelectAst, schema, scopedCteNames);
+        ? lowerRecursiveCte(cteName, cteAst as SelectAst, schema, visibleCteNames)
+        : tryLowerStructuredSelect(cteAst as SelectAst, schema, visibleCteNames);
     if (!loweredCte) {
       return null;
     }
     loweredCtes.push({ name: cteName, query: loweredCte });
+    scopedCteNames.add(cteName);
   }
 
   const hasSetOp = typeof normalizedAst.set_op === "string" && !!normalizedAst._next;

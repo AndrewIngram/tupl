@@ -192,4 +192,58 @@ describe("query/unsupported", () => {
       },
     );
   });
+
+  it("rejects forward references across sibling CTEs", async () => {
+    await withQueryHarness(
+      {
+        schema: commerceSchema,
+        rowsByTable: commerceRows,
+      },
+      async (harness) => {
+        await expect(
+          harness.runTupl(
+            `
+              WITH first_cte AS (
+                SELECT id
+                FROM second_cte
+              ),
+              second_cte AS (
+                SELECT id
+                FROM orders
+              )
+              SELECT id
+              FROM first_cte
+            `,
+            EMPTY_CONTEXT,
+          ),
+        ).rejects.toThrow("Unknown table: second_cte");
+      },
+    );
+  });
+
+  it("rejects non-ROWS window frame modes", async () => {
+    await withQueryHarness(
+      {
+        schema: commerceSchema,
+        rowsByTable: commerceRows,
+      },
+      async (harness) => {
+        await expect(
+          harness.runTupl(
+            `
+              SELECT
+                id,
+                SUM(total_cents) OVER (
+                  PARTITION BY org_id
+                  ORDER BY created_at
+                  RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS running_total
+              FROM orders
+            `,
+            EMPTY_CONTEXT,
+          ),
+        ).rejects.toThrow("Unsupported window frame mode: RANGE");
+      },
+    );
+  });
 });

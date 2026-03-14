@@ -150,6 +150,34 @@ describe("public result APIs", () => {
     expect(result.error.message).toBe("Unknown table: missing_table");
   });
 
+  it("returns tagged rewrite errors from queryResult for invalid view expansion", async () => {
+    const schema = buildSchema((builder) => {
+      builder.view("broken_view", ({ scan }) => scan("missing_table"), {
+        columns: {
+          id: { source: "missing_table.id" },
+        },
+      });
+    });
+
+    const executableSchema = createExecutableSchemaFromProviders(schema, {});
+
+    const result = await executableSchema.queryResult({
+      context: {},
+      sql: "SELECT id FROM broken_view",
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected queryResult to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "RelRewriteError",
+      operation: "expand relational views",
+      message: "Unknown table in view rel scan: missing_table",
+    });
+  });
+
   it("returns tagged runtime errors from queryResult", async () => {
     const schema = buildEntitySchema({
       users: {

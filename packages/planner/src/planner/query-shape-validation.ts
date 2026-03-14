@@ -1,6 +1,6 @@
 import { Result } from "better-result";
 
-import type { SelectAst } from "./sqlite-parser/ast";
+import type { CteAst, SelectAst } from "./sqlite-parser/ast";
 import { toUnsupportedQueryShapeError } from "./planner-errors";
 import { isCorrelatedSubquery, parseSubqueryAst } from "./sql-expr-lowering";
 import {
@@ -9,6 +9,11 @@ import {
   parseSupportedCorrelatedScalarAggregateProjectionSubquery,
   parseSupportedCorrelatedScalarAggregateSubquery,
 } from "./subqueries/analysis";
+import {
+  parseNamedWindowSpecifications,
+  parseWindowFrameClause,
+  parseWindowOver,
+} from "./windows/window-specifications";
 
 /**
  * Query-shape validation owns the unsupported SQL checks that run before relational lowering.
@@ -32,25 +37,21 @@ function findUnsupportedQueryShape(ast: SelectAst, cteNames: Set<string>): strin
 
   const scopedCteNames = new Set(cteNames);
   for (const clause of withClauses) {
-    const rawName = clause.name;
-    const cteName =
-      typeof rawName === "string"
-        ? rawName
-        : rawName && typeof rawName === "object" && typeof rawName.value === "string"
-          ? rawName.value
-          : null;
-    if (cteName) {
-      scopedCteNames.add(cteName);
-    }
-  }
-
-  for (const clause of withClauses) {
     const nested = clause.stmt?.ast;
     if (nested) {
-      const reason = findUnsupportedQueryShape(nested, scopedCteNames);
+      const visibleCteNames = new Set(scopedCteNames);
+      const cteName = getCteName(clause);
+      if (cteName && clause.recursive) {
+        visibleCteNames.add(cteName);
+      }
+      const reason = findUnsupportedQueryShape(nested, visibleCteNames);
       if (reason) {
         return reason;
       }
+    }
+    const cteName = getCteName(clause);
+    if (cteName) {
+      scopedCteNames.add(cteName);
     }
   }
 
@@ -96,17 +97,20 @@ function findUnsupportedQueryShape(ast: SelectAst, cteNames: Set<string>): strin
 }
 
 function findUnsupportedWindowShape(ast: SelectAst): string | null {
-  return findUnsupportedWindowShapeInValue(ast.columns);
+  return findUnsupportedWindowShapeInValue(ast.columns, parseNamedWindowSpecifications(ast.window));
 }
 
-function findUnsupportedWindowShapeInValue(value: unknown): string | null {
+function findUnsupportedWindowShapeInValue(
+  value: unknown,
+  windowDefinitions: ReturnType<typeof parseNamedWindowSpecifications>,
+): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const reason = findUnsupportedWindowShapeInValue(item);
+      const reason = findUnsupportedWindowShapeInValue(item, windowDefinitions);
       if (reason) {
         return reason;
       }
@@ -117,14 +121,14 @@ function findUnsupportedWindowShapeInValue(value: unknown): string | null {
   const record = value as Record<string, unknown>;
   const exprType = record.type;
   if (exprType === "function" || exprType === "aggr_func") {
-    const overReason = validateSupportedWindowOver(record);
+    const overReason = validateSupportedWindowOver(record, windowDefinitions);
     if (overReason) {
       return overReason;
     }
   }
 
   for (const nested of Object.values(record)) {
-    const reason = findUnsupportedWindowShapeInValue(nested);
+    const reason = findUnsupportedWindowShapeInValue(nested, windowDefinitions);
     if (reason) {
       return reason;
     }
@@ -133,7 +137,10 @@ function findUnsupportedWindowShapeInValue(value: unknown): string | null {
   return null;
 }
 
-function validateSupportedWindowOver(expr: Record<string, unknown>): string | null {
+function validateSupportedWindowOver(
+  expr: Record<string, unknown>,
+  windowDefinitions: ReturnType<typeof parseNamedWindowSpecifications>,
+): string | null {
   if (!expr.over || typeof expr.over !== "object") {
     return null;
   }
@@ -165,7 +172,22 @@ function validateSupportedWindowOver(expr: Record<string, unknown>): string | nu
     return `Unsupported window function: ${rawName.toUpperCase()}`;
   }
 
+  const spec = parseWindowOver(expr.over, windowDefinitions);
+  const frame = parseWindowFrameClause(spec?.window_frame_clause?.raw);
+  if (frame && frame.mode !== "rows") {
+    return `Unsupported window frame mode: ${frame.mode.toUpperCase()}`;
+  }
+
   return null;
+}
+
+function getCteName(clause: CteAst): string | null {
+  const rawName = clause.name;
+  return typeof rawName === "string"
+    ? rawName
+    : rawName && typeof rawName === "object" && typeof rawName.value === "string"
+      ? rawName.value
+      : null;
 }
 
 function findUnsupportedSubqueryShape(
