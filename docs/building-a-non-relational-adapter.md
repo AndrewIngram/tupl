@@ -18,7 +18,8 @@ import type {
   QueryRow,
   TableScanRequest,
 } from "@tupl/provider-kit";
-import { AdapterResult, extractSimpleRelScanRequest } from "@tupl/provider-kit";
+import { AdapterResult } from "@tupl/provider-kit";
+import { checkSimpleRelScanCapability } from "@tupl/provider-kit/shapes";
 
 type KvContext = {
   namespace: string;
@@ -43,22 +44,24 @@ export function createExampleKvAdapter(rows: KvRecord[]): ProviderAdapter<KvCont
     },
 
     canExecute(rel): boolean | ProviderCapabilityReport {
-      return extractSimpleRelScanRequest(rel)
-        ? true
-        : {
-            supported: false,
-            routeFamily: rel.kind === "scan" ? "scan" : "rel-core",
-            reason: "This KV adapter only supports simple single-entity scan pipelines.",
-          };
+      const capability = checkSimpleRelScanCapability(rel, {
+        supportedAtoms: ["scan.project", "scan.filter.basic", "scan.limit_offset"],
+        unsupportedShapeReason:
+          "This KV adapter only supports simple single-entity scan pipelines.",
+      });
+      return capability.isOk() ? true : capability.error;
     },
 
     async compile(rel) {
-      const request = extractSimpleRelScanRequest(rel);
-      if (!request) {
-        return AdapterResult.err(
-          new Error("This KV adapter only supports simple single-entity scan pipelines."),
-        );
+      const capability = checkSimpleRelScanCapability(rel, {
+        supportedAtoms: ["scan.project", "scan.filter.basic", "scan.limit_offset"],
+        unsupportedShapeReason:
+          "This KV adapter only supports simple single-entity scan pipelines.",
+      });
+      if (capability.isError()) {
+        return AdapterResult.err(new Error(capability.error.reason ?? "Unsupported keyed scan."));
       }
+      const request = capability.value;
 
       return AdapterResult.ok({
         provider: "example-kv",

@@ -22,7 +22,8 @@ import type {
   ProviderCompiledPlan,
   QueryRow,
 } from "@tupl/provider-kit";
-import { AdapterResult, extractSimpleRelScanRequest } from "@tupl/provider-kit";
+import { AdapterResult } from "@tupl/provider-kit";
+import { checkSimpleRelScanCapability } from "@tupl/provider-kit/shapes";
 import type { RelNode } from "@tupl/foundation";
 
 type DbContext = {
@@ -41,24 +42,22 @@ export function createExampleSqlAdapter(): ProviderAdapter<DbContext> {
     name: "example-sql",
 
     canExecute(rel): boolean | ProviderCapabilityReport {
-      if (extractSimpleRelScanRequest(rel)) {
-        return true;
-      }
-
-      return {
-        supported: false,
-        routeFamily: "rel-core",
-        reason: "This adapter only supports simple single-source scan pipelines.",
-      };
+      const capability = checkSimpleRelScanCapability(rel, {
+        supportedAtoms: ["scan.project", "scan.filter.basic", "scan.sort", "scan.limit_offset"],
+      });
+      return capability.isOk() ? true : capability.error;
     },
 
     async compile(rel) {
-      const request = extractSimpleRelScanRequest(rel);
-      if (!request) {
+      const capability = checkSimpleRelScanCapability(rel, {
+        supportedAtoms: ["scan.project", "scan.filter.basic", "scan.sort", "scan.limit_offset"],
+      });
+      if (capability.isError()) {
         return AdapterResult.err(
-          new Error("This adapter only supports simple single-source scan pipelines."),
+          new Error(capability.error.reason ?? "Unsupported simple scan pipeline."),
         );
       }
+      const request = capability.value;
 
       return AdapterResult.ok({
         provider: "example-sql",
@@ -134,7 +133,8 @@ Reach for `createRelationalProviderAdapter(...)` only when the backend does not 
 
 Use it when it materially simplifies provider code:
 
-- `extractSimpleRelScanRequest(...)` for narrow single-source scan pipelines
+- `checkSimpleRelScanCapability(...)` for narrow single-source scan pipelines with structured capability reports
+- `extractSimpleRelScanRequest(...)` if you only need raw extraction
 - field-sensitive validation helpers for projected, filtered, or sorted columns
 - optional lookup optimization helpers for keyed backends
 

@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { Result } from "better-result";
 
 import {
+  checkSimpleRelScanCapability,
+  collectSimpleRelScanReferencedColumns,
   extractSimpleRelScanRequest,
   validateSimpleRelScanRequest,
 } from "@tupl/provider-kit/shapes";
@@ -161,5 +163,50 @@ describe("simple scan request extraction", () => {
     expect(Result.isError(invalidSort) ? invalidSort.error.message : "").toContain(
       "Unsupported sort column for users: created_at",
     );
+  });
+
+  it("checks simple scan capability in one pass", () => {
+    const rel: RelNode = {
+      id: "scan_users",
+      kind: "scan",
+      convention: "provider:memory",
+      table: "users",
+      select: ["id"],
+      where: [{ op: "eq", column: "email", value: "ada@example.com" }],
+      output: [{ name: "id" }],
+    };
+
+    const capability = checkSimpleRelScanCapability(rel, {
+      supportedAtoms: ["scan.project", "scan.filter.basic"],
+      policy: {
+        supportsSelectColumn(column) {
+          return column === "id";
+        },
+        supportsFilterClause(clause) {
+          return clause.column === "org_id";
+        },
+      },
+    });
+
+    expect(Result.isError(capability)).toBe(true);
+    expect(Result.isError(capability) ? capability.error : null).toMatchObject({
+      supported: false,
+      routeFamily: "scan",
+      reason: "Unsupported filter clause for users: email eq",
+    });
+  });
+
+  it("collects referenced scan columns once", () => {
+    expect(
+      collectSimpleRelScanReferencedColumns(
+        {
+          table: "users",
+          select: ["id", "email"],
+          where: [{ op: "eq", column: "org_id", value: "org_1" }],
+          orderBy: [{ column: "created_at", direction: "desc" }],
+        },
+        ["tenant_id"],
+      ),
+    ).toEqual(["id", "email", "org_id", "created_at", "tenant_id"]);
   });
 });

@@ -8,7 +8,6 @@ import {
   bindProviderEntities,
   buildCapabilityReport,
   createDataEntityHandle,
-  extractSimpleRelScanRequest,
   normalizeDataEntityShape,
   type DataEntityHandle,
   type DataEntityShape,
@@ -25,11 +24,12 @@ import {
 import type { RelNode } from "@tupl/foundation";
 import {
   filterLookupRows,
+  checkSimpleRelScanCapability,
+  collectSimpleRelScanReferencedColumns,
   projectLookupRow,
   type ProviderLookupManyRequest,
   type LookupManyCapableProviderAdapter,
   validateLookupRequest,
-  validateSimpleRelScanRequest,
 } from "@tupl/provider-kit/shapes";
 
 export interface RedisPipelineResult {
@@ -238,54 +238,46 @@ function inferExactLookupKeys(
   return candidateKeys ? [...candidateKeys] : null;
 }
 
-function collectFetchColumns(request: TableScanRequest, lookupKey: string): string[] {
-  const columns = new Set<string>(request.select);
-  columns.add(lookupKey);
-
-  for (const clause of request.where ?? []) {
-    columns.add(clause.column);
-  }
-  for (const term of request.orderBy ?? []) {
-    columns.add(term.column);
-  }
-
-  return [...columns];
-}
-
 function buildRelExecutionPayload<TContext>(
   rel: RelNode,
   entitiesByName: Map<string, IoredisEntityConfig<TContext, string>>,
   provider: string,
 ) {
-  const request = extractSimpleRelScanRequest(rel);
-  if (!request) {
-    return AdapterResult.err(
-      new TuplExecutionError({
-        operation: "compile redis fragment",
-        message: "Ioredis provider only supports simple single-entity scan pipelines.",
-      }),
-    );
-  }
-
   return AdapterResult.gen(function* () {
-    const entity = yield* getEntityConfigResult(entitiesByName, request.table, provider);
-    const supportedColumns = new Set(entity.columns);
-    const requestValidation = validateSimpleRelScanRequest(request, {
-      supportsSelectColumn(column) {
-        return supportedColumns.has(column);
-      },
-      supportsFilterClause(clause) {
-        return supportedColumns.has(clause.column);
-      },
-      supportsSortTerm(term) {
-        return supportedColumns.has(term.column);
-      },
+    const shapeCapability = checkSimpleRelScanCapability(rel, {
+      supportedAtoms: REDIS_CAPABILITY_ATOMS,
+      unsupportedShapeReason: "Ioredis provider only supports simple single-entity scan pipelines.",
     });
-    if (AdapterResult.isError(requestValidation)) {
+    if (AdapterResult.isError(shapeCapability)) {
       return yield* AdapterResult.err(
         new TuplExecutionError({
           operation: "compile redis fragment",
-          message: requestValidation.error.message,
+          message: shapeCapability.error.reason ?? "Unsupported Redis fragment.",
+        }),
+      );
+    }
+    const request = shapeCapability.value;
+    const entity = yield* getEntityConfigResult(entitiesByName, request.table, provider);
+    const supportedColumns = new Set(entity.columns);
+    const requestCapability = checkSimpleRelScanCapability(rel, {
+      supportedAtoms: REDIS_CAPABILITY_ATOMS,
+      policy: {
+        supportsSelectColumn(column) {
+          return supportedColumns.has(column);
+        },
+        supportsFilterClause(clause) {
+          return supportedColumns.has(clause.column);
+        },
+        supportsSortTerm(term) {
+          return supportedColumns.has(term.column);
+        },
+      },
+    });
+    if (AdapterResult.isError(requestCapability)) {
+      return yield* AdapterResult.err(
+        new TuplExecutionError({
+          operation: "compile redis fragment",
+          message: requestCapability.error.reason ?? "Unsupported Redis fragment.",
         }),
       );
     }
@@ -301,7 +293,7 @@ function buildRelExecutionPayload<TContext>(
       );
     }
 
-    const fetchColumns = collectFetchColumns(request, entity.lookupKey);
+    const fetchColumns = collectSimpleRelScanReferencedColumns(request, [entity.lookupKey]);
     yield* validateLookupRequest(
       {
         table: request.table,

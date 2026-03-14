@@ -6,6 +6,7 @@ import {
   type ScanOrderBy,
   type TableScanRequest,
 } from "@tupl/foundation";
+import { buildCapabilityReport, type ProviderCapabilityAtom } from "../capabilities";
 
 /**
  * Simple scan extraction owns the narrow "single-source scan pipeline" shape used by providers
@@ -100,6 +101,13 @@ export interface SimpleRelScanSupportPolicy<TColumn extends string = string> {
   supportsSortTerm?(term: ScanOrderBy & { column: TColumn }): boolean;
 }
 
+export interface SimpleRelScanCapabilityOptions<TColumn extends string = string> {
+  supportedAtoms: readonly ProviderCapabilityAtom[];
+  policy?: SimpleRelScanSupportPolicy<TColumn>;
+  unsupportedShapeReason?: string;
+  mapValidationError?(error: Error, request: TableScanRequest): string;
+}
+
 /**
  * Simple scan validation lets providers keep `canExecute` field-sensitive without hand-walking
  * the rel tree. Providers decide which projected, filtered, and sorted columns are legal.
@@ -129,4 +137,59 @@ export function validateSimpleRelScanRequest<TColumn extends string = string>(
   }
 
   return Result.ok(undefined);
+}
+
+export function checkSimpleRelScanCapability<TColumn extends string = string>(
+  rel: RelNode,
+  options: SimpleRelScanCapabilityOptions<TColumn>,
+) {
+  const request = extractSimpleRelScanRequest(rel);
+  if (!request) {
+    return Result.err(
+      buildCapabilityReport(
+        rel,
+        options.supportedAtoms,
+        options.unsupportedShapeReason ??
+          "Provider only supports simple single-source scan pipelines.",
+      ),
+    );
+  }
+
+  if (!options.policy) {
+    return Result.ok(request);
+  }
+
+  const validation = validateSimpleRelScanRequest(request, options.policy);
+  if (Result.isError(validation)) {
+    return Result.err(
+      buildCapabilityReport(
+        rel,
+        options.supportedAtoms,
+        options.mapValidationError?.(validation.error, request) ?? validation.error.message,
+      ),
+    );
+  }
+
+  return Result.ok(request);
+}
+
+export function collectSimpleRelScanReferencedColumns(
+  request: TableScanRequest,
+  extras: readonly string[] = [],
+): string[] {
+  const columns = new Set<string>(request.select);
+
+  for (const clause of request.where ?? []) {
+    columns.add(clause.column);
+  }
+
+  for (const term of request.orderBy ?? []) {
+    columns.add(term.column);
+  }
+
+  for (const extra of extras) {
+    columns.add(extra);
+  }
+
+  return [...columns];
 }
