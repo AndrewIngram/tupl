@@ -76,7 +76,8 @@ export function prepareSimpleSelectLowering(
 
   const bindings: Binding[] = from.map((entry, index) => {
     const table = (entry as FromEntryAst).table;
-    if (typeof table !== "string" || (!schema.tables[table] && !cteNames.has(table))) {
+    const isCte = typeof table === "string" && cteNames.has(table);
+    if (typeof table !== "string" || (!schema.tables[table] && !isCte)) {
       throw new Error(`Unknown table: ${String(table)}`);
     }
 
@@ -85,7 +86,12 @@ export function prepareSimpleSelectLowering(
         ? ((entry as FromEntryAst).as as string)
         : table;
 
-    return { table, alias, index };
+    return {
+      table,
+      alias,
+      index,
+      sourceKind: isCte ? "cte" : "table",
+    };
   });
 
   const aliasToBinding = new Map(bindings.map((binding) => [binding.alias, binding]));

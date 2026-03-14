@@ -18,6 +18,7 @@ export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition)
   const visit = (current: RelNode): RelNode => {
     switch (current.kind) {
       case "values":
+      case "cte_ref":
         return current;
       case "scan":
         return normalizeScanForProvider(current, schema);
@@ -147,6 +148,7 @@ export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition)
 function simplifyProviderProjects(node: RelNode): RelNode {
   switch (node.kind) {
     case "values":
+    case "cte_ref":
       return node;
     case "scan":
       return node;

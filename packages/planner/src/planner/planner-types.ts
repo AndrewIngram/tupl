@@ -10,6 +10,7 @@ export interface Binding {
   table: string;
   alias: string;
   index: number;
+  sourceKind: "table" | "cte";
 }
 
 export interface ParsedJoin {

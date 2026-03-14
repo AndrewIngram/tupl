@@ -23,6 +23,12 @@ export function inferRelOutputDefinitions(
       return inferScanOutputDefinitions(rel, schema, cteDefinitions);
     case "values":
       return Object.fromEntries(rel.output.map((column) => [column.name, undefined]));
+    case "cte_ref": {
+      const cteOutput = cteDefinitions.get(rel.name);
+      return Object.fromEntries(
+        rel.output.map((column) => [column.name, cteOutput?.[column.name.split(".").pop() ?? ""]]),
+      );
+    }
     case "filter":
     case "sort":
     case "limit_offset":

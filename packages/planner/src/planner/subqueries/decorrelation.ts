@@ -11,6 +11,7 @@ export function decorrelateRel(node: RelNode): RelNode {
   switch (node.kind) {
     case "scan":
     case "values":
+    case "cte_ref":
       return node;
     case "filter":
       return {

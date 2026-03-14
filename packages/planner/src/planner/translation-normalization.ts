@@ -141,6 +141,17 @@ function normalizeRelNode(rel: RelNode, state: RelNormalizationState): unknown {
         ...base,
         rows: rel.rows.map((row) => [...row]),
       };
+    case "cte_ref":
+      return {
+        ...base,
+        name: rel.name,
+        ...(rel.alias ? { alias: rel.alias } : {}),
+        select: [...rel.select],
+        ...(rel.where ? { where: rel.where } : {}),
+        ...(rel.orderBy ? { orderBy: rel.orderBy } : {}),
+        ...(rel.limit != null ? { limit: rel.limit } : {}),
+        ...(rel.offset != null ? { offset: rel.offset } : {}),
+      };
     case "filter":
       return {
         ...base,

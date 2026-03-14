@@ -920,10 +920,10 @@ describe("query/local executor", () => {
         kind: "project",
         convention: "local",
         input: {
-          id: "body_scan",
-          kind: "scan",
+          id: "body_cte_ref",
+          kind: "cte_ref",
           convention: "local",
-          table: "active_users",
+          name: "active_users",
           alias: "au",
           select: ["id", "email"],
           output: [{ name: "au.id" }, { name: "au.email" }],

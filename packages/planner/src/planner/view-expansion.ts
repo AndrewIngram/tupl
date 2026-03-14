@@ -31,6 +31,7 @@ function expandRelViewsInternal<TContext>(
     case "scan":
       return expandViewScanNode(node, schema, context, expandRelViewsInternal);
     case "values":
+    case "cte_ref":
       return {
         node,
         aliases: new Map(),

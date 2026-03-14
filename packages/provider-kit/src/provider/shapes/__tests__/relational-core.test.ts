@@ -133,10 +133,10 @@ function buildWithRel(): RelNode {
           },
         ],
         input: {
-          id: "scan_1",
-          kind: "scan",
+          id: "cte_ref_1",
+          kind: "cte_ref",
           convention: "provider:test",
-          table: "recent_orders",
+          name: "recent_orders",
           alias: "r",
           select: ["id", "email"],
           output: [{ name: "id" }, { name: "email" }],

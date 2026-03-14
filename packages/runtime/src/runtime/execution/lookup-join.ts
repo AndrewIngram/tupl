@@ -219,6 +219,7 @@ function findLookupEligibleScan(node: RelNode): RelScanNode | null {
     case "scan":
       return node;
     case "values":
+    case "cte_ref":
       return null;
     case "filter":
     case "project":
@@ -241,6 +242,7 @@ function findFirstScan(node: RelNode): RelScanNode | null {
     case "scan":
       return node;
     case "values":
+    case "cte_ref":
       return null;
     case "filter":
     case "project":

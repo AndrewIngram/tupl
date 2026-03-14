@@ -204,8 +204,9 @@ describe("query/translation-snapshots", () => {
             "input": {
               "alias": "scoped",
               "convention": "local",
-              "id": "scan_6",
-              "kind": "scan",
+              "id": "cte_ref_6",
+              "kind": "cte_ref",
+              "name": "__tupl_derived_1",
               "output": [
                 {
                   "name": "scoped.id",
@@ -214,7 +215,6 @@ describe("query/translation-snapshots", () => {
               "select": [
                 "id",
               ],
-              "table": "__tupl_derived_1",
             },
             "kind": "sort",
             "orderBy": [
@@ -321,8 +321,9 @@ describe("query/translation-snapshots", () => {
             "input": {
               "alias": "scoped",
               "convention": "local",
-              "id": "scan_6",
-              "kind": "scan",
+              "id": "cte_ref_6",
+              "kind": "cte_ref",
+              "name": "__tupl_derived_1",
               "output": [
                 {
                   "name": "scoped.id",
@@ -331,7 +332,6 @@ describe("query/translation-snapshots", () => {
               "select": [
                 "id",
               ],
-              "table": "__tupl_derived_1",
             },
             "kind": "sort",
             "orderBy": [
@@ -465,8 +465,9 @@ describe("query/translation-snapshots", () => {
           "input": {
             "alias": "reachable",
             "convention": "local",
-            "id": "scan_10",
-            "kind": "scan",
+            "id": "cte_ref_10",
+            "kind": "cte_ref",
+            "name": "reachable",
             "output": [
               {
                 "name": "reachable.node_id",
@@ -475,7 +476,6 @@ describe("query/translation-snapshots", () => {
             "select": [
               "node_id",
             ],
-            "table": "reachable",
           },
           "kind": "project",
           "output": [
@@ -513,8 +513,9 @@ describe("query/translation-snapshots", () => {
                   "left": {
                     "alias": "r",
                     "convention": "local",
-                    "id": "scan_7",
-                    "kind": "scan",
+                    "id": "cte_ref_7",
+                    "kind": "cte_ref",
+                    "name": "reachable",
                     "output": [
                       {
                         "name": "r.node_id",
@@ -523,7 +524,6 @@ describe("query/translation-snapshots", () => {
                     "select": [
                       "node_id",
                     ],
-                    "table": "reachable",
                   },
                   "leftKey": {
                     "alias": "r",

@@ -3,11 +3,11 @@ import { Result } from "better-result";
 import { validateTableConstraintRows } from "../constraints";
 import { TuplExecutionError } from "@tupl/foundation";
 import {
-  getDataEntityProvider,
+  getDataEntityAdapter,
   normalizeCapability,
   supportsFragmentExecution,
   unwrapProviderOperationResult,
-  type Provider,
+  type ProviderAdapter,
   type ProviderFragment,
 } from "@tupl/provider-kit";
 import {
@@ -31,32 +31,16 @@ import {
 import { prefixRow, scanLocalRows } from "./row-ops";
 
 /**
- * Scan execution owns provider-backed physical scans and CTE materialization reads.
+ * Scan execution owns provider-backed physical scans and explicit reads from materialized CTEs.
  */
 export async function executeScanResult<TContext>(
   scan: Extract<import("@tupl/foundation").RelNode, { kind: "scan" }>,
   context: RelExecutionContext<TContext>,
 ) {
-  const cteRows = context.cteRows.get(scan.table);
-  if (cteRows) {
-    const scannedRows = scanLocalRows(cteRows, {
-      table: scan.table,
-      ...(scan.alias ? { alias: scan.alias } : {}),
-      select: scan.select,
-      ...(scan.where ? { where: scan.where } : {}),
-      ...(scan.orderBy ? { orderBy: scan.orderBy } : {}),
-      ...(scan.limit != null ? { limit: scan.limit } : {}),
-      ...(scan.offset != null ? { offset: scan.offset } : {}),
-    });
-
-    const alias = scan.alias ?? scan.table;
-    return Result.ok(scannedRows.map((row) => prefixRow(row, alias)));
-  }
-
   const normalizedBinding = getNormalizedTableBinding(context.schema, scan.table);
   const providerNameResult = tryExecutionStep(
     "resolve scan provider",
-    () => scan.entity?.provider ?? readResolvedTableProvider(context.schema, scan.table),
+    () => scan.entity?.provider ?? resolveTableProvider(context.schema, scan.table),
   );
   if (Result.isError(providerNameResult)) {
     return providerNameResult;
@@ -65,13 +49,13 @@ export async function executeScanResult<TContext>(
   const provider =
     context.providers[providerName] ??
     (scan.entity
-      ? (getDataEntityProvider(scan.entity) as Provider<TContext> | undefined)
+      ? (getDataEntityAdapter(scan.entity) as ProviderAdapter<TContext> | undefined)
       : undefined);
   if (!provider) {
     return Result.err(
       new TuplExecutionError({
         operation: "execute scan",
-        message: `Missing provider: ${providerName}`,
+        message: `Missing provider adapter: ${providerName}`,
       }),
     );
   }
@@ -185,16 +169,32 @@ export async function executeScanResult<TContext>(
   return Result.ok(projectedResult.value.map((row) => prefixRow(row, alias)));
 }
 
-function readResolvedTableProvider(
-  schema: RelExecutionContext<unknown>["schema"],
-  table: string,
-): string {
-  const result = resolveTableProvider(schema, table);
-  if (Result.isError(result)) {
-    throw result.error;
+export function executeCteRefResult<TContext>(
+  cteRef: Extract<import("@tupl/foundation").RelNode, { kind: "cte_ref" }>,
+  context: RelExecutionContext<TContext>,
+) {
+  const cteRows = context.cteRows.get(cteRef.name);
+  if (!cteRows) {
+    return Result.err(
+      new TuplExecutionError({
+        operation: "execute cte ref",
+        message: `Missing materialized CTE rows for ${cteRef.name}.`,
+      }),
+    );
   }
 
-  return result.value;
+  const scannedRows = scanLocalRows(cteRows, {
+    table: cteRef.name,
+    ...(cteRef.alias ? { alias: cteRef.alias } : {}),
+    select: cteRef.select,
+    ...(cteRef.where ? { where: cteRef.where } : {}),
+    ...(cteRef.orderBy ? { orderBy: cteRef.orderBy } : {}),
+    ...(cteRef.limit != null ? { limit: cteRef.limit } : {}),
+    ...(cteRef.offset != null ? { offset: cteRef.offset } : {}),
+  });
+
+  const alias = cteRef.alias ?? cteRef.name;
+  return Result.ok(scannedRows.map((row) => prefixRow(row, alias)));
 }
 
 function mapLogicalColumnsToSource(

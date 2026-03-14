@@ -9,21 +9,16 @@ import {
 /**
  * Conventions own provider assignment and lookup-join viability analysis for planner nodes.
  */
-export function resolveSingleProvider(
-  node: RelNode,
-  schema: SchemaDefinition,
-  cteNames: Set<string> = new Set<string>(),
-): string | null {
+export function resolveSingleProvider(node: RelNode, schema: SchemaDefinition): string | null {
   const providers = new Set<string>();
 
-  const visit = (current: RelNode, scopedCteNames: Set<string>): boolean => {
+  const visit = (current: RelNode): boolean => {
     switch (current.kind) {
       case "values":
         return false;
+      case "cte_ref":
+        return true;
       case "scan": {
-        if (scopedCteNames.has(current.table)) {
-          return true;
-        }
         if (!schema.tables[current.table] && !current.entity) {
           return true;
         }
@@ -40,45 +35,37 @@ export function resolveSingleProvider(
       case "window":
       case "sort":
       case "limit_offset":
-        return visit(current.input, scopedCteNames);
+        return visit(current.input);
       case "correlate":
         return false;
       case "join":
       case "set_op":
-        return visit(current.left, scopedCteNames) && visit(current.right, scopedCteNames);
+        return visit(current.left) && visit(current.right);
       case "repeat_union":
         return false;
-      case "with": {
-        const nextScopedCteNames = new Set(scopedCteNames);
+      case "with":
         for (const cte of current.ctes) {
-          nextScopedCteNames.add(cte.name);
-        }
-        for (const cte of current.ctes) {
-          if (!visit(cte.query, nextScopedCteNames)) {
+          if (!visit(cte.query)) {
             return false;
           }
         }
-        return visit(current.body, nextScopedCteNames);
-      }
+        return visit(current.body);
     }
   };
 
-  if (!visit(node, cteNames) || providers.size !== 1) {
+  if (!visit(node) || providers.size !== 1) {
     return null;
   }
   return [...providers][0] ?? null;
 }
 
-export function assignConventions(
-  node: RelNode,
-  schema: SchemaDefinition,
-  cteNames: Set<string> = new Set<string>(),
-): RelNode {
+export function assignConventions(node: RelNode, schema: SchemaDefinition): RelNode {
   switch (node.kind) {
     case "values":
+    case "cte_ref":
       return { ...node, convention: "local" };
     case "scan": {
-      if (cteNames.has(node.table) || (!schema.tables[node.table] && !node.entity)) {
+      if (!schema.tables[node.table] && !node.entity) {
         return { ...node, convention: "local" };
       }
       const normalized = getNormalizedTableBinding(schema, node.table);
@@ -97,8 +84,8 @@ export function assignConventions(
     case "window":
     case "sort":
     case "limit_offset": {
-      const input = assignConventions(node.input, schema, cteNames);
-      const provider = resolveSingleProvider(input, schema, cteNames);
+      const input = assignConventions(node.input, schema);
+      const provider = resolveSingleProvider(input, schema);
       return {
         ...node,
         input,
@@ -106,8 +93,8 @@ export function assignConventions(
       };
     }
     case "correlate": {
-      const left = assignConventions(node.left, schema, cteNames);
-      const right = assignConventions(node.right, schema, cteNames);
+      const left = assignConventions(node.left, schema);
+      const right = assignConventions(node.right, schema);
       return {
         ...node,
         left,
@@ -117,9 +104,9 @@ export function assignConventions(
     }
     case "join":
     case "set_op": {
-      const left = assignConventions(node.left, schema, cteNames);
-      const right = assignConventions(node.right, schema, cteNames);
-      const provider = resolveSingleProvider({ ...node, left, right } as RelNode, schema, cteNames);
+      const left = assignConventions(node.left, schema);
+      const right = assignConventions(node.right, schema);
+      const provider = resolveSingleProvider({ ...node, left, right } as RelNode, schema);
       return {
         ...node,
         left,
@@ -128,10 +115,8 @@ export function assignConventions(
       };
     }
     case "repeat_union": {
-      const nextCteNames = new Set(cteNames);
-      nextCteNames.add(node.cteName);
-      const seed = assignConventions(node.seed, schema, nextCteNames);
-      const iterative = assignConventions(node.iterative, schema, nextCteNames);
+      const seed = assignConventions(node.seed, schema);
+      const iterative = assignConventions(node.iterative, schema);
       return {
         ...node,
         seed,
@@ -140,16 +125,12 @@ export function assignConventions(
       };
     }
     case "with": {
-      const nextCteNames = new Set(cteNames);
-      for (const cte of node.ctes) {
-        nextCteNames.add(cte.name);
-      }
       const ctes = node.ctes.map((cte) => ({
         ...cte,
-        query: assignConventions(cte.query, schema, nextCteNames),
+        query: assignConventions(cte.query, schema),
       }));
-      const body = assignConventions(node.body, schema, nextCteNames);
-      const provider = resolveSingleProvider(body, schema, nextCteNames);
+      const body = assignConventions(node.body, schema);
+      const provider = resolveSingleProvider(body, schema);
       return {
         ...node,
         ctes,
@@ -211,6 +192,7 @@ function findFirstScanNode(node: RelNode): RelScanNode | null {
     case "scan":
       return node;
     case "values":
+    case "cte_ref":
       return null;
     case "filter":
     case "project":

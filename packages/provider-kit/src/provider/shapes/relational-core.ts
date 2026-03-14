@@ -24,7 +24,7 @@ export interface RelationalSetOpWrapper {
 }
 
 export interface RelationalWithBodyWrapper {
-  cteScan: Extract<RelNode, { kind: "scan" }>;
+  cteRef: Extract<RelNode, { kind: "cte_ref" }>;
   project?: Extract<RelNode, { kind: "project" }>;
   sort?: Extract<RelNode, { kind: "sort" }>;
   limitOffset?: Extract<RelNode, { kind: "limit_offset" }>;
@@ -75,6 +75,7 @@ export function canCompileBasicRel(
 
   switch (node.kind) {
     case "values":
+    case "cte_ref":
       return false;
     case "scan":
       return isKnownScan(node.table);
@@ -201,7 +202,7 @@ export function canCompileWithRel<TStrategy extends string>(
   if (!body) {
     return false;
   }
-  if (!body.cteScan.table || !node.ctes.some((cte) => cte.name === body.cteScan.table)) {
+  if (!node.ctes.some((cte) => cte.name === body.cteRef.name)) {
     return false;
   }
 
@@ -285,6 +286,7 @@ export function extractRelPipeline(node: RelNode): RelationalPipeline {
           ...(limitOffset ? { limitOffset } : {}),
           filters,
         };
+      case "cte_ref":
       case "set_op":
       case "with":
       case "window":
@@ -383,9 +385,9 @@ export function unwrapWithBodyRel(node: RelNode): RelationalWithBodyWrapper | nu
         continue;
       case "correlate":
         return null;
-      case "scan":
+      case "cte_ref":
         return {
-          cteScan: current,
+          cteRef: current,
           ...(project ? { project } : {}),
           ...(sort ? { sort } : {}),
           ...(limitOffset ? { limitOffset } : {}),

@@ -43,7 +43,7 @@ export function buildSimpleSelectJoinTree(
     pushableLiteralFilters,
     residualExpr ?? null,
   );
-  const scansByAlias = buildScansByAlias(shape, columnsByAlias, pushableLiteralFilters);
+  const scansByAlias = buildLeafRelsByAlias(shape, columnsByAlias, pushableLiteralFilters);
 
   let current: RelNode = shape.rootBinding
     ? scansByAlias.get(shape.rootBinding.alias)!
@@ -278,11 +278,11 @@ function collectRequiredColumns(
   return columnsByAlias;
 }
 
-function buildScansByAlias(
+function buildLeafRelsByAlias(
   shape: PreparedSimpleSelect,
   columnsByAlias: Map<string, Set<string>>,
   pushableLiteralFilters: Array<{ alias: string; clause: ScanFilterClause }>,
-): Map<string, Extract<RelNode, { kind: "scan" }>> {
+): Map<string, Extract<RelNode, { kind: "scan" | "cte_ref" }>> {
   const filtersByAlias = new Map<string, ScanFilterClause[]>();
   for (const filter of pushableLiteralFilters) {
     const current = filtersByAlias.get(filter.alias) ?? [];
@@ -290,12 +290,29 @@ function buildScansByAlias(
     filtersByAlias.set(filter.alias, current);
   }
 
-  const scansByAlias = new Map<string, Extract<RelNode, { kind: "scan" }>>();
+  const relsByAlias = new Map<string, Extract<RelNode, { kind: "scan" | "cte_ref" }>>();
   for (const binding of shape.bindings) {
     const select = [...(columnsByAlias.get(binding.alias) ?? new Set<string>())];
     const scanWhere = filtersByAlias.get(binding.alias);
+    const output = select.map((column) => ({
+      name: `${binding.alias}.${column}`,
+    }));
 
-    scansByAlias.set(binding.alias, {
+    if (binding.sourceKind === "cte") {
+      relsByAlias.set(binding.alias, {
+        id: nextRelId("cte_ref"),
+        kind: "cte_ref",
+        convention: "local",
+        name: binding.table,
+        alias: binding.alias,
+        select,
+        ...(scanWhere && scanWhere.length > 0 ? { where: scanWhere } : {}),
+        output,
+      });
+      continue;
+    }
+
+    relsByAlias.set(binding.alias, {
       id: nextRelId("scan"),
       kind: "scan",
       convention: "local",
@@ -303,11 +320,9 @@ function buildScansByAlias(
       alias: binding.alias,
       select,
       ...(scanWhere && scanWhere.length > 0 ? { where: scanWhere } : {}),
-      output: select.map((column) => ({
-        name: `${binding.alias}.${column}`,
-      })),
+      output,
     });
   }
 
-  return scansByAlias;
+  return relsByAlias;
 }

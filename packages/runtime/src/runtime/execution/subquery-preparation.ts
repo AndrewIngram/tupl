@@ -59,6 +59,7 @@ export async function prepareSubqueryResultsResult<TContext>(
   switch (node.kind) {
     case "scan":
     case "values":
+    case "cte_ref":
       return Result.ok(undefined);
     case "correlate": {
       const leftResult = await prepareSubqueryResultsResult(node.left, context);

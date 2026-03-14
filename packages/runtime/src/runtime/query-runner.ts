@@ -108,6 +108,7 @@ function getExplainFragmentChildren(node: RelNode): RelNode[] {
     case "values":
       return [];
     case "scan":
+    case "cte_ref":
       return [];
     case "filter":
     case "project":

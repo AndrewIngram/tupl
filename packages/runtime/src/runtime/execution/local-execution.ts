@@ -14,7 +14,7 @@ import {
   executeWithResult,
 } from "./local-operators";
 import { tryExecuteRemoteSubtreeResult } from "./remote-subtree";
-import { executeScanResult } from "./scan-execution";
+import { executeCteRefResult, executeScanResult } from "./scan-execution";
 import { prepareSubqueryResultsResult } from "./subquery-preparation";
 import { executeWindowResult } from "./window-execution";
 import type { InternalRow } from "./row-ops";
@@ -124,6 +124,8 @@ export async function executeRelNodeResult<TContext>(
       return executeScanResult(node, context);
     case "values":
       return executeValuesResult(node);
+    case "cte_ref":
+      return executeCteRefResult(node, context);
     case "correlate":
       return Result.err(
         new TuplExecutionError({

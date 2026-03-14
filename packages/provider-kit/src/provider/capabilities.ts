@@ -341,6 +341,7 @@ function hasAdvancedRelFeatures(node: RelNode): boolean {
     case "set_op":
       return true;
     case "values":
+    case "cte_ref":
       return false;
     case "scan":
       return false;

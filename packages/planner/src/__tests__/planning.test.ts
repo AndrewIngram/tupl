@@ -329,6 +329,25 @@ describe("query/planning", () => {
     }
 
     expect(lowered.rel.ctes[0]?.query.kind).toBe("repeat_union");
+    expect(lowered.rel.body.kind).toBe("project");
+    if (lowered.rel.body.kind !== "project") {
+      throw new Error("Expected project body.");
+    }
+    expect(lowered.rel.body.input.kind).toBe("cte_ref");
+
+    const iterative = lowered.rel.ctes[0]?.query;
+    if (!iterative || iterative.kind !== "repeat_union") {
+      throw new Error("Expected repeat_union CTE.");
+    }
+    expect(iterative.iterative.kind).toBe("project");
+    if (iterative.iterative.kind !== "project") {
+      throw new Error("Expected recursive project.");
+    }
+    expect(iterative.iterative.input.kind).toBe("join");
+    if (iterative.iterative.input.kind !== "join") {
+      throw new Error("Expected recursive join.");
+    }
+    expect(iterative.iterative.input.left.kind).toBe("cte_ref");
   });
 
   it("lowers SELECT without FROM through a singleton values rel", () => {
@@ -970,6 +989,10 @@ describe("query/planning", () => {
     expect(lowered.rel.ctes).toHaveLength(1);
     expect(lowered.rel.ctes[0]?.name).toBe("scoped");
     expect(lowered.rel.body.kind).toBe("project");
+    if (lowered.rel.body.kind !== "project") {
+      throw new Error("Expected project body.");
+    }
+    expect(lowered.rel.body.input.kind).toBe("cte_ref");
   });
 
   it("lowers DENSE_RANK window projections to a window rel node", () => {

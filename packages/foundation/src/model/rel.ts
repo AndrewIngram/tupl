@@ -101,6 +101,18 @@ export interface RelValuesNode extends RelNodeBase {
   rows: Array<Array<string | number | boolean | null>>;
 }
 
+/** CTE refs read a named CTE binding using the same logical scan shape as ordinary table access. */
+export interface RelCteRefNode extends RelNodeBase {
+  kind: "cte_ref";
+  name: string;
+  alias?: string;
+  select: string[];
+  where?: ScanFilterClause[];
+  orderBy?: ScanOrderBy[];
+  limit?: number;
+  offset?: number;
+}
+
 /** Filter nodes preserve input shape while applying residual filters or computed expressions. */
 export interface RelFilterNode extends RelNodeBase {
   kind: "filter";
@@ -265,6 +277,7 @@ export interface RelRepeatUnionNode extends RelNodeBase {
 export type RelNode =
   | RelScanNode
   | RelValuesNode
+  | RelCteRefNode
   | RelFilterNode
   | RelProjectNode
   | RelJoinNode
@@ -315,6 +328,7 @@ export function countRelNodes(node: RelNode): number {
   switch (node.kind) {
     case "scan":
     case "values":
+    case "cte_ref":
       return 1;
     case "filter":
       return 1 + countRelNodes(node.input) + (node.expr ? countExpr(node.expr) : 0);
@@ -353,81 +367,72 @@ export function countRelNodes(node: RelNode): number {
 /** `collectRelTables` gathers the set of physical tables referenced anywhere in a relational tree. */
 export function collectRelTables(node: RelNode): string[] {
   const out = new Set<string>();
-  const visit = (current: RelNode, scopedCteNames: Set<string>): void => {
+  const visit = (current: RelNode): void => {
     switch (current.kind) {
       case "scan":
-        if (!scopedCteNames.has(current.table)) {
-          out.add(current.table);
-        }
+        out.add(current.table);
         return;
       case "values":
+      case "cte_ref":
         return;
       case "filter":
         if (current.expr) {
-          visitExpr(current.expr, scopedCteNames);
+          visitExpr(current.expr);
         }
-        visit(current.input, scopedCteNames);
+        visit(current.input);
         return;
       case "project":
         for (const column of current.columns) {
           if ("expr" in column) {
-            visitExpr(column.expr, scopedCteNames);
+            visitExpr(column.expr);
           }
         }
-        visit(current.input, scopedCteNames);
+        visit(current.input);
         return;
       case "aggregate":
       case "window":
       case "sort":
       case "limit_offset":
-        visit(current.input, scopedCteNames);
+        visit(current.input);
         return;
       case "correlate":
-        visit(current.left, scopedCteNames);
-        visit(current.right, scopedCteNames);
+        visit(current.left);
+        visit(current.right);
         return;
       case "join":
       case "set_op":
-        visit(current.left, scopedCteNames);
-        visit(current.right, scopedCteNames);
+        visit(current.left);
+        visit(current.right);
         return;
-      case "repeat_union": {
-        const nextScoped = new Set(scopedCteNames);
-        nextScoped.add(current.cteName);
-        visit(current.seed, nextScoped);
-        visit(current.iterative, nextScoped);
+      case "repeat_union":
+        visit(current.seed);
+        visit(current.iterative);
         return;
-      }
-      case "with": {
-        const nextScoped = new Set(scopedCteNames);
+      case "with":
         for (const cte of current.ctes) {
-          nextScoped.add(cte.name);
+          visit(cte.query);
         }
-        for (const cte of current.ctes) {
-          visit(cte.query, nextScoped);
-        }
-        visit(current.body, nextScoped);
+        visit(current.body);
         return;
-      }
     }
   };
 
-  const visitExpr = (expr: RelExpr, scopedCteNames: Set<string>): void => {
+  const visitExpr = (expr: RelExpr): void => {
     switch (expr.kind) {
       case "literal":
       case "column":
         return;
       case "function":
         for (const arg of expr.args) {
-          visitExpr(arg, scopedCteNames);
+          visitExpr(arg);
         }
         return;
       case "subquery":
-        visit(expr.rel, scopedCteNames);
+        visit(expr.rel);
         return;
     }
   };
 
-  visit(node, new Set<string>());
+  visit(node);
   return [...out];
 }

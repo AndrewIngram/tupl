@@ -260,10 +260,10 @@ function buildWithWindowRel(): RelNode {
         kind: "window",
         convention: "provider:dbProvider",
         input: {
-          id: "scan_cte",
-          kind: "scan",
+          id: "cte_ref_cte",
+          kind: "cte_ref",
           convention: "provider:dbProvider",
-          table: "vendor_totals",
+          name: "vendor_totals",
           alias: "vt",
           select: ["total_cents", "email"],
           output: [{ name: "total_cents" }, { name: "email" }],

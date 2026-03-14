@@ -41,6 +41,39 @@ export function buildScanStep(
   return id;
 }
 
+export function buildCteRefStep(
+  state: PlanBuildState,
+  node: Extract<RelNode, { kind: "cte_ref" }>,
+  scopeId: string,
+): string {
+  const id = nextPlanId(state, "scan");
+  state.steps.push({
+    id,
+    kind: "scan",
+    dependsOn: [],
+    summary: `Read CTE ${node.alias ?? node.name} (${node.name})`,
+    phase: "fetch",
+    operation: {
+      name: "cte_ref",
+      details: {
+        name: node.name,
+        alias: node.alias ?? node.name,
+      },
+    },
+    request: {
+      select: node.select,
+      ...(node.where ? { where: node.where } : {}),
+      ...(node.orderBy ? { orderBy: node.orderBy } : {}),
+      ...(node.limit != null ? { limit: node.limit } : {}),
+      ...(node.offset != null ? { offset: node.offset } : {}),
+    },
+    outputs: node.output.map((column) => column.name),
+    sqlOrigin: "FROM",
+    scopeId,
+  });
+  return id;
+}
+
 export function buildValuesStep(
   state: PlanBuildState,
   node: Extract<RelNode, { kind: "values" }>,

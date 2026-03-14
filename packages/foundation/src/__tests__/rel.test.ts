@@ -14,7 +14,7 @@ function buildScan(table: string): Extract<RelNode, { kind: "scan" }> {
 }
 
 describe("rel model", () => {
-  it("counts repeat_union and nested cte scans as relational nodes", () => {
+  it("counts repeat_union and nested cte refs as relational nodes", () => {
     const rel: RelNode = {
       id: "with_1",
       kind: "with",
@@ -35,10 +35,10 @@ describe("rel model", () => {
               convention: "logical",
               joinType: "inner",
               left: {
-                id: "scan_reachable",
-                kind: "scan",
+                id: "cte_ref_reachable",
+                kind: "cte_ref",
                 convention: "logical",
-                table: "reachable",
+                name: "reachable",
                 alias: "r",
                 select: ["id"],
                 output: [{ name: "r.id" }],
@@ -53,10 +53,10 @@ describe("rel model", () => {
         },
       ],
       body: {
-        id: "scan_cte",
-        kind: "scan",
+        id: "cte_ref_body",
+        kind: "cte_ref",
         convention: "logical",
-        table: "reachable",
+        name: "reachable",
         select: ["id"],
         output: [{ name: "id" }],
       },
@@ -87,10 +87,10 @@ describe("rel model", () => {
               convention: "logical",
               joinType: "inner",
               left: {
-                id: "scan_reachable",
-                kind: "scan",
+                id: "cte_ref_reachable",
+                kind: "cte_ref",
                 convention: "logical",
-                table: "reachable",
+                name: "reachable",
                 alias: "r",
                 select: ["id"],
                 output: [{ name: "r.id" }],
@@ -105,10 +105,10 @@ describe("rel model", () => {
         },
       ],
       body: {
-        id: "scan_cte",
-        kind: "scan",
+        id: "cte_ref_body",
+        kind: "cte_ref",
         convention: "logical",
-        table: "reachable",
+        name: "reachable",
         select: ["id"],
         output: [{ name: "id" }],
       },

@@ -85,6 +85,7 @@ function findFirstScanForPlan(node: RelNode): Extract<RelNode, { kind: "scan" }>
     case "scan":
       return node;
     case "values":
+    case "cte_ref":
       return null;
     case "filter":
     case "project":

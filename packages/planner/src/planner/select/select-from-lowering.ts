@@ -61,6 +61,7 @@ export function parseJoins(
 export function appearsInRel(node: RelNode, alias: string): boolean {
   switch (node.kind) {
     case "scan":
+    case "cte_ref":
       return node.alias === alias;
     case "values":
       return false;

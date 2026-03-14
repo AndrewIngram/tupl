@@ -4,6 +4,7 @@ import type { QuerySessionInput } from "../session/contracts";
 import { buildJoinStep, buildSetOpStep, buildWithStep } from "./execution-branch-builders";
 import {
   buildAggregateStep,
+  buildCteRefStep,
   buildFilterStep,
   buildLimitOffsetStep,
   buildProjectStep,
@@ -35,6 +36,8 @@ export function buildExecutionGraph<TContext>(
         return buildValuesStep(state, node, scopeId);
       case "scan":
         return buildScanStep(state, node, scopeId);
+      case "cte_ref":
+        return buildCteRefStep(state, node, scopeId);
       case "filter":
         return buildFilterStep(state, node, scopeId, visit);
       case "project":
