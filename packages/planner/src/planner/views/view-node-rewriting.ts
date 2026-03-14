@@ -99,6 +99,13 @@ export function rewriteExpandedViewNode<TContext>(
               ...term,
               source: resolveMappedColumnRef(term.source, input.aliases),
             })),
+            ...("column" in fn && fn.column
+              ? { column: resolveMappedColumnRef(fn.column, input.aliases) }
+              : {}),
+            ...("value" in fn ? { value: mapRelExprRefs(fn.value, input.aliases) } : {}),
+            ...("defaultExpr" in fn && fn.defaultExpr
+              ? { defaultExpr: mapRelExprRefs(fn.defaultExpr, input.aliases) }
+              : {}),
           })),
         },
         aliases: input.aliases,

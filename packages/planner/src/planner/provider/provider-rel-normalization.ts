@@ -106,6 +106,15 @@ export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition)
               ...term,
               source: mapColumnRefForAlias(term.source, aliasToSource),
             })),
+            ...("column" in fn && fn.column
+              ? { column: mapColumnRefForAlias(fn.column, aliasToSource) }
+              : {}),
+            ...("value" in fn
+              ? { value: mapRelExprRefsForAliasSource(fn.value, aliasToSource) }
+              : {}),
+            ...("defaultExpr" in fn && fn.defaultExpr
+              ? { defaultExpr: mapRelExprRefsForAliasSource(fn.defaultExpr, aliasToSource) }
+              : {}),
           })),
         };
       case "sort":

@@ -218,6 +218,11 @@ function normalizeRelNode(rel: RelNode, state: RelNormalizationState): unknown {
             direction: order.direction,
           })),
           ...("column" in fn && fn.column ? { column: normalizeColumnRef(fn.column) } : {}),
+          ...("value" in fn ? { value: normalizeExpr(fn.value, state) } : {}),
+          ...("offset" in fn && fn.offset != null ? { offset: fn.offset } : {}),
+          ...("defaultExpr" in fn && fn.defaultExpr
+            ? { defaultExpr: normalizeExpr(fn.defaultExpr, state) }
+            : {}),
           ...("distinct" in fn && fn.distinct != null ? { distinct: fn.distinct } : {}),
           ...(fn.frame ? { frame: fn.frame } : {}),
         })),
