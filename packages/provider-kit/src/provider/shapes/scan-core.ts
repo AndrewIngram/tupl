@@ -1,24 +1,24 @@
 import {
-  collectCapabilityAtomsForFragment,
-  inferRouteFamilyForFragment,
+  collectCapabilityAtomsForRel,
+  inferRouteFamilyForRel,
   type ProviderCapabilityReport,
-  type ProviderFragment,
 } from "..";
+import type { RelNode } from "@tupl/foundation";
 
 export interface ScanEntityBinding {
   entity: string;
 }
 
 export function buildScanUnsupportedReport(
-  fragment: ProviderFragment,
+  rel: RelNode,
   supportedAtoms: readonly string[],
   reason: string,
 ): ProviderCapabilityReport {
-  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
+  const requiredAtoms = collectCapabilityAtomsForRel(rel);
   return {
     supported: false,
     reason,
-    routeFamily: inferRouteFamilyForFragment(fragment),
+    routeFamily: inferRouteFamilyForRel(rel),
     requiredAtoms,
     missingAtoms: requiredAtoms.filter((atom) => !supportedAtoms.includes(atom)),
   };

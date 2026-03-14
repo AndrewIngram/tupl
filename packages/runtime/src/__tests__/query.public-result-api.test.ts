@@ -1,14 +1,11 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
+import type { RelNode } from "@tupl/foundation";
 
 import { createExecutableSchemaResult } from "@tupl/runtime";
 import { createExecutableSchemaSessionResult } from "@tupl/runtime/session";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema-model";
-import {
-  createDataEntityHandle,
-  type FragmentProviderAdapter,
-  type ProviderFragment,
-} from "@tupl/provider-kit";
+import { createDataEntityHandle, type FragmentProviderAdapter } from "@tupl/provider-kit";
 import { createSchemaBuilder, resolveTableProviderResult } from "@tupl/schema-model";
 import { createExecutableSchemaFromProviders } from "@tupl/test-support/runtime";
 import { buildEntitySchema, buildSchema } from "@tupl/test-support/schema";
@@ -18,14 +15,14 @@ type TestProvider = Omit<FragmentProviderAdapter, "name"> &
 
 function createRowsProvider(rows: QueryRow[] = [{ id: "u1" }]): TestProvider {
   return {
-    canExecute(fragment: ProviderFragment) {
-      return fragment.rel.kind === "scan";
+    canExecute(rel: RelNode) {
+      return rel.kind === "scan";
     },
-    async compile(fragment: ProviderFragment) {
+    async compile(rel: RelNode) {
       return Result.ok({
         provider: "warehouse",
         kind: "rel",
-        payload: fragment,
+        payload: rel,
       });
     },
     async execute() {
@@ -57,18 +54,16 @@ describe("public result APIs", () => {
 
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "rel";
+        canExecute() {
+          return true;
         },
-        async compile(fragment: ProviderFragment) {
-          if (fragment.kind === "rel") {
-            sawRelCompile = true;
-          }
+        async compile(rel: RelNode) {
+          sawRelCompile = true;
 
           return Result.ok({
             provider: "warehouse",
             kind: "rel",
-            payload: fragment,
+            payload: rel,
           });
         },
         async execute() {
@@ -167,14 +162,14 @@ describe("public result APIs", () => {
 
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.rel.kind === "scan";
+        canExecute(rel: RelNode) {
+          return rel.kind === "scan";
         },
-        async compile(fragment: ProviderFragment) {
+        async compile(rel: RelNode) {
           return Result.ok({
             provider: "warehouse",
             kind: "rel",
-            payload: fragment,
+            payload: rel,
           });
         },
         async execute() {
@@ -202,14 +197,14 @@ describe("public result APIs", () => {
   it("returns tagged runtime errors when executable schema provider bindings are inconsistent", () => {
     const adapter = {
       name: "actual",
-      canExecute(fragment: ProviderFragment) {
-        return fragment.rel.kind === "scan";
+      canExecute(rel: RelNode) {
+        return rel.kind === "scan";
       },
-      async compile(fragment: ProviderFragment) {
+      async compile(rel: RelNode) {
         return Result.ok({
           provider: "actual",
           kind: "rel",
-          payload: fragment,
+          payload: rel,
         });
       },
       async execute() {

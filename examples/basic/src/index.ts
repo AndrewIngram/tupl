@@ -4,9 +4,8 @@ import {
   createDataEntityHandle,
   extractSimpleRelScanRequest,
   type ProviderAdapter,
-  type ProviderFragment,
 } from "@tupl/provider-kit";
-import { stringifyUnknownValue } from "@tupl/foundation";
+import { stringifyUnknownValue, type RelNode } from "@tupl/foundation";
 import {
   createExecutableSchema,
   createSchemaBuilder,
@@ -24,19 +23,19 @@ function createMemoryProvider<TContext>(
   const adapter: ProviderAdapter<TContext> = {
     name: "memory",
     entities: {},
-    canExecute(fragment) {
-      return extractSimpleRelScanRequest(fragment.rel) !== null;
+    canExecute(rel) {
+      return extractSimpleRelScanRequest(rel) !== null;
     },
-    async compile(fragment) {
+    async compile(rel) {
       return AdapterResult.ok({
         provider: "memory",
         kind: "rel",
-        payload: fragment,
+        payload: rel,
       });
     },
     async execute(plan) {
-      const fragment = plan.payload as ProviderFragment;
-      const request = extractSimpleRelScanRequest(fragment.rel);
+      const rel = plan.payload as RelNode;
+      const request = extractSimpleRelScanRequest(rel);
       if (!request) {
         return AdapterResult.ok([]);
       }

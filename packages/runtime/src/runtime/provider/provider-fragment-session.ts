@@ -1,7 +1,8 @@
 import { Result } from "better-result";
 
 import { type RelNode } from "@tupl/foundation";
-import { type ProviderAdapter, type ProviderFragment } from "@tupl/provider-kit";
+import { type ProviderAdapter } from "@tupl/provider-kit";
+import type { ProviderRelTarget } from "@tupl/planner";
 import { type QueryRow } from "@tupl/schema-model";
 
 import type { QueryGuardrails, TuplDiagnostic } from "../contracts";
@@ -30,7 +31,7 @@ export function createProviderFragmentSession<TContext>(
   guardrails: QueryGuardrails,
   provider: ProviderAdapter<TContext>,
   providerName: string,
-  fragment: ProviderFragment,
+  fragment: ProviderRelTarget,
   rel: RelNode,
   diagnostics: TuplDiagnostic[] = [],
 ): QuerySession {

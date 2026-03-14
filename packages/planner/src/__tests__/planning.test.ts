@@ -389,14 +389,14 @@ describe("query/planning", () => {
 
     const providers = finalizeProviders({
       warehouse: {
-        canExecute(fragment) {
-          return fragment.kind === "rel";
+        canExecute() {
+          return true;
         },
-        async compile(fragment) {
+        async compile(rel) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
-            payload: fragment,
+            kind: "rel",
+            payload: rel,
           });
         },
         async execute() {
@@ -431,7 +431,7 @@ describe("query/planning", () => {
     if (physical.steps[0]?.kind !== "remote_fragment") {
       throw new Error("Expected remote fragment step.");
     }
-    expect(physical.steps[0].fragment.kind).toBe("rel");
+    expect(physical.steps[0].fragment.rel.kind).toBe("project");
   });
 
   it("splits deterministically to remote scans + local join when rel pushdown is rejected", async () => {
@@ -454,14 +454,14 @@ describe("query/planning", () => {
 
     const providers = finalizeProviders({
       warehouse: {
-        canExecute(fragment) {
-          return fragment.rel.kind === "scan";
+        canExecute(rel) {
+          return rel.kind === "scan";
         },
-        async compile(fragment) {
+        async compile(rel) {
           return Result.ok({
             provider: "warehouse",
             kind: "rel",
-            payload: fragment,
+            payload: rel,
           });
         },
         async execute() {

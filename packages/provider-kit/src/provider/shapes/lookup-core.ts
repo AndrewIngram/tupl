@@ -1,14 +1,13 @@
 import { Result } from "better-result";
 
 import {
-  collectCapabilityAtomsForFragment,
-  inferRouteFamilyForFragment,
-  type ProviderFragment,
+  collectCapabilityAtomsForRel,
+  inferRouteFamilyForRel,
   type ProviderLookupManyRequest,
   type ProviderOperationResult,
   type ProviderCapabilityReport,
 } from "..";
-import type { QueryRow, ScanFilterClause } from "@tupl/foundation";
+import type { QueryRow, RelNode, ScanFilterClause } from "@tupl/foundation";
 
 export interface LookupEntityBinding<TColumns extends string = string> {
   lookupKey: TColumns;
@@ -16,15 +15,15 @@ export interface LookupEntityBinding<TColumns extends string = string> {
 }
 
 export function buildLookupOnlyUnsupportedReport(
-  fragment: ProviderFragment,
+  rel: RelNode,
   reason: string,
   supportedAtoms: readonly string[] = ["lookup.bulk"],
 ): ProviderCapabilityReport {
-  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
+  const requiredAtoms = collectCapabilityAtomsForRel(rel);
   return {
     supported: false,
     reason,
-    routeFamily: inferRouteFamilyForFragment(fragment),
+    routeFamily: inferRouteFamilyForRel(rel),
     requiredAtoms,
     missingAtoms: requiredAtoms.filter((atom) => !supportedAtoms.includes(atom)),
   };

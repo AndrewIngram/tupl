@@ -53,13 +53,13 @@ export function createKyselyProvider<
     entities: entityOptions,
     unsupportedRelCompileMessage: "Unsupported relational fragment for Kysely provider.",
     unsupportedRelReasonMessage: "Rel fragment is not supported for single-query Kysely pushdown.",
-    resolveRelCompileStrategy({ fragment }) {
-      return resolveKyselyRelCompileStrategy(fragment.rel, entityConfigs);
+    resolveRelCompileStrategy({ rel }) {
+      return resolveKyselyRelCompileStrategy(rel, entityConfigs);
     },
-    buildRelPlanPayload({ fragment, strategy }) {
+    buildRelPlanPayload({ rel, strategy }) {
       return {
         strategy,
-        rel: fragment.rel,
+        rel,
       } satisfies KyselyRelCompiledPlan;
     },
     async executeCompiledPlan({ plan, context }) {

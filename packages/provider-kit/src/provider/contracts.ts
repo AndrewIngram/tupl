@@ -58,19 +58,6 @@ export interface ProviderLookupManyRequest {
   where?: ScanFilterClause[];
 }
 
-/** Rel fragments ask a provider to execute a provider-normalized relational subtree. */
-export interface RelProviderFragment {
-  kind: "rel";
-  provider: string;
-  rel: RelNode;
-}
-
-/**
- * Provider fragments are the only units of work the runtime asks a provider to reason about.
- * Providers compile canonical relational subtrees rather than planner-specific scan/aggregate routes.
- */
-export type ProviderFragment = RelProviderFragment;
-
 export type ProviderOperationResult<T, E = Error> = AdapterResult<T, E>;
 export type { ProviderRuntimeBinding };
 
@@ -85,15 +72,12 @@ export interface ProviderAdapterBase<TContext = unknown> {
   /** Provider-local fallback policy is merged with per-query runtime overrides. */
   fallbackPolicy?: QueryFallbackPolicy;
   /**
-   * `canExecute` answers whether the provider can run a fragment remotely.
+   * `canExecute` answers whether the provider can run a provider-normalized rel subtree remotely.
    * Returning a report is preferred when the adapter can explain unsupported atoms or cost.
    */
-  canExecute(
-    fragment: ProviderFragment,
-    context: TContext,
-  ): MaybePromise<boolean | ProviderCapabilityReport>;
+  canExecute(rel: RelNode, context: TContext): MaybePromise<boolean | ProviderCapabilityReport>;
   /** `estimate` is optional advisory metadata used when choosing remote vs local execution. */
-  estimate?(fragment: ProviderFragment, context: TContext): MaybePromise<ProviderEstimate>;
+  estimate?(rel: RelNode, context: TContext): MaybePromise<ProviderEstimate>;
   /**
    * Optional source-neutral physical entity handles owned by this adapter.
    */
@@ -101,12 +85,12 @@ export interface ProviderAdapterBase<TContext = unknown> {
 }
 
 /**
- * Fragment providers support full fragment compile/execute flows.
+ * Fragment providers support full rel-compile/execute flows.
  * `compile` must be pure with respect to runtime state; `execute` runs the compiled provider plan.
  */
 export interface FragmentProviderAdapter<TContext = unknown> extends ProviderAdapterBase<TContext> {
   compile(
-    fragment: ProviderFragment,
+    rel: RelNode,
     context: TContext,
   ): MaybePromise<ProviderOperationResult<ProviderCompiledPlan>>;
   describeCompiledPlan?(
@@ -128,7 +112,7 @@ export interface FragmentProviderAdapter<TContext = unknown> extends ProviderAda
 }
 
 /**
- * Provider adapters compile and execute canonical relational fragments.
+ * Provider adapters compile and execute canonical relational subtrees.
  * Optional lookup support is an optimization hook layered onto the same adapter contract.
  */
 export type ProviderAdapter<TContext = unknown> = FragmentProviderAdapter<TContext>;

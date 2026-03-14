@@ -52,13 +52,13 @@ export function createObjectionProvider<
     unsupportedRelCompileMessage: "Unsupported relational fragment for Objection provider.",
     unsupportedRelReasonMessage:
       "Rel fragment is not supported for single-query Objection pushdown.",
-    resolveRelCompileStrategy({ fragment }) {
-      return resolveObjectionRelCompileStrategy(fragment.rel, entityConfigs);
+    resolveRelCompileStrategy({ rel }) {
+      return resolveObjectionRelCompileStrategy(rel, entityConfigs);
     },
-    buildRelPlanPayload({ fragment, strategy }) {
+    buildRelPlanPayload({ rel, strategy }) {
       return {
         strategy,
-        rel: fragment.rel,
+        rel,
       } satisfies ObjectionRelCompiledPlan;
     },
     async executeCompiledPlan({ plan, context }) {

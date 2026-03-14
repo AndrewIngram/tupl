@@ -1,8 +1,8 @@
 import { bindAdapterEntities } from "../entity-handles";
 import { AdapterResult } from "../operations";
+import type { RelNode } from "@tupl/foundation";
 import type {
   ProviderCompiledPlan,
-  ProviderFragment,
   ProviderLookupManyRequest,
   ProviderPlanDescription,
 } from "../contracts";
@@ -110,15 +110,11 @@ export function createRelationalProviderAdapter<
     name: options.name,
     ...(capabilityAtoms ? { capabilityAtoms } : {}),
     ...(options.fallbackPolicy ? { fallbackPolicy: options.fallbackPolicy } : {}),
-    canExecute(fragment: ProviderFragment, context: TContext) {
-      return canExecuteRelationalFragment(options, fragment, context);
+    canExecute(rel: RelNode, context: TContext) {
+      return canExecuteRelationalFragment(options, rel, context);
     },
-    async compile(fragment: ProviderFragment, context: TContext) {
-      const capabilityContext = await resolveRelationalCapabilityContext(
-        options,
-        fragment,
-        context,
-      );
+    async compile(rel: RelNode, context: TContext) {
+      const capabilityContext = await resolveRelationalCapabilityContext(options, rel, context);
       if (!capabilityContext.strategy) {
         return AdapterResult.err(
           new Error(
@@ -139,7 +135,7 @@ export function createRelationalProviderAdapter<
       const compileArgs = {
         context,
         entities: options.entities,
-        fragment,
+        rel,
         name: options.name,
         strategy,
       };
@@ -153,7 +149,7 @@ export function createRelationalProviderAdapter<
         kind: "rel",
         payload: options.buildRelPlanPayload?.(compileArgs) ?? {
           strategy,
-          rel: fragment.rel,
+          rel,
         },
       } satisfies ProviderCompiledPlan);
     },

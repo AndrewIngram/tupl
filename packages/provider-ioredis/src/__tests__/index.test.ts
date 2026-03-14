@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { AdapterResult, type ProviderFragment } from "@tupl/provider-kit";
+import type { RelNode } from "@tupl/foundation";
+import { AdapterResult } from "@tupl/provider-kit";
 import { createIoredisProvider, type RedisLike, type RedisPipelineLike } from "../index";
 
 class StubPipeline implements RedisPipelineLike {
@@ -80,23 +81,19 @@ describe("ioredis adapter", () => {
       },
     });
 
-    const scanFragment: ProviderFragment = {
-      kind: "rel",
-      provider: "redisProvider",
-      rel: {
-        id: "redis:product_view_counts",
-        kind: "scan",
-        convention: "provider:redisProvider",
-        table: "product_view_counts",
-        select: ["product_id", "view_count"],
-        where: [{ op: "eq", column: "product_id", value: "p1" }],
-        output: [{ name: "product_id" }, { name: "view_count" }],
-      },
+    const scanRel: RelNode = {
+      id: "redis:product_view_counts",
+      kind: "scan",
+      convention: "provider:redisProvider",
+      table: "product_view_counts",
+      select: ["product_id", "view_count"],
+      where: [{ op: "eq", column: "product_id", value: "p1" }],
+      output: [{ name: "product_id" }, { name: "view_count" }],
     };
-    const scanCapability = await provider.canExecute(scanFragment, { tenant: "acme" });
+    const scanCapability = await provider.canExecute(scanRel, { tenant: "acme" });
     expect(scanCapability).toBe(true);
 
-    const plan = (await provider.compile(scanFragment, { tenant: "acme" })).unwrap();
+    const plan = (await provider.compile(scanRel, { tenant: "acme" })).unwrap();
     expect(await provider.describeCompiledPlan?.(plan, { tenant: "acme" })).toMatchObject({
       kind: "redis_lookup_scan",
       summary: "redisProvider keyed hash lookup",
@@ -126,16 +123,12 @@ describe("ioredis adapter", () => {
 
     const scanCapability = await provider.canExecute(
       {
-        kind: "rel",
-        provider: "redisProvider",
-        rel: {
-          id: "redis:product_view_counts",
-          kind: "scan",
-          convention: "provider:redisProvider",
-          table: "product_view_counts",
-          select: ["product_id", "view_count"],
-          output: [{ name: "product_id" }, { name: "view_count" }],
-        },
+        id: "redis:product_view_counts",
+        kind: "scan",
+        convention: "provider:redisProvider",
+        table: "product_view_counts",
+        select: ["product_id", "view_count"],
+        output: [{ name: "product_id" }, { name: "view_count" }],
       },
       { tenant: "acme" },
     );

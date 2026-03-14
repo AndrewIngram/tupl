@@ -1,9 +1,9 @@
+import type { RelNode } from "@tupl/foundation";
 import type { DataEntityColumnMap, DataEntityHandle, DataEntityShape } from "../entity-handles";
 import type {
   FragmentProviderAdapter,
   ProviderCompiledPlan,
   ProviderPlanDescription,
-  ProviderFragment,
   ProviderLookupManyRequest,
   QueryRow,
 } from "../contracts";
@@ -33,7 +33,7 @@ export interface RelationalProviderCapabilityContext<
 > {
   context: TContext;
   entities: TEntities;
-  fragment: Extract<ProviderFragment, { kind: "rel" }>;
+  rel: RelNode;
   routeFamily: ProviderRouteFamily;
   requiredAtoms?: ProviderCapabilityAtom[];
   missingAtoms?: ProviderCapabilityAtom[];
@@ -47,7 +47,7 @@ export interface RelationalProviderCompileRelArgs<
 > {
   context: TContext;
   entities: TEntities;
-  fragment: Extract<ProviderFragment, { kind: "rel" }>;
+  rel: RelNode;
   name: string;
   strategy: TStrategy;
 }
@@ -113,7 +113,7 @@ interface RelationalProviderAdapterOptionsBase<
   resolveRelCompileStrategy(args: {
     context: TContext;
     entities: TEntities;
-    fragment: Extract<ProviderFragment, { kind: "rel" }>;
+    rel: RelNode;
   }): MaybePromise<TStrategy | null>;
   unsupportedRelReason?(
     args: RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>,

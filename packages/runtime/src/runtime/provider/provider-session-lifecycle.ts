@@ -1,8 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
 
 import { type RelNode, type TuplError } from "@tupl/foundation";
-import type { ProviderFragment } from "@tupl/provider-kit";
-import { buildLogicalQueryPlanResult } from "@tupl/planner";
+import { buildLogicalQueryPlanResult, type ProviderRelTarget } from "@tupl/planner";
 import { createProviderFragmentSession } from "./provider-fragment-session";
 
 import type { QueryGuardrails, TuplDiagnostic } from "../contracts";
@@ -33,7 +32,7 @@ export interface PreparedSession<TContext> {
 
 export function createProviderFragmentPlan(
   providerName: string,
-  fragment: ProviderFragment,
+  fragment: ProviderRelTarget,
   diagnostics: TuplDiagnostic[],
 ): QueryExecutionPlan {
   return {
@@ -51,7 +50,7 @@ export function createProviderFragmentPlan(
           },
         },
         request: {
-          fragment: fragment.kind,
+          relKind: fragment.rel.kind,
         },
         ...(diagnostics.length > 0 ? { diagnostics } : {}),
       },

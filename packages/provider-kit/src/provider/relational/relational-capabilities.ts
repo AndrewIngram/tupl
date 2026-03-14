@@ -1,9 +1,9 @@
+import type { RelNode } from "@tupl/foundation";
 import {
-  collectCapabilityAtomsForFragment,
-  inferRouteFamilyForFragment,
+  collectCapabilityAtomsForRel,
+  inferRouteFamilyForRel,
   type ProviderCapabilityReport,
 } from "../capabilities";
-import type { ProviderFragment } from "../contracts";
 import type { MaybePromise } from "../operations";
 import type {
   RelationalProviderAdapterOptions,
@@ -17,10 +17,10 @@ export function canExecuteRelationalFragment<
   TStrategy extends string,
 >(
   options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
-  fragment: ProviderFragment,
+  rel: RelNode,
   context: TContext,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
-  return evaluateRelationalCapability(options, fragment, context);
+  return evaluateRelationalCapability(options, rel, context);
 }
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
@@ -37,20 +37,20 @@ export async function resolveRelationalCapabilityContext<
   TStrategy extends string,
 >(
   options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
-  fragment: Extract<ProviderFragment, { kind: "rel" }>,
+  rel: RelNode,
   context: TContext,
 ): Promise<RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>> {
-  const atomMetadata = buildAtomMetadata(options, fragment);
-  const routeFamily = inferRouteFamilyForFragment(fragment);
+  const atomMetadata = buildAtomMetadata(options, rel);
+  const routeFamily = inferRouteFamilyForRel(rel);
   const strategy = await options.resolveRelCompileStrategy({
     context,
     entities: options.entities,
-    fragment,
+    rel,
   });
   const capabilityContext: RelationalProviderCapabilityContext<TContext, TEntities, TStrategy> = {
     context,
     entities: options.entities,
-    fragment,
+    rel,
     routeFamily,
     ...atomMetadata,
     strategy,
@@ -65,22 +65,22 @@ function evaluateRelationalCapability<
   TStrategy extends string,
 >(
   options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
-  fragment: Extract<ProviderFragment, { kind: "rel" }>,
+  rel: RelNode,
   context: TContext,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
-  const atomMetadata = buildAtomMetadata(options, fragment);
-  const routeFamily = inferRouteFamilyForFragment(fragment);
+  const atomMetadata = buildAtomMetadata(options, rel);
+  const routeFamily = inferRouteFamilyForRel(rel);
   const strategy = options.resolveRelCompileStrategy({
     context,
     entities: options.entities,
-    fragment,
+    rel,
   });
   if (isPromiseLike<TStrategy | null>(strategy)) {
     return strategy.then((resolvedStrategy) =>
       evaluateRelationalCapabilityWithContext(options, {
         context,
         entities: options.entities,
-        fragment,
+        rel,
         routeFamily,
         ...atomMetadata,
         strategy: resolvedStrategy,
@@ -91,7 +91,7 @@ function evaluateRelationalCapability<
   return evaluateRelationalCapabilityWithContext(options, {
     context,
     entities: options.entities,
-    fragment,
+    rel,
     routeFamily,
     ...atomMetadata,
     strategy,
@@ -159,15 +159,12 @@ function buildAtomMetadata<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
->(
-  options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
-  fragment: ProviderFragment,
-) {
+>(options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>, rel: RelNode) {
   if (!options.declaredAtoms) {
     return null;
   }
 
-  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
+  const requiredAtoms = collectCapabilityAtomsForRel(rel);
   return {
     requiredAtoms,
     missingAtoms: requiredAtoms.filter((atom) => !options.declaredAtoms?.includes(atom)),

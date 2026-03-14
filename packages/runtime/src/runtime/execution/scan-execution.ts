@@ -7,7 +7,6 @@ import {
   normalizeCapability,
   unwrapProviderOperationResult,
   type ProviderAdapter,
-  type ProviderFragment,
 } from "@tupl/provider-kit";
 import {
   createPhysicalBindingFromEntity,
@@ -86,22 +85,18 @@ export async function executeScanResult<TContext>(
   }
   const request = requestResult.value;
 
-  const fragment: ProviderFragment = {
-    kind: "rel",
-    provider: providerName,
-    rel: {
-      ...scan,
-      table: request.table,
-      select: request.select,
-      ...(request.where ? { where: request.where } : {}),
-      ...(request.orderBy ? { orderBy: request.orderBy } : {}),
-      ...(request.limit != null ? { limit: request.limit } : {}),
-      ...(request.offset != null ? { offset: request.offset } : {}),
-    },
+  const providerRel = {
+    ...scan,
+    table: request.table,
+    select: request.select,
+    ...(request.where ? { where: request.where } : {}),
+    ...(request.orderBy ? { orderBy: request.orderBy } : {}),
+    ...(request.limit != null ? { limit: request.limit } : {}),
+    ...(request.offset != null ? { offset: request.offset } : {}),
   };
 
   const capabilityResult = await tryExecutionStepAsync("check scan provider capability", () =>
-    Promise.resolve(provider.canExecute(fragment, context.context)),
+    Promise.resolve(provider.canExecute(providerRel, context.context)),
   );
   if (Result.isError(capabilityResult)) {
     return capabilityResult;
@@ -119,7 +114,7 @@ export async function executeScanResult<TContext>(
   }
 
   const compiledResult = await tryExecutionStepAsync("compile scan provider fragment", () =>
-    Promise.resolve(provider.compile(fragment, context.context)).then(
+    Promise.resolve(provider.compile(providerRel, context.context)).then(
       unwrapProviderOperationResult,
     ),
   );

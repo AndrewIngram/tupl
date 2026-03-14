@@ -3,11 +3,10 @@ import { Result, type Result as BetterResult } from "better-result";
 import type { RelNode, TuplError } from "@tupl/foundation";
 import {
   normalizeCapability,
-  type Provider,
+  type ProviderAdapter,
   type ProviderCapabilityReport,
-  type ProviderFragment,
 } from "@tupl/provider-kit";
-import { buildProviderFragmentForRelResult } from "@tupl/planner";
+import { buildProviderFragmentForRelResult, type ProviderRelTarget } from "@tupl/planner";
 
 import type { QueryInput, TuplDiagnostic } from "../contracts";
 import { buildCapabilityDiagnostics, tryQueryStep, tryQueryStepAsync } from "../diagnostics";
@@ -17,8 +16,8 @@ import { isPromiseLike } from "../policy";
  * Provider capability owns fragment construction and provider capability resolution.
  */
 export interface QueryCapabilityResolution<TContext> {
-  fragment: ProviderFragment | null;
-  provider: Provider<TContext> | null;
+  fragment: ProviderRelTarget | null;
+  provider: ProviderAdapter<TContext> | null;
   report: ProviderCapabilityReport | null;
   diagnostics: TuplDiagnostic[];
 }
@@ -37,7 +36,7 @@ function resolveCapabilityTargetResult<TContext>(
   rel: RelNode,
 ): BetterResult<
   {
-    fragment: ProviderFragment | null;
+    fragment: ProviderRelTarget | null;
     provider: ProviderAdapter<TContext> | null;
   },
   TuplError
@@ -64,7 +63,7 @@ function resolveCapabilityTargetResult<TContext>(
 function buildCapabilityResolution<TContext>(
   input: QueryInput<TContext>,
   inputResolution: {
-    fragment: ProviderFragment;
+    fragment: ProviderRelTarget;
     provider: ProviderAdapter<TContext>;
     report: ProviderCapabilityReport;
   },
@@ -75,7 +74,7 @@ function buildCapabilityResolution<TContext>(
     report: inputResolution.report,
     diagnostics: buildCapabilityDiagnostics(
       inputResolution.provider,
-      inputResolution.fragment,
+      inputResolution.fragment.rel,
       inputResolution.report,
       input.fallbackPolicy,
     ),
@@ -108,7 +107,7 @@ export async function resolveProviderCapabilityForRel<TContext>(
   const { fragment, provider } = target;
 
   const capabilityResult = await tryQueryStepAsync("resolve provider capability", () =>
-    Promise.resolve(provider.canExecute(fragment, input.context)),
+    Promise.resolve(provider.canExecute(fragment.rel, input.context)),
   );
   if (Result.isError(capabilityResult)) {
     return capabilityResult;
@@ -149,7 +148,7 @@ export function resolveSyncProviderCapabilityForRel<TContext>(
   const { fragment, provider } = target;
 
   const capabilityResult = tryQueryStep("resolve provider capability", () =>
-    provider.canExecute(fragment, input.context),
+    provider.canExecute(fragment.rel, input.context),
   );
   if (Result.isError(capabilityResult)) {
     return capabilityResult;

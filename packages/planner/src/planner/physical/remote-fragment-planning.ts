@@ -42,7 +42,7 @@ export async function tryPlanRemoteFragmentResult<TContext>(
   }
 
   const capabilityResult = await Result.tryPromise({
-    try: () => Promise.resolve(adapter.canExecute(fragmentResult.value, context)),
+    try: () => Promise.resolve(adapter.canExecute(fragmentResult.value.rel, context)),
     catch: (error) => toPhysicalPlanningError(error, "plan remote fragment"),
   });
   if (Result.isError(capabilityResult)) {

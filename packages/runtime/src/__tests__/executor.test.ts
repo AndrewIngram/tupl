@@ -2,7 +2,7 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import { type RelNode } from "@tupl/foundation";
-import { type FragmentProviderAdapter, type ProviderFragment } from "@tupl/provider-kit";
+import { type FragmentProviderAdapter } from "@tupl/provider-kit";
 import { type QueryRow, type ScanFilterClause, type TableScanRequest } from "@tupl/schema-model";
 import { executeRelWithProvidersResult } from "@tupl/runtime/executor";
 import { finalizeProviders } from "@tupl/test-support/runtime";
@@ -11,19 +11,19 @@ import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
 type TestProvider = Omit<FragmentProviderAdapter, "name"> &
   Partial<Pick<FragmentProviderAdapter, "lookupMany">>;
 
-function toScanRequest(fragment: ProviderFragment): TableScanRequest | null {
-  if (fragment.rel.kind !== "scan") {
+function toScanRequest(rel: RelNode): TableScanRequest | null {
+  if (rel.kind !== "scan") {
     return null;
   }
 
   return {
-    table: fragment.rel.table,
-    ...(fragment.rel.alias ? { alias: fragment.rel.alias } : {}),
-    select: fragment.rel.select,
-    ...(fragment.rel.where ? { where: fragment.rel.where } : {}),
-    ...(fragment.rel.orderBy ? { orderBy: fragment.rel.orderBy } : {}),
-    ...(fragment.rel.limit != null ? { limit: fragment.rel.limit } : {}),
-    ...(fragment.rel.offset != null ? { offset: fragment.rel.offset } : {}),
+    table: rel.table,
+    ...(rel.alias ? { alias: rel.alias } : {}),
+    select: rel.select,
+    ...(rel.where ? { where: rel.where } : {}),
+    ...(rel.orderBy ? { orderBy: rel.orderBy } : {}),
+    ...(rel.limit != null ? { limit: rel.limit } : {}),
+    ...(rel.offset != null ? { offset: rel.offset } : {}),
   };
 }
 
@@ -248,12 +248,12 @@ describe("query/local executor", () => {
         canExecute() {
           return true;
         },
-        async compile(fragment: ProviderFragment) {
-          return Result.ok({ provider: "orders_provider", kind: "rel", payload: fragment });
+        async compile(rel: RelNode) {
+          return Result.ok({ provider: "orders_provider", kind: "rel", payload: rel });
         },
         async execute(plan) {
-          const fragment = plan.payload as ProviderFragment;
-          const request = toScanRequest(fragment);
+          const rel = plan.payload as RelNode;
+          const request = toScanRequest(rel);
           if (!request) {
             return Result.ok([]);
           }
@@ -264,12 +264,12 @@ describe("query/local executor", () => {
         canExecute() {
           return true;
         },
-        async compile(fragment: ProviderFragment) {
-          return Result.ok({ provider: "users_provider", kind: "rel", payload: fragment });
+        async compile(rel: RelNode) {
+          return Result.ok({ provider: "users_provider", kind: "rel", payload: rel });
         },
         async execute(plan) {
-          const fragment = plan.payload as ProviderFragment;
-          const request = toScanRequest(fragment);
+          const rel = plan.payload as RelNode;
+          const request = toScanRequest(rel);
           if (!request) {
             return Result.ok([]);
           }
@@ -360,8 +360,8 @@ describe("query/local executor", () => {
         canExecute() {
           return true;
         },
-        async compile(fragment: ProviderFragment) {
-          return Result.ok({ provider: "memory", kind: "rel", payload: fragment });
+        async compile(rel: RelNode) {
+          return Result.ok({ provider: "memory", kind: "rel", payload: rel });
         },
         async execute() {
           return Result.err(new Error("Downstream provider failed."));
@@ -405,15 +405,15 @@ describe("query/local executor", () => {
 
     const providers = finalizeProviders({
       memory: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.rel.kind === "scan";
+        canExecute(rel: RelNode) {
+          return rel.kind === "scan";
         },
-        async compile(fragment: ProviderFragment) {
-          return Result.ok({ provider: "memory", kind: "rel", payload: fragment });
+        async compile(rel: RelNode) {
+          return Result.ok({ provider: "memory", kind: "rel", payload: rel });
         },
         async execute(plan) {
-          const fragment = plan.payload as ProviderFragment;
-          const request = toScanRequest(fragment);
+          const rel = plan.payload as RelNode;
+          const request = toScanRequest(rel);
           if (!request) {
             return Result.ok([]);
           }
@@ -540,19 +540,19 @@ describe("query/local executor", () => {
 
     const providers = finalizeProviders({
       memory: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.rel.kind === "scan";
+        canExecute(rel: RelNode) {
+          return rel.kind === "scan";
         },
-        async compile(fragment: ProviderFragment) {
+        async compile(rel: RelNode) {
           return Result.ok({
             provider: "memory",
             kind: "rel",
-            payload: fragment,
+            payload: rel,
           });
         },
         async execute(plan) {
-          const fragment = plan.payload as ProviderFragment;
-          const request = toScanRequest(fragment);
+          const rel = plan.payload as RelNode;
+          const request = toScanRequest(rel);
           if (!request) {
             return Result.ok([]);
           }
@@ -629,19 +629,19 @@ describe("query/local executor", () => {
 
     const providers = finalizeProviders({
       memory: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.rel.kind === "scan";
+        canExecute(rel: RelNode) {
+          return rel.kind === "scan";
         },
-        async compile(fragment: ProviderFragment) {
+        async compile(rel: RelNode) {
           return Result.ok({
             provider: "memory",
             kind: "rel",
-            payload: fragment,
+            payload: rel,
           });
         },
         async execute(plan) {
-          const fragment = plan.payload as ProviderFragment;
-          const request = toScanRequest(fragment);
+          const rel = plan.payload as RelNode;
+          const request = toScanRequest(rel);
           if (!request) {
             return Result.ok([]);
           }
@@ -728,19 +728,19 @@ describe("query/local executor", () => {
 
     const providers = finalizeProviders({
       memory: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.rel.kind === "scan";
+        canExecute(rel: RelNode) {
+          return rel.kind === "scan";
         },
-        async compile(fragment: ProviderFragment) {
+        async compile(rel: RelNode) {
           return Result.ok({
             provider: "memory",
             kind: "rel",
-            payload: fragment,
+            payload: rel,
           });
         },
         async execute(plan) {
-          const fragment = plan.payload as ProviderFragment;
-          const request = toScanRequest(fragment);
+          const rel = plan.payload as RelNode;
+          const request = toScanRequest(rel);
           if (!request) {
             return Result.ok([]);
           }
@@ -879,19 +879,19 @@ describe("query/local executor", () => {
 
     const providers = finalizeProviders({
       memory: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.rel.kind === "scan";
+        canExecute(rel: RelNode) {
+          return rel.kind === "scan";
         },
-        async compile(fragment: ProviderFragment) {
+        async compile(rel: RelNode) {
           return Result.ok({
             provider: "memory",
             kind: "rel",
-            payload: fragment,
+            payload: rel,
           });
         },
         async execute(plan) {
-          const fragment = plan.payload as ProviderFragment;
-          const request = toScanRequest(fragment);
+          const rel = plan.payload as RelNode;
+          const request = toScanRequest(rel);
           if (!request) {
             return Result.ok([]);
           }
@@ -1005,19 +1005,19 @@ describe("query/local executor", () => {
 
     const providers = finalizeProviders({
       memory: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.rel.kind === "scan";
+        canExecute(rel: RelNode) {
+          return rel.kind === "scan";
         },
-        async compile(fragment: ProviderFragment) {
+        async compile(rel: RelNode) {
           return Result.ok({
             provider: "memory",
             kind: "rel",
-            payload: fragment,
+            payload: rel,
           });
         },
         async execute(plan) {
-          const fragment = plan.payload as ProviderFragment;
-          const request = toScanRequest(fragment);
+          const rel = plan.payload as RelNode;
+          const request = toScanRequest(rel);
           if (!request) {
             return Result.ok([]);
           }
@@ -1100,19 +1100,19 @@ describe("query/local executor", () => {
 
     const providers = finalizeProviders({
       memory: {
-        canExecute(fragment: ProviderFragment) {
-          return fragment.rel.kind === "scan";
+        canExecute(rel: RelNode) {
+          return rel.kind === "scan";
         },
-        async compile(fragment: ProviderFragment) {
+        async compile(rel: RelNode) {
           return Result.ok({
             provider: "memory",
             kind: "rel",
-            payload: fragment,
+            payload: rel,
           });
         },
         async execute(plan) {
-          const fragment = plan.payload as ProviderFragment;
-          const request = toScanRequest(fragment);
+          const rel = plan.payload as RelNode;
+          const request = toScanRequest(rel);
           if (!request) {
             return Result.ok([]);
           }

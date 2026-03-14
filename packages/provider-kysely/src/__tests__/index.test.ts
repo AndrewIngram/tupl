@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type ProviderFragment, type QueryRow, type TableScanRequest } from "@tupl/provider-kit";
+import { type QueryRow, type TableScanRequest } from "@tupl/provider-kit";
 import type { RelNode } from "@tupl/foundation";
 import { createKyselyProvider, type KyselyDatabaseLike } from "../index";
 
@@ -425,18 +425,14 @@ describe("kysely adapter", () => {
       where: [{ op: "eq", column: "user_id", value: "u1" }],
     };
 
-    const scanFragment: ProviderFragment = {
-      kind: "rel",
+    const scanRel: RelNode = buildProjectedScanRel({
       provider: "dbProvider",
-      rel: buildProjectedScanRel({
-        provider: "dbProvider",
-        table: "orders",
-        select: scanRequest.select,
-        where: scanRequest.where,
-      }),
-    };
+      table: "orders",
+      select: scanRequest.select,
+      where: scanRequest.where,
+    });
     const scanContext = { orgId: "org_1", db };
-    const scanPlan = (await provider.compile(scanFragment, scanContext)).unwrap();
+    const scanPlan = (await provider.compile(scanRel, scanContext)).unwrap();
     const scanRows = (await provider.execute(scanPlan, scanContext)).unwrap();
     expect(scanRows).toEqual([{ id: "o1", user_id: "u1" }]);
 
@@ -474,15 +470,11 @@ describe("kysely adapter", () => {
 
     const plan = (
       await provider.compile(
-        {
-          kind: "rel",
+        buildProjectedScanRel({
           provider: "dbProvider",
-          rel: buildProjectedScanRel({
-            provider: "dbProvider",
-            table: "orders",
-            select: ["id"],
-          }),
-        },
+          table: "orders",
+          select: ["id"],
+        }),
         {},
       )
     ).unwrap();
@@ -537,11 +529,7 @@ describe("kysely adapter", () => {
       },
     });
 
-    const relFragment: ProviderFragment = {
-      kind: "rel",
-      provider: "dbProvider",
-      rel: buildJoinProjectRel(),
-    };
+    const relFragment: RelNode = buildJoinProjectRel();
 
     expect(provider.canExecute(relFragment, {})).toBe(true);
     const plan = (await provider.compile(relFragment, {})).unwrap();
@@ -579,14 +567,7 @@ describe("kysely adapter", () => {
       output: [{ name: "id" }],
     };
 
-    const result = provider.canExecute(
-      {
-        kind: "rel",
-        provider: "kysely",
-        rel: withNode,
-      },
-      {},
-    );
+    const result = provider.canExecute(withNode, {});
 
     expect(result).toEqual(
       expect.objectContaining({
@@ -607,14 +588,7 @@ describe("kysely adapter", () => {
       },
     });
 
-    const result = provider.canExecute(
-      {
-        kind: "rel",
-        provider: "kysely",
-        rel: buildWithWindowRel(),
-      },
-      {},
-    );
+    const result = provider.canExecute(buildWithWindowRel(), {});
 
     expect(result).toBe(true);
   });
@@ -636,16 +610,7 @@ describe("kysely adapter", () => {
       },
     });
 
-    const plan = (
-      await provider.compile(
-        {
-          kind: "rel",
-          provider: "dbProvider",
-          rel: buildAggregateRel(),
-        },
-        {},
-      )
-    ).unwrap();
+    const plan = (await provider.compile(buildAggregateRel(), {})).unwrap();
     const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([{ user_id: "u1", order_count: 2, total_spend: 4500 }]);
@@ -667,15 +632,11 @@ describe("kysely adapter", () => {
 
     const plan = (
       await provider.compile(
-        {
-          kind: "rel",
-          provider: "dbProvider",
-          rel: buildAggregateRel({
-            fn: "avg",
-            column: { alias: "o", column: "total_cents" },
-            as: "average_spend",
-          }),
-        },
+        buildAggregateRel({
+          fn: "avg",
+          column: { alias: "o", column: "total_cents" },
+          as: "average_spend",
+        }),
         {},
       )
     ).unwrap();

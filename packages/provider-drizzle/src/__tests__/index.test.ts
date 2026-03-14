@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { stringifyUnknownValue, type RelNode } from "@tupl/foundation";
-import { type ProviderFragment, type QueryRow, type ScanFilterClause } from "@tupl/provider-kit";
+import { type QueryRow, type ScanFilterClause } from "@tupl/provider-kit";
 import {
   createDrizzleProvider,
   impossibleCondition,
@@ -712,28 +712,20 @@ describe("drizzle adapter", () => {
       provider: "warehouse",
     });
 
-    const scanFragment: ProviderFragment = {
-      kind: "rel",
+    const scanRel: RelNode = buildProjectedScanRel({
       provider: "warehouse",
-      rel: buildProjectedScanRel({
-        provider: "warehouse",
-        table: "users",
-        select: ["id"],
-      }),
-    };
-    expect(provider.canExecute(scanFragment, {})).toBe(true);
+      table: "users",
+      select: ["id"],
+    });
+    expect(provider.canExecute(scanRel, {})).toBe(true);
 
-    const unknownScan: ProviderFragment = {
-      rel: {
-        id: "scan_missing",
-        kind: "scan",
-        convention: "provider:warehouse",
-        table: "missing",
-        select: ["id"],
-        output: [{ name: "id" }],
-      },
-      provider: "warehouse",
-      kind: "rel",
+    const unknownScan: RelNode = {
+      id: "scan_missing",
+      kind: "scan",
+      convention: "provider:warehouse",
+      table: "missing",
+      select: ["id"],
+      output: [{ name: "id" }],
     };
     expect(provider.canExecute(unknownScan, {})).toEqual(
       expect.objectContaining({
@@ -775,15 +767,11 @@ describe("drizzle adapter", () => {
 
     const plan = (
       await provider.compile(
-        {
-          kind: "rel",
+        buildProjectedScanRel({
           provider: "drizzle",
-          rel: buildProjectedScanRel({
-            provider: "drizzle",
-            table: "users",
-            select: ["user_id", "email"],
-          }),
-        },
+          table: "users",
+          select: ["user_id", "email"],
+        }),
         {},
       )
     ).unwrap();
@@ -815,15 +803,11 @@ describe("drizzle adapter", () => {
 
     const plan = (
       await provider.compile(
-        {
-          kind: "rel",
+        buildProjectedScanRel({
           provider: "drizzle",
-          rel: buildProjectedScanRel({
-            provider: "drizzle",
-            table: "users",
-            select: ["id"],
-          }),
-        },
+          table: "users",
+          select: ["id"],
+        }),
         { db },
       )
     ).unwrap();
@@ -849,15 +833,11 @@ describe("drizzle adapter", () => {
 
     await expect(
       provider.compile(
-        {
-          kind: "rel",
+        buildProjectedScanRel({
           provider: "drizzle",
-          rel: buildProjectedScanRel({
-            provider: "drizzle",
-            table: "users",
-            select: ["id"],
-          }),
-        },
+          table: "users",
+          select: ["id"],
+        }),
         {},
       ),
     ).rejects.toThrow(
@@ -879,15 +859,11 @@ describe("drizzle adapter", () => {
 
     await expect(
       provider.compile(
-        {
-          kind: "rel",
+        buildProjectedScanRel({
           provider: "drizzle",
-          rel: buildProjectedScanRel({
-            provider: "drizzle",
-            table: "users",
-            select: ["id"],
-          }),
-        },
+          table: "users",
+          select: ["id"],
+        }),
         {},
       ),
     ).rejects.toThrow(
@@ -1184,15 +1160,11 @@ describe("drizzle adapter", () => {
       select: (...args: Parameters<typeof withCapableDb.select>) => withCapableDb.select(...args),
     } satisfies DrizzleQueryExecutor;
 
-    expect(
-      await Promise.resolve(
-        provider.canExecute({ kind: "rel", provider: "drizzle", rel }, { db: withCapableDb }),
-      ),
-    ).toBe(true);
+    expect(await Promise.resolve(provider.canExecute(rel, { db: withCapableDb }))).toBe(true);
     await expect(
-      Promise.resolve(
-        provider.compile({ kind: "rel", provider: "drizzle", rel }, { db: withoutWithDb }),
-      ).then((result) => result.unwrap()),
+      Promise.resolve(provider.compile(rel, { db: withoutWithDb })).then((result) =>
+        result.unwrap(),
+      ),
     ).rejects.toThrow(
       'Drizzle database instance does not support required APIs for "with" rel pushdown.',
     );
@@ -1276,16 +1248,7 @@ describe("drizzle adapter", () => {
       output: [],
     };
 
-    const plan = (
-      await provider.compile(
-        {
-          kind: "rel",
-          provider: "drizzle",
-          rel,
-        },
-        {},
-      )
-    ).unwrap();
+    const plan = (await provider.compile(rel, {})).unwrap();
     const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([
@@ -1399,18 +1362,9 @@ describe("drizzle adapter", () => {
       output: [],
     };
 
-    expect(provider.canExecute({ kind: "rel", provider: "drizzle", rel }, {})).toBe(true);
+    expect(provider.canExecute(rel, {})).toBe(true);
 
-    const plan = (
-      await provider.compile(
-        {
-          kind: "rel",
-          provider: "drizzle",
-          rel,
-        },
-        {},
-      )
-    ).unwrap();
+    const plan = (await provider.compile(rel, {})).unwrap();
     const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([
@@ -1441,16 +1395,7 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = (
-      await provider.compile(
-        {
-          kind: "rel",
-          provider: "drizzle",
-          rel: buildAggregateRel(),
-        },
-        {},
-      )
-    ).unwrap();
+    const plan = (await provider.compile(buildAggregateRel(), {})).unwrap();
     const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([{ user_id: "u1", order_count: 2, total_spend: 4500 }]);
@@ -1484,16 +1429,7 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = (
-      await provider.compile(
-        {
-          kind: "rel",
-          provider: "drizzle",
-          rel: buildSetOpRel(),
-        },
-        {},
-      )
-    ).unwrap();
+    const plan = (await provider.compile(buildSetOpRel(), {})).unwrap();
     const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([{ id: "o1" }, { id: "o2" }]);
@@ -1529,16 +1465,7 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = (
-      await provider.compile(
-        {
-          kind: "rel",
-          provider: "drizzle",
-          rel: buildWithWindowRel(),
-        },
-        {},
-      )
-    ).unwrap();
+    const plan = (await provider.compile(buildWithWindowRel(), {})).unwrap();
     const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([{ id: "o2", spend_rank: 1 }]);
@@ -1566,24 +1493,20 @@ describe("drizzle adapter", () => {
     const plan = (
       await provider.compile(
         {
-          kind: "rel",
-          provider: "drizzle",
-          rel: {
-            id: "project_orders",
-            kind: "project",
+          id: "project_orders",
+          kind: "project",
+          convention: "provider:drizzle",
+          input: {
+            id: "scan_orders",
+            kind: "scan",
             convention: "provider:drizzle",
-            input: {
-              id: "scan_orders",
-              kind: "scan",
-              convention: "provider:drizzle",
-              table: "orders",
-              alias: "o",
-              select: ["id"],
-              output: [],
-            },
-            columns: [{ source: { alias: "o", column: "id" }, output: "id" }],
+            table: "orders",
+            alias: "o",
+            select: ["id"],
             output: [],
           },
+          columns: [{ source: { alias: "o", column: "id" }, output: "id" }],
+          output: [],
         },
         {},
       )

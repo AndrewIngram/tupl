@@ -1,11 +1,8 @@
 import { Result, type Result as BetterResult } from "better-result";
 
 import type { RelNode } from "@tupl/foundation";
-import {
-  unwrapProviderOperationResult,
-  type FragmentProvider,
-  type ProviderFragment,
-} from "@tupl/provider-kit";
+import { unwrapProviderOperationResult, type FragmentProviderAdapter } from "@tupl/provider-kit";
+import type { ProviderRelTarget } from "@tupl/planner";
 import { mapProviderRowsToRelOutput, type QueryRow } from "@tupl/schema-model";
 
 import type { QueryGuardrails, TuplDiagnostic } from "../contracts";
@@ -24,9 +21,9 @@ export interface ProviderFragmentRunFailure {
  * Provider fragment replay owns one-shot remote fragment execution and done-event shaping.
  */
 export async function runProviderFragmentOnceResult<TContext>(input: {
-  provider: FragmentProvider<TContext>;
+  provider: FragmentProviderAdapter<TContext>;
   providerName: string;
-  fragment: ProviderFragment;
+  fragment: ProviderRelTarget;
   rel: RelNode;
   sessionInput: QuerySessionInput<TContext>;
   guardrails: QueryGuardrails;
@@ -41,7 +38,7 @@ export async function runProviderFragmentOnceResult<TContext>(input: {
 
   const compiledResult = await tryQueryStepAsync("compile provider fragment", async () =>
     unwrapProviderOperationResult(
-      await Promise.resolve(input.provider.compile(input.fragment, input.sessionInput.context)),
+      await Promise.resolve(input.provider.compile(input.fragment.rel, input.sessionInput.context)),
     ),
   );
   if (Result.isError(compiledResult)) {

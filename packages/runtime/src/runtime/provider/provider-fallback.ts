@@ -36,7 +36,7 @@ export function maybeRejectFallbackResult<TContext>(
               summarizeCapabilityReason(resolution.report),
               {
                 provider: resolution.provider.name,
-                fragment: resolution.fragment?.kind,
+                relKind: resolution.fragment?.rel.kind,
                 missingAtoms: resolution.report.missingAtoms,
               },
               "42000",

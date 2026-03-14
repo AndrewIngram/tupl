@@ -48,7 +48,7 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
   }
 
   const capabilityResult = await tryExecutionStepAsync("check subtree provider capability", () =>
-    Promise.resolve(provider.canExecute(fragment, context.context)),
+    Promise.resolve(provider.canExecute(fragment.rel, context.context)),
   );
   if (Result.isError(capabilityResult)) {
     return capabilityResult;
@@ -60,7 +60,7 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
   }
 
   const compiledResult = await tryExecutionStepAsync("compile subtree provider fragment", () =>
-    Promise.resolve(provider.compile(fragment, context.context)).then(
+    Promise.resolve(provider.compile(fragment.rel, context.context)).then(
       unwrapProviderOperationResult,
     ),
   );

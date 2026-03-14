@@ -49,7 +49,7 @@ export function tryPlanRemoteFragmentStep<TContext>(
       },
     },
     request: {
-      fragment: resolution.fragment.kind,
+      relKind: resolution.fragment.rel.kind,
     },
     outputs: node.output.map((column) => column.name),
     sqlOrigin: "SELECT",

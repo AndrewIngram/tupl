@@ -64,8 +64,8 @@ export function createDrizzleProvider<
     resolveEntityColumns({ config }) {
       return deriveEntityColumnsFromTable(config.table);
     },
-    resolveRelCompileStrategy({ fragment }) {
-      return resolveDrizzleRelCompileStrategy(fragment.rel, tableConfigs);
+    resolveRelCompileStrategy({ rel }) {
+      return resolveDrizzleRelCompileStrategy(rel, tableConfigs);
     },
     isRelStrategySupported({ context, strategy }) {
       if (strategy == null) {
@@ -83,10 +83,10 @@ export function createDrizzleProvider<
       const db = resolveDrizzleDbMaybeSync(options, context);
       return isPromiseLike(db) ? db.then(evaluateWithDb) : evaluateWithDb(db);
     },
-    buildRelPlanPayload({ fragment, strategy }) {
+    buildRelPlanPayload({ rel, strategy }) {
       return {
         strategy,
-        rel: fragment.rel,
+        rel,
       } satisfies DrizzleRelCompiledPlan;
     },
     async executeCompiledPlan({ plan, context }) {

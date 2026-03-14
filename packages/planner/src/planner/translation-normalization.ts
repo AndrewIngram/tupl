@@ -7,9 +7,8 @@ import type {
   RelProjectMapping,
 } from "@tupl/foundation";
 
-import type { ProviderFragment } from "@tupl/provider-kit";
-
 import type { PhysicalPlan, PhysicalStep } from "./physical/physical";
+import type { ProviderRelTarget } from "./provider-fragments";
 
 interface RelNormalizationState {
   relIds: Map<string, string>;
@@ -271,11 +270,10 @@ export function normalizeRelForSnapshot(rel: RelNode) {
 }
 
 function normalizeProviderFragmentForSnapshot(
-  fragment: ProviderFragment,
+  fragment: ProviderRelTarget,
   state: RelNormalizationState,
 ) {
   return {
-    kind: "rel",
     provider: fragment.provider,
     rel: normalizeRelNode(fragment.rel, state),
   };

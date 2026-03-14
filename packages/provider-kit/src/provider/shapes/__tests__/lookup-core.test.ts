@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Result } from "better-result";
 
-import type { ProviderFragment } from "@tupl/provider-kit";
+import type { RelNode } from "@tupl/foundation";
 import {
   buildLookupOnlyUnsupportedReport,
   filterLookupRows,
@@ -11,21 +11,17 @@ import {
 
 describe("lookup provider core", () => {
   it("builds a standard unsupported report for non-lookup fragments", () => {
-    const fragment: ProviderFragment = {
-      kind: "rel",
-      provider: "redisProvider",
-      rel: {
-        id: "redis:product_view_counts",
-        kind: "scan",
-        convention: "provider:redisProvider",
-        table: "product_view_counts",
-        select: ["product_id", "view_count"],
-        output: [{ name: "product_id" }, { name: "view_count" }],
-      },
+    const rel: RelNode = {
+      id: "redis:product_view_counts",
+      kind: "scan",
+      convention: "provider:redisProvider",
+      table: "product_view_counts",
+      select: ["product_id", "view_count"],
+      output: [{ name: "product_id" }, { name: "view_count" }],
     };
 
     const report = buildLookupOnlyUnsupportedReport(
-      fragment,
+      rel,
       "Lookup-only providers do not support scan pushdown.",
     );
 

@@ -27,16 +27,12 @@ describe("provider/describe-compiled-plan", () => {
 
     const compileResult = await adapter.compile(
       {
-        kind: "rel",
-        provider: "warehouse",
-        rel: {
-          id: "scan_orders",
-          kind: "scan",
-          convention: "provider:warehouse",
-          table: "orders",
-          select: ["id"],
-          output: [{ name: "id" }],
-        },
+        id: "scan_orders",
+        kind: "scan",
+        convention: "provider:warehouse",
+        table: "orders",
+        select: ["id"],
+        output: [{ name: "id" }],
       },
       {},
     );

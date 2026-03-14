@@ -10,13 +10,13 @@ Terminology in this guide:
 
 The core model now has three layers:
 
-- route families: coarse maturity stages for docs and onboarding
-- capability atoms: the actual planner/runtime contract
+- capability atoms: optional coarse metadata for docs and fast prefiltering
+- `canExecute(rel)`: the actual planner/runtime source of truth
 - fallback policy: whether unsupported or expensive shapes fall back locally, warn, or fail
 
 ## Minimal Adapter Skeleton
 
-This is the minimum useful shape for a relational adapter. It supports `scan` and rejects `rel` pushdown with structured capability info.
+This is the minimum useful shape for a relational adapter. It supports simple `scan` rel nodes and rejects broader relational pushdown with structured capability info.
 
 ```ts
 import type {
@@ -24,10 +24,10 @@ import type {
   ProviderCapabilityAtom,
   ProviderCapabilityReport,
   ProviderCompiledPlan,
-  ProviderFragment,
   QueryRow,
   TableScanRequest,
 } from "@tupl/provider-kit";
+import type { RelNode } from "@tupl/foundation";
 
 type DbContext = {
   tenantId: string;
@@ -51,46 +51,54 @@ const declaredAtoms: readonly ProviderCapabilityAtom[] = [
 export function createExampleSqlAdapter(): Provider<DbContext> {
   return {
     name: "example-sql",
-    routeFamilies: ["scan"],
     capabilityAtoms: [...declaredAtoms],
 
-    canExecute(fragment): boolean | ProviderCapabilityReport {
-      switch (fragment.kind) {
-        case "scan":
-          return true;
-        case "rel":
-          return {
-            supported: false,
-            routeFamily: "rel-core",
-            requiredAtoms: ["join.inner"],
-            missingAtoms: ["join.inner"],
-            reason: "This adapter only supports scan pushdown.",
-          };
-        default:
-          return false;
+    canExecute(rel): boolean | ProviderCapabilityReport {
+      if (rel.kind === "scan") {
+        return true;
       }
+
+      return {
+        supported: false,
+        routeFamily: "rel-core",
+        requiredAtoms: ["join.inner"],
+        missingAtoms: ["join.inner"],
+        reason: "This adapter only supports scan pushdown.",
+      };
     },
 
-    async compile(fragment): Promise<ProviderCompiledPlan> {
-      if (fragment.kind !== "scan") {
-        throw new Error(`Unsupported fragment kind: ${fragment.kind}`);
+    async compile(rel): Promise<ProviderCompiledPlan> {
+      if (rel.kind !== "scan") {
+        throw new Error(`Unsupported rel kind: ${rel.kind}`);
       }
 
       return {
         provider: "example-sql",
-        kind: "scan",
-        payload: compileScanRequest(fragment.request),
+        kind: "query",
+        payload: compileScanRequest(toScanRequest(rel)),
       };
     },
 
     async execute(compiled, context): Promise<QueryRow[]> {
-      if (compiled.kind !== "scan") {
+      if (compiled.kind !== "query") {
         throw new Error(`Unsupported compiled plan kind: ${compiled.kind}`);
       }
 
       const plan = compiled.payload as CompiledScanPlan;
       return runQuery(plan.sql, plan.params, context);
     },
+  };
+}
+
+function toScanRequest(rel: Extract<RelNode, { kind: "scan" }>): TableScanRequest {
+  return {
+    table: rel.table,
+    select: rel.select,
+    ...(rel.alias ? { alias: rel.alias } : {}),
+    ...(rel.where ? { where: rel.where } : {}),
+    ...(rel.orderBy ? { orderBy: rel.orderBy } : {}),
+    ...(rel.limit != null ? { limit: rel.limit } : {}),
+    ...(rel.offset != null ? { offset: rel.offset } : {}),
   };
 }
 
@@ -405,23 +413,23 @@ Practical sequence:
 
 ## `canExecute` Contract
 
-`canExecute` is the source of truth for a concrete fragment decision.
+`canExecute` is the source of truth for a concrete rel-subtree decision.
 
 This is the shape to aim for once you start supporting more than `scan`:
 
 ```ts
-canExecute(fragment): boolean | ProviderCapabilityReport {
-  if (fragment.kind === "scan") {
+canExecute(rel): boolean | ProviderCapabilityReport {
+  if (rel.kind === "scan") {
     return true;
   }
 
-  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
+  const requiredAtoms = collectCapabilityAtomsForRel(rel);
   const missingAtoms = requiredAtoms.filter((atom) => !declaredAtoms.includes(atom));
 
   if (missingAtoms.length > 0) {
     return {
       supported: false,
-      routeFamily: inferRouteFamilyForFragment(fragment),
+      routeFamily: inferRouteFamilyForRel(rel),
       requiredAtoms,
       missingAtoms,
       reason: "Rel fragment is not supported for single-query pushdown.",

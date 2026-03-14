@@ -5,12 +5,12 @@ import {
   TuplGuardrailError,
   TuplRuntimeError,
   TuplTimeoutError,
+  type RelNode,
   type TuplError,
 } from "@tupl/foundation";
 import type {
-  Provider,
+  ProviderAdapter,
   ProviderCapabilityReport,
-  ProviderFragment,
   QueryFallbackPolicy,
   TuplDiagnostic,
 } from "@tupl/provider-kit";
@@ -98,20 +98,20 @@ export function summarizeCapabilityReason(report: ProviderCapabilityReport | nul
 }
 
 export function buildCapabilityDiagnostics<TContext>(
-  provider: Provider<TContext> | null,
-  fragment: ProviderFragment | null,
+  provider: ProviderAdapter<TContext> | null,
+  rel: RelNode | null,
   report: ProviderCapabilityReport | null,
   queryPolicy?: QueryFallbackPolicy,
 ): TuplDiagnostic[] {
   const diagnostics = [...(report?.diagnostics ?? [])];
-  if (!provider || !fragment || !report || report.supported) {
+  if (!provider || !rel || !report || report.supported) {
     return diagnostics;
   }
 
   const policy = resolveFallbackPolicy(queryPolicy, provider.fallbackPolicy);
   const details: Record<string, unknown> = {
     provider: provider.name,
-    fragment: fragment.kind,
+    relKind: rel.kind,
   };
   if (report.routeFamily) {
     details.routeFamily = report.routeFamily;

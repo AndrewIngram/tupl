@@ -13,7 +13,6 @@ import {
   createDataEntityHandle,
   extractSimpleRelScanRequest,
   type ProviderAdapter,
-  type ProviderFragment,
   type ProvidersMap,
 } from "@tupl/provider-kit";
 import {
@@ -64,9 +63,9 @@ type ProviderInput<TContext> = {
   entities?: Record<string, unknown>;
   capabilityAtoms?: readonly string[];
   fallbackPolicy?: unknown;
-  canExecute(fragment: ProviderFragment, context: TContext): unknown;
-  estimate?(fragment: ProviderFragment, context: TContext): unknown;
-  compile?(fragment: ProviderFragment, context: TContext): unknown;
+  canExecute(rel: RelNode, context: TContext): unknown;
+  estimate?(rel: RelNode, context: TContext): unknown;
+  compile?(rel: RelNode, context: TContext): unknown;
   describeCompiledPlan?(plan: unknown, context: TContext): unknown;
   execute?(plan: unknown, context: TContext): unknown;
   lookupMany?(request: unknown, context: TContext): unknown;
@@ -364,8 +363,8 @@ export function createMethodsProvider<TContext>(
   const adapter: ProviderAdapter<TContext> = {
     name: providerName,
     entities: {},
-    canExecute(fragment) {
-      const executable = extractMethodsExecutableRel(fragment.rel);
+    canExecute(rel) {
+      const executable = extractMethodsExecutableRel(rel);
       if (!executable) {
         return false;
       }
@@ -377,11 +376,11 @@ export function createMethodsProvider<TContext>(
 
       return executable.kind === "scan" ? !!method.scan : !!method.aggregate;
     },
-    async compile(fragment) {
+    async compile(rel) {
       return Result.ok({
         provider: providerName,
         kind: "rel",
-        payload: fragment,
+        payload: rel,
       });
     },
     async execute(plan, context) {
@@ -389,8 +388,8 @@ export function createMethodsProvider<TContext>(
         return Result.err(new Error(`Unsupported methods provider compiled plan: ${plan.kind}`));
       }
 
-      const fragment = plan.payload as ProviderFragment;
-      const executable = extractMethodsExecutableRel(fragment.rel);
+      const rel = plan.payload as RelNode;
+      const executable = extractMethodsExecutableRel(rel);
       if (!executable) {
         return Result.err(new Error("Methods-based provider does not support this rel fragment."));
       }
@@ -1133,17 +1132,17 @@ function createMemoryProvider<TContext>(
 ): ProviderAdapter<TContext> {
   return {
     name: "memory",
-    canExecute(fragment) {
+    canExecute(rel) {
       return (
-        extractSimpleRelScanRequest(fragment.rel) !== null ||
-        extractMethodsExecutableRel(fragment.rel)?.kind === "aggregate"
+        extractSimpleRelScanRequest(rel) !== null ||
+        extractMethodsExecutableRel(rel)?.kind === "aggregate"
       );
     },
-    async compile(fragment) {
+    async compile(rel) {
       return Result.ok({
         provider: "memory",
         kind: "rel",
-        payload: fragment,
+        payload: rel,
       });
     },
     async execute(plan) {
@@ -1151,13 +1150,13 @@ function createMemoryProvider<TContext>(
         return Result.err(new Error(`Unsupported memory provider compiled plan: ${plan.kind}`));
       }
 
-      const fragment = plan.payload as ProviderFragment;
-      const directScan = extractSimpleRelScanRequest(fragment.rel);
+      const rel = plan.payload as RelNode;
+      const directScan = extractSimpleRelScanRequest(rel);
       if (directScan) {
         return Result.ok(scanRows(rowsByTable[directScan.table] ?? [], directScan));
       }
 
-      const executable = extractMethodsExecutableRel(fragment.rel);
+      const executable = extractMethodsExecutableRel(rel);
       if (!executable || executable.kind !== "aggregate") {
         return Result.err(new Error("Unsupported memory provider rel fragment."));
       }

@@ -68,8 +68,8 @@ describe("playground/provider-pushdown", () => {
         reseed = false;
         const plan = bundle.session.getPlan();
         expect(plan.steps[0]?.kind).toBe("remote_fragment");
-        expect(plan.steps[0]?.request).toEqual({
-          fragment: "rel",
+        expect(plan.steps[0]?.request).toMatchObject({
+          relKind: expect.any(String),
         });
         expect(plan.steps.filter((step) => step.kind === "remote_fragment")).toHaveLength(1);
 

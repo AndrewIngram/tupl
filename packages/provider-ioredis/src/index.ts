@@ -6,10 +6,10 @@ import {
 import {
   AdapterResult,
   bindAdapterEntities,
-  collectCapabilityAtomsForFragment,
+  collectCapabilityAtomsForRel,
   createDataEntityHandle,
   extractSimpleRelScanRequest,
-  inferRouteFamilyForFragment,
+  inferRouteFamilyForRel,
   normalizeDataEntityShape,
   type DataEntityHandle,
   type DataEntityShape,
@@ -18,12 +18,12 @@ import {
   type ProviderCapabilityAtom,
   type ProviderCapabilityReport,
   type ProviderCompiledPlan,
-  type ProviderFragment,
   type ProviderRuntimeBinding,
   type QueryRow,
   type ScanFilterClause,
   type TableScanRequest,
 } from "@tupl/provider-kit";
+import type { RelNode } from "@tupl/foundation";
 import {
   filterLookupRows,
   projectLookupRow,
@@ -141,15 +141,12 @@ function isValidRedis(redis: RedisLike | null | undefined): redis is RedisLike {
   return Boolean(redis && typeof redis.pipeline === "function");
 }
 
-function buildUnsupportedCapabilityReport(
-  fragment: ProviderFragment,
-  reason: string,
-): ProviderCapabilityReport {
-  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
+function buildUnsupportedCapabilityReport(rel: RelNode, reason: string): ProviderCapabilityReport {
+  const requiredAtoms = collectCapabilityAtomsForRel(rel);
   return {
     supported: false,
     reason,
-    routeFamily: inferRouteFamilyForFragment(fragment),
+    routeFamily: inferRouteFamilyForRel(rel),
     requiredAtoms,
     missingAtoms: requiredAtoms.filter((atom) => !REDIS_CAPABILITY_ATOMS.includes(atom)),
   };
@@ -261,11 +258,11 @@ function collectFetchColumns(request: TableScanRequest, lookupKey: string): stri
 }
 
 function buildRelExecutionPayload<TContext>(
-  fragment: ProviderFragment,
+  rel: RelNode,
   entitiesByName: Map<string, IoredisEntityConfig<TContext, string>>,
   provider: string,
 ) {
-  const request = extractSimpleRelScanRequest(fragment.rel);
+  const request = extractSimpleRelScanRequest(rel);
   if (!request) {
     return AdapterResult.err(
       new TuplExecutionError({
@@ -520,14 +517,14 @@ export function createIoredisProvider<
     name: providerName,
     capabilityAtoms: [...REDIS_CAPABILITY_ATOMS],
     entities: handles,
-    canExecute(fragment) {
-      const payload = buildRelExecutionPayload(fragment, entitiesByName, providerName);
+    canExecute(rel) {
+      const payload = buildRelExecutionPayload(rel, entitiesByName, providerName);
       return AdapterResult.isError(payload)
-        ? buildUnsupportedCapabilityReport(fragment, payload.error.message)
+        ? buildUnsupportedCapabilityReport(rel, payload.error.message)
         : true;
     },
-    async compile(fragment) {
-      const payload = buildRelExecutionPayload(fragment, entitiesByName, providerName);
+    async compile(rel) {
+      const payload = buildRelExecutionPayload(rel, entitiesByName, providerName);
       if (AdapterResult.isError(payload)) {
         return payload;
       }

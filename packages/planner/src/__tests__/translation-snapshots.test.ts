@@ -1067,7 +1067,6 @@ describe("query/translation-snapshots", () => {
           {
             "dependsOn": [],
             "fragment": {
-              "kind": "rel",
               "provider": "orders",
               "rel": {
                 "alias": "o",
@@ -1097,7 +1096,6 @@ describe("query/translation-snapshots", () => {
           {
             "dependsOn": [],
             "fragment": {
-              "kind": "rel",
               "provider": "users",
               "rel": {
                 "alias": "u",

@@ -1,7 +1,5 @@
 import type { RelExpr, RelNode, ScanFilterClause, TuplDiagnostic } from "@tupl/foundation";
 
-import type { ProviderFragment } from "./contracts";
-
 export type { TuplDiagnostic } from "@tupl/foundation";
 
 export type ProviderRouteFamily = "scan" | "lookup" | "aggregate" | "rel-core" | "rel-advanced";
@@ -81,25 +79,23 @@ export function normalizeCapability(
   return capability;
 }
 
-export function inferRouteFamilyForFragment(fragment: ProviderFragment) {
-  if (fragment.rel.kind === "scan") {
+export function inferRouteFamilyForRel(rel: RelNode) {
+  if (rel.kind === "scan") {
     return "scan";
   }
-  if (fragment.rel.kind === "aggregate") {
+  if (rel.kind === "aggregate") {
     return "aggregate";
   }
-  return hasAdvancedRelFeatures(fragment.rel) ? "rel-advanced" : "rel-core";
+  return hasAdvancedRelFeatures(rel) ? "rel-advanced" : "rel-core";
 }
 
-export function collectCapabilityAtomsForFragment(
-  fragment: ProviderFragment,
-): ProviderCapabilityAtom[] {
+export function collectCapabilityAtomsForRel(rel: RelNode): ProviderCapabilityAtom[] {
   const atoms = new Set<ProviderCapabilityAtom>();
-  collectCapabilityAtomsForRel(fragment.rel, atoms);
+  collectCapabilityAtomsForNode(rel, atoms);
   return [...atoms];
 }
 
-function collectCapabilityAtomsForRel(node: RelNode, atoms: Set<ProviderCapabilityAtom>): void {
+function collectCapabilityAtomsForNode(node: RelNode, atoms: Set<ProviderCapabilityAtom>): void {
   switch (node.kind) {
     case "scan":
       atoms.add("scan.project");
@@ -120,7 +116,7 @@ function collectCapabilityAtomsForRel(node: RelNode, atoms: Set<ProviderCapabili
       if (node.expr) {
         collectCapabilityAtomsForExpr(node.expr, atoms);
       }
-      collectCapabilityAtomsForRel(node.input, atoms);
+      collectCapabilityAtomsForNode(node.input, atoms);
       return;
     case "project":
       for (const column of node.columns) {
@@ -128,23 +124,23 @@ function collectCapabilityAtomsForRel(node: RelNode, atoms: Set<ProviderCapabili
           collectCapabilityAtomsForExpr(column.expr, atoms);
         }
       }
-      collectCapabilityAtomsForRel(node.input, atoms);
+      collectCapabilityAtomsForNode(node.input, atoms);
       return;
     case "correlate":
-      collectCapabilityAtomsForRel(node.left, atoms);
-      collectCapabilityAtomsForRel(node.right, atoms);
+      collectCapabilityAtomsForNode(node.left, atoms);
+      collectCapabilityAtomsForNode(node.right, atoms);
       return;
     case "join":
       atoms.add(node.joinType === "inner" ? "join.inner" : "join.left");
       if (node.joinType === "right" || node.joinType === "full") {
         atoms.add("join.right_full");
       }
-      collectCapabilityAtomsForRel(node.left, atoms);
-      collectCapabilityAtomsForRel(node.right, atoms);
+      collectCapabilityAtomsForNode(node.left, atoms);
+      collectCapabilityAtomsForNode(node.right, atoms);
       return;
     case "aggregate":
       atoms.add("aggregate.group_by");
-      collectCapabilityAtomsForRel(node.input, atoms);
+      collectCapabilityAtomsForNode(node.input, atoms);
       return;
     case "window":
       if (
@@ -166,15 +162,15 @@ function collectCapabilityAtomsForRel(node: RelNode, atoms: Set<ProviderCapabili
       ) {
         atoms.add("window.aggregate_default_frame");
       }
-      collectCapabilityAtomsForRel(node.input, atoms);
+      collectCapabilityAtomsForNode(node.input, atoms);
       return;
     case "sort":
       atoms.add("scan.sort");
-      collectCapabilityAtomsForRel(node.input, atoms);
+      collectCapabilityAtomsForNode(node.input, atoms);
       return;
     case "limit_offset":
       atoms.add("scan.limit_offset");
-      collectCapabilityAtomsForRel(node.input, atoms);
+      collectCapabilityAtomsForNode(node.input, atoms);
       return;
     case "set_op":
       atoms.add(
@@ -186,19 +182,19 @@ function collectCapabilityAtomsForRel(node: RelNode, atoms: Set<ProviderCapabili
               ? "set_op.intersect"
               : "set_op.except",
       );
-      collectCapabilityAtomsForRel(node.left, atoms);
-      collectCapabilityAtomsForRel(node.right, atoms);
+      collectCapabilityAtomsForNode(node.left, atoms);
+      collectCapabilityAtomsForNode(node.right, atoms);
       return;
     case "with":
       atoms.add("cte.non_recursive");
       for (const cte of node.ctes) {
-        collectCapabilityAtomsForRel(cte.query, atoms);
+        collectCapabilityAtomsForNode(cte.query, atoms);
       }
-      collectCapabilityAtomsForRel(node.body, atoms);
+      collectCapabilityAtomsForNode(node.body, atoms);
       return;
     case "repeat_union":
-      collectCapabilityAtomsForRel(node.seed, atoms);
-      collectCapabilityAtomsForRel(node.iterative, atoms);
+      collectCapabilityAtomsForNode(node.seed, atoms);
+      collectCapabilityAtomsForNode(node.iterative, atoms);
       return;
   }
 }
@@ -212,7 +208,7 @@ function collectCapabilityAtomsForExpr(expr: RelExpr, atoms: Set<ProviderCapabil
       atoms.add(
         expr.mode === "exists" ? "subquery.exists_uncorrelated" : "subquery.scalar_uncorrelated",
       );
-      collectCapabilityAtomsForRel(expr.rel, atoms);
+      collectCapabilityAtomsForNode(expr.rel, atoms);
       return;
     case "function":
       switch (expr.name) {

@@ -53,47 +53,40 @@ const declaredAtoms: readonly ProviderCapabilityAtom[] = ["lookup.bulk"];
 export function createExampleKvAdapter(rows: KvRecord[]): Provider<KvContext> {
   return {
     name: "example-kv",
-    routeFamilies: ["lookup"],
     capabilityAtoms: [...declaredAtoms],
     fallbackPolicy: {
       maxLookupFanout: 1000,
       rejectOnEstimatedCost: true,
     },
 
-    canExecute(fragment): boolean | ProviderCapabilityReport {
-      switch (fragment.kind) {
-        case "scan":
-          return {
-            supported: false,
-            routeFamily: "scan",
-            requiredAtoms: ["scan.project"],
-            missingAtoms: ["scan.project"],
-            reason: "This KV adapter is lookup-first and does not support general scan pushdown.",
-          };
-        case "rel":
-          return {
-            supported: false,
-            routeFamily: "rel-core",
-            reason: "Complex relational pushdown is not supported for this KV adapter.",
-          };
-        default:
-          return false;
-      }
+    canExecute(rel): boolean | ProviderCapabilityReport {
+      return {
+        supported: false,
+        routeFamily: rel.kind === "scan" ? "scan" : "rel-core",
+        reason:
+          rel.kind === "scan"
+            ? "This KV adapter is lookup-first and does not support general scan pushdown."
+            : "Complex relational pushdown is not supported for this KV adapter.",
+      };
     },
 
-    async compile(fragment): Promise<ProviderCompiledPlan> {
-      if (fragment.kind === "scan") {
-        return {
-          provider: "example-kv",
-          kind: "scan",
-          payload: {
-            kind: "scan",
-            request: fragment.request,
-          } satisfies CompiledKvPlan,
-        };
+    async compile(rel): Promise<ProviderCompiledPlan> {
+      if (rel.kind !== "scan") {
+        throw new Error(`Unsupported rel kind: ${rel.kind}`);
       }
 
-      throw new Error(`Unsupported fragment kind: ${fragment.kind}`);
+      return {
+        provider: "example-kv",
+        kind: "scan",
+        payload: {
+          kind: "scan",
+          request: {
+            table: rel.table,
+            select: rel.select,
+            ...(rel.where ? { where: rel.where } : {}),
+          },
+        } satisfies CompiledKvPlan,
+      };
     },
 
     async execute(compiled, _context): Promise<QueryRow[]> {

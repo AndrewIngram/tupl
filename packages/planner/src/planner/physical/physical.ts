@@ -1,5 +1,5 @@
 import type { RelNode } from "@tupl/foundation";
-import type { ProviderFragment } from "@tupl/provider-kit";
+import type { ProviderRelTarget } from "../provider-fragments";
 
 export type PhysicalStepKind =
   | "remote_fragment"
@@ -24,7 +24,7 @@ export interface PhysicalStepBase {
 export interface RemoteFragmentPhysicalStep extends PhysicalStepBase {
   kind: "remote_fragment";
   provider: string;
-  fragment: ProviderFragment;
+  fragment: ProviderRelTarget;
 }
 
 export interface LookupJoinPhysicalStep extends PhysicalStepBase {

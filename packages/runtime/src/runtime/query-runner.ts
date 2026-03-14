@@ -182,7 +182,7 @@ async function compileExplainProviderPlansResult<TContext>(
       }
 
       const capability = normalizeCapability(
-        await Promise.resolve(adapter.canExecute(providerFragment, input.context)),
+        await Promise.resolve(adapter.canExecute(providerFragment.rel, input.context)),
       );
       if (!capability.supported) {
         providerPlans.push({
@@ -196,7 +196,7 @@ async function compileExplainProviderPlansResult<TContext>(
       }
 
       const compiledPlan = unwrapQueryResult(
-        await adapter.compile(providerFragment, input.context),
+        await adapter.compile(providerFragment.rel, input.context),
       );
       const description =
         typeof adapter.describeCompiledPlan === "function"

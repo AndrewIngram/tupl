@@ -53,14 +53,7 @@ export function resolveSyncLookupJoinCandidate<TContext>(
     return null;
   }
 
-  const capability = rightAdapter.canExecute(
-    {
-      kind: "rel",
-      provider: rightProvider,
-      rel: rightScan,
-    },
-    input.context,
-  );
+  const capability = rightAdapter.canExecute(rightScan, input.context);
   if (isPromiseLike(capability)) {
     return null;
   }
