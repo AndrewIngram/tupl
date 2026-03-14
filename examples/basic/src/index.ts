@@ -2,6 +2,7 @@ import {
   AdapterResult,
   bindAdapterEntities,
   createDataEntityHandle,
+  extractSimpleRelScanRequest,
   type ProviderAdapter,
   type ProviderFragment,
 } from "@tupl/provider-kit";
@@ -20,27 +21,11 @@ function createMemoryProvider<TContext>(
   schema: SchemaDefinition,
   tables: Record<string, QueryRow[]>,
 ): ProviderAdapter<TContext> {
-  const toScanRequest = (fragment: ProviderFragment): TableScanRequest | null => {
-    if (fragment.rel.kind !== "scan") {
-      return null;
-    }
-
-    return {
-      table: fragment.rel.table,
-      ...(fragment.rel.alias ? { alias: fragment.rel.alias } : {}),
-      select: fragment.rel.select,
-      ...(fragment.rel.where ? { where: fragment.rel.where } : {}),
-      ...(fragment.rel.orderBy ? { orderBy: fragment.rel.orderBy } : {}),
-      ...(fragment.rel.limit != null ? { limit: fragment.rel.limit } : {}),
-      ...(fragment.rel.offset != null ? { offset: fragment.rel.offset } : {}),
-    };
-  };
-
   const adapter: ProviderAdapter<TContext> = {
     name: "memory",
     entities: {},
     canExecute(fragment) {
-      return fragment.rel.kind === "scan";
+      return extractSimpleRelScanRequest(fragment.rel) !== null;
     },
     async compile(fragment) {
       return AdapterResult.ok({
@@ -51,7 +36,7 @@ function createMemoryProvider<TContext>(
     },
     async execute(plan) {
       const fragment = plan.payload as ProviderFragment;
-      const request = toScanRequest(fragment);
+      const request = extractSimpleRelScanRequest(fragment.rel);
       if (!request) {
         return AdapterResult.ok([]);
       }

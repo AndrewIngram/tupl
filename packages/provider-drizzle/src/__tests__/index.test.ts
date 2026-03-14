@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { stringifyUnknownValue, type RelNode } from "@tupl/foundation";
-import { type ProviderFragment, type QueryRow } from "@tupl/provider-kit";
+import { type ProviderFragment, type QueryRow, type ScanFilterClause } from "@tupl/provider-kit";
 import {
   createDrizzleProvider,
   impossibleCondition,
@@ -167,7 +167,7 @@ function buildProjectedScanRel(input: {
   provider: string;
   table: string;
   select: string[];
-  where?: Array<{ op: string; column: string; value?: unknown; values?: unknown[] }>;
+  where?: ScanFilterClause[];
 }) {
   return {
     id: `project_${input.table}`,

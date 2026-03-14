@@ -9,18 +9,17 @@ import {
   type RelScanNode,
 } from "@tupl/foundation";
 import {
-  bindProviderEntities,
+  bindAdapterEntities,
   createDataEntityHandle,
-  type Provider,
+  extractSimpleRelScanRequest,
+  type ProviderAdapter,
   type ProviderFragment,
-  type ProviderMap,
+  type ProvidersMap,
 } from "@tupl/provider-kit";
 import {
   type ConstraintValidationOptions,
   createExecutableSchema,
-  type ExecutableSchemaQueryInput,
   type ExecutableSchema,
-  type ExplainResult,
   type QueryGuardrails,
 } from "@tupl/runtime";
 import {
@@ -63,7 +62,6 @@ import { aggregateArrayRows, scanArrayRows } from "./methods";
 type ProviderInput<TContext> = {
   name?: string;
   entities?: Record<string, unknown>;
-  routeFamilies?: readonly string[];
   capabilityAtoms?: readonly string[];
   fallbackPolicy?: unknown;
   canExecute(fragment: ProviderFragment, context: TContext): unknown;
@@ -74,26 +72,18 @@ type ProviderInput<TContext> = {
   lookupMany?(request: unknown, context: TContext): unknown;
 };
 
-type UnwrappedExecutableSchema<
-  TContext,
-  TSchema extends SchemaDefinition = SchemaDefinition,
-> = Omit<ExecutableSchema<TContext, TSchema>, "query" | "explain"> & {
-  query(input: ExecutableSchemaQueryInput<TContext>): Promise<QueryRow[]>;
-  explain(input: ExecutableSchemaQueryInput<TContext>): ExplainResult;
-};
-
 export function finalizeProviders<TContext>(
   providers: Record<string, ProviderInput<TContext>>,
-): Record<string, Provider<TContext>> {
+): Record<string, ProviderAdapter<TContext>> {
   for (const [providerName, adapter] of Object.entries(providers)) {
-    const boundAdapter = adapter as Provider<TContext>;
+    const boundAdapter = adapter as ProviderAdapter<TContext>;
     if (!boundAdapter.name) {
       boundAdapter.name = providerName;
     }
-    bindProviderEntities(boundAdapter);
+    bindAdapterEntities(boundAdapter);
   }
 
-  return providers as Record<string, Provider<TContext>>;
+  return providers as Record<string, ProviderAdapter<TContext>>;
 }
 
 function toEntityColumns(
@@ -236,12 +226,12 @@ function getCalculatedColumnOptions(
 export function createExecutableSchemaFromProviders<TContext, TSchema extends SchemaDefinition>(
   schema: TSchema,
   providers: Record<string, ProviderInput<TContext>>,
-): UnwrappedExecutableSchema<TContext> {
+) {
   const providerEntries = Object.entries(providers);
   const singleProviderName = providerEntries.length === 1 ? providerEntries[0]?.[0] : undefined;
 
   for (const [providerName, adapter] of providerEntries) {
-    const boundAdapter = adapter as Provider<TContext>;
+    const boundAdapter = adapter as ProviderAdapter<TContext>;
     if (!boundAdapter.name) {
       boundAdapter.name = providerName;
     }
@@ -295,14 +285,14 @@ export function createExecutableSchemaFromProviders<TContext, TSchema extends Sc
     if (!adapter) {
       throw new Error(`No provider registered for table ${tableName}: ${providerName}`);
     }
-    const boundAdapter = adapter as Provider<TContext>;
+    const boundAdapter = adapter as ProviderAdapter<TContext>;
 
     if (!boundAdapter.entities?.[tableName]) {
       boundAdapter.entities ??= {};
       boundAdapter.entities[tableName] = createDataEntityHandle({
         entity: binding?.kind === "physical" ? binding.entity : tableName,
         provider: providerName,
-        providerInstance: boundAdapter,
+        adapter: boundAdapter,
         columns:
           binding?.kind === "physical"
             ? toEntityColumnsFromBindings(binding.columnBindings, tableDefinition.columns)
@@ -310,7 +300,7 @@ export function createExecutableSchemaFromProviders<TContext, TSchema extends Sc
       });
     }
 
-    bindProviderEntities(boundAdapter);
+    bindAdapterEntities(boundAdapter);
 
     builder.table(tableName, boundAdapter.entities[tableName], {
       columns: ({ col }) =>
@@ -363,15 +353,15 @@ export function createExecutableSchemaFromProviders<TContext, TSchema extends Sc
     });
   }
 
-  return withUnwrappedExecutableSchema(unwrapResult(createExecutableSchema(builder)));
+  return createExecutableSchema(builder);
 }
 
 export function createMethodsProvider<TContext>(
   schema: SchemaDefinition,
   methods: TableMethodsMap<TContext>,
   providerName = "memory",
-): Provider<TContext> {
-  const provider: Provider<TContext> = {
+): ProviderAdapter<TContext> {
+  const adapter: ProviderAdapter<TContext> = {
     name: providerName,
     entities: {},
     canExecute(fragment) {
@@ -450,22 +440,22 @@ export function createMethodsProvider<TContext>(
   };
 
   for (const tableName of Object.keys(schema.tables)) {
-    provider.entities![tableName] = createDataEntityHandle({
+    adapter.entities![tableName] = createDataEntityHandle({
       entity: tableName,
       provider: providerName,
-      providerInstance: provider,
+      adapter,
       columns: toEntityColumns(schema.tables[tableName]!.columns),
     });
   }
 
-  return bindProviderEntities(provider);
+  return bindAdapterEntities(adapter);
 }
 
 export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDefinition>(
   schema: TSchema,
   methods: TableMethodsMap<TContext>,
   providerName = "memory",
-): UnwrappedExecutableSchema<TContext> {
+) {
   const provider = createMethodsProvider(schema, methods, providerName);
   const builder = createSchemaBuilder<TContext>();
 
@@ -484,7 +474,7 @@ export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDe
     });
   }
 
-  return withUnwrappedExecutableSchema(unwrapResult(createExecutableSchema(builder)));
+  return createExecutableSchema(builder);
 }
 
 function extractMethodsExecutableRel(rel: RelNode):
@@ -1006,30 +996,20 @@ export function createMethodsSession<TContext>(input: {
   constraintValidation?: ConstraintValidationOptions;
   options?: QuerySessionOptions;
 }) {
-  return unwrapResult(
-    createExecutableSchemaSession(
-      createExecutableMethodsSchema(
-        input.schema,
-        input.methods,
-      ) as unknown as ExecutableSchema<TContext>,
-      {
-        context: input.context,
-        sql: input.sql,
-        ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),
-        ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
-        ...(input.options ? { options: input.options } : {}),
-      },
-    ),
-  );
+  return createExecutableSchemaSession(createExecutableMethodsSchema(input.schema, input.methods), {
+    context: input.context,
+    sql: input.sql,
+    ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),
+    ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
+    ...(input.options ? { options: input.options } : {}),
+  });
 }
 
 export function createSessionFromExecutableSchema<TContext>(
-  executableSchema: UnwrappedExecutableSchema<TContext>,
+  executableSchema: ExecutableSchema<TContext>,
   input: ExecutableSchemaSessionInput<TContext>,
 ) {
-  return unwrapResult(
-    createExecutableSchemaSession(executableSchema as unknown as ExecutableSchema<TContext>, input),
-  );
+  return createExecutableSchemaSession(executableSchema, input);
 }
 
 export type RowsByTable<TSchema extends SchemaDefinition> = {
@@ -1054,7 +1034,7 @@ export function createQueryHarness<
 >(options: {
   schema: TSchema;
   rowsByTable: RowsByTable<TSchema>;
-  providers?: ProviderMap<TContext>;
+  providers?: ProvidersMap<TContext>;
 }): QueryHarness<TSchema, TContext> {
   const schema = options.schema;
   const rowsByTable = options.rowsByTable as Record<string, QueryRow[]>;
@@ -1090,7 +1070,7 @@ export async function withQueryHarness<
   options: {
     schema: TSchema;
     rowsByTable: RowsByTable<TSchema>;
-    providers?: ProviderMap<TContext>;
+    providers?: ProvidersMap<TContext>;
   },
   fn: (harness: QueryHarness<TSchema, TContext>) => Promise<TResult>,
 ): Promise<TResult> {
@@ -1108,7 +1088,7 @@ function createControlDatabase<TSchema extends SchemaDefinition>(
   rowsByTable: RowsByTable<TSchema>,
 ): InstanceType<typeof Database> {
   const db = new Database(":memory:");
-  db.exec(unwrapResult(toSqlDDL(schema, { ifNotExists: true })));
+  db.exec(toSqlDDL(schema, { ifNotExists: true }));
 
   for (const [tableName, table] of Object.entries(schema.tables)) {
     const columns = Object.keys(table.columns);
@@ -1132,34 +1112,6 @@ function createControlDatabase<TSchema extends SchemaDefinition>(
   return db;
 }
 
-function unwrapResult<T, E>(result: Result<T, E>): T {
-  if (Result.isError(result)) {
-    throw result.error;
-  }
-
-  return result.value;
-}
-
-async function unwrapPromiseResult<T, E>(result: Promise<Result<T, E>>): Promise<T> {
-  return unwrapResult(await result);
-}
-
-function withUnwrappedExecutableSchema<TContext, TSchema extends SchemaDefinition>(
-  executableSchema: ExecutableSchema<TContext, TSchema>,
-): UnwrappedExecutableSchema<TContext, TSchema> {
-  const originalQuery = executableSchema.query.bind(executableSchema);
-  const originalExplain = executableSchema.explain.bind(executableSchema);
-
-  return Object.assign(executableSchema, {
-    query(input: Parameters<typeof originalQuery>[0]) {
-      return unwrapPromiseResult(originalQuery(input));
-    },
-    explain(input: Parameters<typeof originalExplain>[0]) {
-      return unwrapResult(originalExplain(input));
-    },
-  }) as UnwrappedExecutableSchema<TContext, TSchema>;
-}
-
 function quoteIdentifier(name: string): string {
   return `"${name.replaceAll('"', '""')}"`;
 }
@@ -1178,12 +1130,14 @@ function normalizeSqliteValue(value: unknown): unknown {
 
 function createMemoryProvider<TContext>(
   rowsByTable: Record<string, QueryRow[]>,
-): Provider<TContext> {
+): ProviderAdapter<TContext> {
   return {
     name: "memory",
     canExecute(fragment) {
-      const executable = extractMethodsExecutableRel(fragment.rel);
-      return executable?.kind === "scan" || executable?.kind === "aggregate";
+      return (
+        extractSimpleRelScanRequest(fragment.rel) !== null ||
+        extractMethodsExecutableRel(fragment.rel)?.kind === "aggregate"
+      );
     },
     async compile(fragment) {
       return Result.ok({
@@ -1198,15 +1152,15 @@ function createMemoryProvider<TContext>(
       }
 
       const fragment = plan.payload as ProviderFragment;
+      const directScan = extractSimpleRelScanRequest(fragment.rel);
+      if (directScan) {
+        return Result.ok(scanRows(rowsByTable[directScan.table] ?? [], directScan));
+      }
+
       const executable = extractMethodsExecutableRel(fragment.rel);
-      if (!executable) {
+      if (!executable || executable.kind !== "aggregate") {
         return Result.err(new Error("Unsupported memory provider rel fragment."));
       }
-
-      if (executable.kind === "scan") {
-        return Result.ok(scanRows(rowsByTable[executable.table] ?? [], executable.request));
-      }
-
       return Result.ok(aggregateArrayRows(rowsByTable[executable.table] ?? [], executable.request));
     },
     async lookupMany(request) {

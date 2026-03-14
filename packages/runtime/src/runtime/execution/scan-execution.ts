@@ -5,7 +5,6 @@ import { TuplExecutionError } from "@tupl/foundation";
 import {
   getDataEntityAdapter,
   normalizeCapability,
-  supportsFragmentExecution,
   unwrapProviderOperationResult,
   type ProviderAdapter,
   type ProviderFragment,
@@ -115,15 +114,6 @@ export async function executeScanResult<TContext>(
         message: `Provider ${providerName} cannot execute scan for table ${scan.table}${
           capability.reason ? `: ${capability.reason}` : ""
         }`,
-      }),
-    );
-  }
-
-  if (!supportsFragmentExecution(provider)) {
-    return Result.err(
-      new TuplExecutionError({
-        operation: "execute scan",
-        message: `Provider ${providerName} does not support compiled fragment execution.`,
       }),
     );
   }

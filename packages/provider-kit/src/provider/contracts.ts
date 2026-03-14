@@ -14,7 +14,6 @@ import type {
   ProviderCapabilityAtom,
   ProviderCapabilityReport,
   ProviderEstimate,
-  ProviderRouteFamily,
   QueryFallbackPolicy,
 } from "./capabilities";
 import type { AdapterResult, MaybePromise, ProviderRuntimeBinding } from "./operations";
@@ -76,21 +75,18 @@ export type ProviderOperationResult<T, E = Error> = AdapterResult<T, E>;
 export type { ProviderRuntimeBinding };
 
 /**
- * ProviderBase is the runtime provider contract.
- * This is the provider object registered with the runtime.
+ * Provider adapter base is the minimum contract every provider implements.
  * Capability and estimate methods describe what can be run remotely; they do not execute work.
  */
-export interface ProviderBase<TContext = unknown> {
+export interface ProviderAdapterBase<TContext = unknown> {
   name: string;
-  /** Declared route families summarize the kinds of provider work this provider is designed for. */
-  routeFamilies?: ProviderRouteFamily[];
-  /** Capability atoms describe pushdown features supported by the provider. */
+  /** Capability atoms describe pushdown features supported by the adapter. */
   capabilityAtoms?: ProviderCapabilityAtom[];
   /** Provider-local fallback policy is merged with per-query runtime overrides. */
   fallbackPolicy?: QueryFallbackPolicy;
   /**
    * `canExecute` answers whether the provider can run a fragment remotely.
-   * Returning a report is preferred when the provider can explain unsupported atoms or cost.
+   * Returning a report is preferred when the adapter can explain unsupported atoms or cost.
    */
   canExecute(
     fragment: ProviderFragment,
@@ -99,7 +95,7 @@ export interface ProviderBase<TContext = unknown> {
   /** `estimate` is optional advisory metadata used when choosing remote vs local execution. */
   estimate?(fragment: ProviderFragment, context: TContext): MaybePromise<ProviderEstimate>;
   /**
-   * Optional source-neutral physical entity handles owned by this provider.
+   * Optional source-neutral physical entity handles owned by this adapter.
    */
   entities?: Record<string, FoundationDataEntityHandle<string>>;
 }
@@ -108,7 +104,7 @@ export interface ProviderBase<TContext = unknown> {
  * Fragment providers support full fragment compile/execute flows.
  * `compile` must be pure with respect to runtime state; `execute` runs the compiled provider plan.
  */
-export interface FragmentProvider<TContext = unknown> extends ProviderBase<TContext> {
+export interface FragmentProviderAdapter<TContext = unknown> extends ProviderAdapterBase<TContext> {
   compile(
     fragment: ProviderFragment,
     context: TContext,
@@ -121,31 +117,25 @@ export interface FragmentProvider<TContext = unknown> extends ProviderBase<TCont
     plan: ProviderCompiledPlan,
     context: TContext,
   ): MaybePromise<ProviderOperationResult<QueryRow[]>>;
-}
-
-/**
- * Lookup providers support batched key lookups used by runtime lookup joins.
- * They complement, rather than replace, fragment execution support.
- */
-export interface LookupProvider<TContext = unknown> extends ProviderBase<TContext> {
-  lookupMany(
+  /**
+   * Optional batched key lookup used by runtime lookup joins.
+   * This is a provider-local physical optimization, not a separate semantic execution lane.
+   */
+  lookupMany?(
     request: ProviderLookupManyRequest,
     context: TContext,
   ): MaybePromise<ProviderOperationResult<QueryRow[]>>;
 }
 
 /**
- * Providers may support fragment execution, lookup execution, or both.
- * Callers should feature-detect optional capabilities rather than assume one concrete shape.
+ * Provider adapters compile and execute canonical relational fragments.
+ * Optional lookup support is an optimization hook layered onto the same adapter contract.
  */
-export type Provider<TContext = unknown> =
-  | FragmentProvider<TContext>
-  | LookupProvider<TContext>
-  | (FragmentProvider<TContext> & LookupProvider<TContext>);
+export type ProviderAdapter<TContext = unknown> = FragmentProviderAdapter<TContext>;
 
-/** Provider maps are runtime lookup tables keyed by the provider name exposed on the provider. */
-export type ProviderMap<TContext = unknown> = Record<string, Provider<TContext>>;
-export type DataSourceProvider<TContext = unknown> = Provider<TContext>;
+/** Providers maps are runtime lookup tables keyed by the provider name exposed on the adapter. */
+export type ProvidersMap<TContext = unknown> = Record<string, ProviderAdapter<TContext>>;
+export type DataSourceAdapter<TContext = unknown> = ProviderAdapter<TContext>;
 
 export type {
   QueryRow,

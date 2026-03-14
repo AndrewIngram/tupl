@@ -1,7 +1,6 @@
 import type { DataEntityColumnMap, DataEntityHandle, DataEntityShape } from "../entity-handles";
 import type {
   FragmentProviderAdapter,
-  LookupProviderAdapter,
   ProviderCompiledPlan,
   ProviderPlanDescription,
   ProviderFragment,
@@ -108,7 +107,6 @@ interface RelationalProviderAdapterOptionsBase<
   declaredAtoms?: readonly ProviderCapabilityAtom[];
   entities: TEntities;
   fallbackPolicy?: QueryFallbackPolicy;
-  routeFamilies?: readonly ProviderRouteFamily[];
   resolveEntityColumns?<TEntityName extends Extract<keyof TEntities, string>>(
     args: RelationalProviderEntityColumnsArgs<TEntities, TEntityName>,
   ): DataEntityColumnMap<string> | undefined;
@@ -144,15 +142,8 @@ export interface RelationalProviderAdapterOptions<
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends RelationalProviderRelCompileStrategy,
 > extends RelationalProviderAdapterOptionsBase<TContext, TEntities, TStrategy> {
-  lookupMany?: undefined;
-}
-
-export interface RelationalProviderAdapterOptionsWithLookup<
-  TContext,
-  TEntities extends Record<string, RelationalProviderEntityConfig>,
-  TStrategy extends RelationalProviderRelCompileStrategy,
-> extends RelationalProviderAdapterOptionsBase<TContext, TEntities, TStrategy> {
-  lookupMany(
+  lookupMany?(
+    this: void,
     args: RelationalProviderLookupArgs<TContext, TEntities>,
   ): MaybePromise<AdapterResult<QueryRow[]>>;
 }
@@ -169,11 +160,3 @@ export type RelationalProviderAdapter<
 > = FragmentProviderAdapter<TContext> & {
   entities: RelationalProviderHandles<TEntities>;
 };
-
-export type RelationalProviderAdapterWithLookup<
-  TContext,
-  TEntities extends Record<string, RelationalProviderEntityConfig>,
-> = FragmentProviderAdapter<TContext> &
-  LookupProviderAdapter<TContext> & {
-    entities: RelationalProviderHandles<TEntities>;
-  };

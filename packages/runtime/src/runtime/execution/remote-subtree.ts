@@ -4,7 +4,6 @@ import { TuplExecutionError, type RelNode } from "@tupl/foundation";
 import {
   getDataEntityProvider,
   normalizeCapability,
-  supportsFragmentExecution,
   unwrapProviderOperationResult,
   type Provider,
 } from "@tupl/provider-kit";
@@ -58,15 +57,6 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
   const capability = normalizeCapability(capabilityResult.value);
   if (!capability.supported) {
     return Result.ok(null);
-  }
-
-  if (!supportsFragmentExecution(provider)) {
-    return Result.err(
-      new TuplExecutionError({
-        operation: "execute relational node",
-        message: `Provider ${fragment.provider} does not support compiled fragment execution.`,
-      }),
-    );
   }
 
   const compiledResult = await tryExecutionStepAsync("compile subtree provider fragment", () =>

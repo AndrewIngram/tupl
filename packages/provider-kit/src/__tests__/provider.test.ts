@@ -6,7 +6,6 @@ import {
   createRelationalProviderAdapter,
   type FragmentProviderAdapter,
   getDataEntityAdapter,
-  type LookupProviderAdapter,
   type QueryRow,
   type ProviderAdapter,
   type ProviderCapabilityAtom,
@@ -24,7 +23,7 @@ import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
 import { collectCapabilityAtomsForFragment } from "../provider/capabilities";
 
 type TestProvider = Omit<FragmentProviderAdapter, "name"> &
-  Partial<Pick<LookupProviderAdapter, "lookupMany">>;
+  Partial<Pick<FragmentProviderAdapter, "lookupMany">>;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {

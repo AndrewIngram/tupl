@@ -15,23 +15,14 @@ import { type RelationalProviderCompileRelArgs } from "./relational-adapter-type
 import type {
   RelationalProviderAdapter,
   RelationalProviderAdapterOptions,
-  RelationalProviderAdapterOptionsWithLookup,
-  RelationalProviderAdapterWithLookup,
   RelationalProviderEntityConfig,
   RelationalProviderRelCompileStrategy,
 } from "./relational-adapter-types";
 
-const DEFAULT_RELATIONAL_ROUTE_FAMILIES = [
-  "scan",
-  "aggregate",
-  "rel-core",
-  "rel-advanced",
-] as const;
 const LOOKUP_CAPABILITY_ATOM = "lookup.bulk" as const;
 
 export type {
   RelationalProviderAdapterOptions,
-  RelationalProviderAdapterOptionsWithLookup,
   RelationalProviderCapabilityContext,
   RelationalProviderCompileRelArgs,
   RelationalProviderDescribeArgs,
@@ -111,28 +102,12 @@ export function createRelationalProviderAdapter<
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends RelationalProviderRelCompileStrategy,
 >(
-  options: RelationalProviderAdapterOptionsWithLookup<TContext, TEntities, TStrategy>,
-): RelationalProviderAdapterWithLookup<TContext, TEntities>;
-export function createRelationalProviderAdapter<
-  TContext,
-  TEntities extends Record<string, RelationalProviderEntityConfig>,
-  TStrategy extends RelationalProviderRelCompileStrategy,
->(
-  options:
-    | RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>
-    | RelationalProviderAdapterOptionsWithLookup<TContext, TEntities, TStrategy>,
-):
-  | RelationalProviderAdapter<TContext, TEntities>
-  | RelationalProviderAdapterWithLookup<TContext, TEntities> {
-  const capabilityAtoms = getCapabilityAtoms(options.declaredAtoms, Boolean(options.lookupMany));
+  options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
+): RelationalProviderAdapter<TContext, TEntities> {
+  const hasLookupMany = typeof options.lookupMany === "function";
+  const capabilityAtoms = getCapabilityAtoms(options.declaredAtoms, hasLookupMany);
   const adapter = {
     name: options.name,
-    routeFamilies: [
-      ...(options.routeFamilies ??
-        (options.lookupMany
-          ? [...DEFAULT_RELATIONAL_ROUTE_FAMILIES, "lookup"]
-          : DEFAULT_RELATIONAL_ROUTE_FAMILIES)),
-    ],
     ...(capabilityAtoms ? { capabilityAtoms } : {}),
     ...(options.fallbackPolicy ? { fallbackPolicy: options.fallbackPolicy } : {}),
     canExecute(fragment: ProviderFragment, context: TContext) {
@@ -160,13 +135,14 @@ export function createRelationalProviderAdapter<
         );
       }
 
+      const strategy = capabilityContext.strategy;
       const compileArgs = {
         context,
         entities: options.entities,
         fragment,
         name: options.name,
-        strategy: capabilityContext.strategy,
-      } satisfies RelationalProviderCompileRelArgs<TContext, TEntities, TStrategy>;
+        strategy,
+      };
 
       if (options.compileRelFragment) {
         return options.compileRelFragment(compileArgs);
@@ -176,7 +152,7 @@ export function createRelationalProviderAdapter<
         provider: options.name,
         kind: "rel",
         payload: options.buildRelPlanPayload?.(compileArgs) ?? {
-          strategy: capabilityContext.strategy,
+          strategy,
           rel: fragment.rel,
         },
       } satisfies ProviderCompiledPlan);
@@ -202,13 +178,14 @@ export function createRelationalProviderAdapter<
   };
 
   const entities = buildRelationalEntityHandles(adapter, options);
+  const lookupManyHandler = options.lookupMany;
   const boundAdapter = {
     ...adapter,
     entities,
-    ...(options.lookupMany
+    ...(lookupManyHandler
       ? {
           async lookupMany(request: ProviderLookupManyRequest, context: TContext) {
-            return options.lookupMany({
+            return lookupManyHandler({
               context,
               entities: options.entities,
               name: options.name,

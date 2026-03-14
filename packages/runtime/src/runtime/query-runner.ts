@@ -6,7 +6,7 @@ import {
   buildPhysicalQueryPlanResult,
   buildProviderFragmentForRelResult,
 } from "@tupl/planner";
-import type { FragmentProviderAdapter } from "@tupl/provider-kit";
+import { normalizeCapability } from "@tupl/provider-kit";
 import {
   resolveSchemaLinkedEnums,
   validateProviderBindingsResult,
@@ -170,10 +170,7 @@ async function compileExplainProviderPlansResult<TContext>(
       }
 
       const adapter = input.providers[fragment.provider];
-      if (
-        !adapter ||
-        typeof (adapter as FragmentProviderAdapter<TContext>).compile !== "function"
-      ) {
+      if (!adapter) {
         continue;
       }
 
@@ -184,18 +181,26 @@ async function compileExplainProviderPlansResult<TContext>(
         continue;
       }
 
+      const capability = normalizeCapability(
+        await Promise.resolve(adapter.canExecute(providerFragment, input.context)),
+      );
+      if (!capability.supported) {
+        providerPlans.push({
+          fragmentId: fragment.id,
+          provider: fragment.provider,
+          kind: "unsupported_fragment",
+          rel: fragment.rel,
+          descriptionUnavailable: true as const,
+        });
+        continue;
+      }
+
       const compiledPlan = unwrapQueryResult(
-        await (adapter as FragmentProviderAdapter<TContext>).compile(
-          providerFragment,
-          input.context,
-        ),
+        await adapter.compile(providerFragment, input.context),
       );
       const description =
-        typeof (adapter as FragmentProviderAdapter<TContext>).describeCompiledPlan === "function"
-          ? await (adapter as FragmentProviderAdapter<TContext>).describeCompiledPlan!(
-              compiledPlan,
-              input.context,
-            )
+        typeof adapter.describeCompiledPlan === "function"
+          ? await adapter.describeCompiledPlan(compiledPlan, input.context)
           : undefined;
 
       providerPlans.push({
