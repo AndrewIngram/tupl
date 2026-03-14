@@ -49,8 +49,6 @@ export function collectAliasToSourceMappings(
         }
         visit(current.body);
         return;
-      case "sql":
-        return;
     }
   };
 

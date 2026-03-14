@@ -1,5 +1,3 @@
-import { relContainsSqlNode } from "@tupl/foundation";
-
 import {
   collectCapabilityAtomsForFragment,
   inferRouteFamilyForFragment,
@@ -139,10 +137,8 @@ function evaluateRelationalCapabilityWithContext<
       missingAtoms: capabilityContext.missingAtoms,
       reason:
         options.unsupportedRelReason?.(capabilityContext) ??
-        (relContainsSqlNode(capabilityContext.fragment.rel)
-          ? "rel fragment must not contain sql nodes."
-          : (options.unsupportedRelReasonMessage ??
-            "Rel fragment is not supported for this provider.")),
+        options.unsupportedRelReasonMessage ??
+        "Rel fragment is not supported for this provider.",
     };
   }
 

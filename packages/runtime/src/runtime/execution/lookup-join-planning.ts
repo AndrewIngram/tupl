@@ -100,8 +100,6 @@ function findFirstScanForPlan(node: RelNode): Extract<RelNode, { kind: "scan" }>
       return findFirstScanForPlan(node.seed) ?? findFirstScanForPlan(node.iterative);
     case "with":
       return findFirstScanForPlan(node.body);
-    case "sql":
-      return null;
   }
 }
 

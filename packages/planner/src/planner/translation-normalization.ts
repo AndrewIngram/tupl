@@ -232,12 +232,6 @@ function normalizeRelNode(rel: RelNode, state: RelNormalizationState): unknown {
         seed: normalizeRelNode(rel.seed, state),
         iterative: normalizeRelNode(rel.iterative, state),
       };
-    case "sql":
-      return {
-        ...base,
-        sql: rel.sql,
-        tables: [...rel.tables],
-      };
   }
 }
 

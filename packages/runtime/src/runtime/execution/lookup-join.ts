@@ -231,7 +231,6 @@ function findLookupEligibleScan(node: RelNode): RelScanNode | null {
     case "set_op":
     case "repeat_union":
     case "with":
-    case "sql":
       return null;
   }
 }
@@ -256,8 +255,6 @@ function findFirstScan(node: RelNode): RelScanNode | null {
       return findFirstScan(node.seed) ?? findFirstScan(node.iterative);
     case "with":
       return findFirstScan(node.body);
-    case "sql":
-      return null;
   }
 }
 

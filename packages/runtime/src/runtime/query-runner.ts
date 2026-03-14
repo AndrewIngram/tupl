@@ -1,25 +1,20 @@
 import { Result, type Result as BetterResult } from "better-result";
 
+import { type RelNode, type TuplError } from "@tupl/foundation";
 import {
-  countRelNodes,
-  type TuplError,
-  type RelNode,
-} from "@tupl/foundation";
-import {
+  buildLogicalQueryPlanResult,
+  buildPhysicalQueryPlanResult,
   buildProviderFragmentForRelResult,
-  expandRelViewsResult,
-  lowerSqlToRelResult,
-  planPhysicalQueryResult,
 } from "@tupl/planner";
 import type { FragmentProviderAdapter } from "@tupl/provider-kit";
 import {
   resolveSchemaLinkedEnums,
-  validateProviderBindings,
+  validateProviderBindingsResult,
   type QueryRow,
 } from "@tupl/schema-model";
 
 import type { ExplainFragment, ExplainProviderPlan, ExplainResult, QueryInput } from "./contracts";
-import { tryQueryStepAsync, unwrapQueryResult } from "./diagnostics";
+import { tryQueryStep, tryQueryStepAsync, unwrapQueryResult } from "./diagnostics";
 import { executeRelWithProvidersResult } from "./executor";
 import {
   enforceExecutionRowLimitResult,
@@ -27,6 +22,7 @@ import {
   resolveGuardrails,
 } from "./policy";
 import {
+  maybeExecuteWholeQueryFragmentResult,
   resolveSyncProviderCapabilityForRelResult,
   withTimeoutResult,
 } from "./provider/provider-execution";
@@ -34,16 +30,22 @@ import {
 /**
  * Query runner owns SQL-to-execution orchestration and explain/query entrypoints for the runtime.
  */
+function normalizeRuntimeSchema<TContext>(input: QueryInput<TContext>): QueryInput<TContext> {
+  const schema = resolveSchemaLinkedEnums(input.schema);
+  return {
+    ...input,
+    schema,
+  };
+}
+
 export function normalizeRuntimeSchemaResult<TContext>(
   input: QueryInput<TContext>,
 ): BetterResult<QueryInput<TContext>, TuplError> {
   return Result.gen(function* () {
-    const schema = yield* resolveSchemaLinkedEnums(input.schema);
-    const normalizedInput = {
-      ...input,
-      schema,
-    };
-    yield* validateProviderBindings(normalizedInput.schema, normalizedInput.providers);
+    const normalizedInput = yield* tryQueryStep("normalize runtime schema", () =>
+      normalizeRuntimeSchema(input),
+    );
+    yield* validateProviderBindingsResult(normalizedInput.schema, normalizedInput.providers);
     return Result.ok(normalizedInput);
   });
 }
@@ -54,21 +56,36 @@ export async function queryInternalResult<TContext>(
   return Result.gen(async function* () {
     const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
     const guardrails = resolveGuardrails(input.queryGuardrails);
-    const lowered = yield* lowerSqlToRelResult(resolvedInput.sql, resolvedInput.schema);
-    const plannerNodeCount = countRelNodes(lowered.rel);
-
-    yield* enforcePlannerNodeLimitResult(plannerNodeCount, guardrails);
-    const expandedRel = yield* expandRelViewsResult(
-      lowered.rel,
+    const logicalPlan = yield* buildLogicalQueryPlanResult(
+      resolvedInput.sql,
       resolvedInput.schema,
       resolvedInput.context,
     );
+
+    yield* enforcePlannerNodeLimitResult(logicalPlan.plannerNodeCount, guardrails);
+    // Prefer a single whole-query provider fragment before local execution. This keeps fully
+    // pushdownable queries on the provider path and only falls back once that route is unavailable.
+    const remoteRows = yield* Result.await(
+      withTimeoutResult(
+        "execute whole provider fragment",
+        () =>
+          maybeExecuteWholeQueryFragmentResult(resolvedInput, logicalPlan.rewrittenRel).then(
+            unwrapQueryResult,
+          ),
+        guardrails.timeoutMs,
+      ),
+    );
+
+    if (remoteRows) {
+      return enforceExecutionRowLimitResult(remoteRows, guardrails);
+    }
+
     const rows = yield* Result.await(
       withTimeoutResult(
         "execute relational query",
         () =>
           executeRelWithProvidersResult(
-            expandedRel,
+            logicalPlan.rewrittenRel,
             resolvedInput.schema,
             resolvedInput.providers,
             resolvedInput.context,
@@ -87,6 +104,10 @@ export async function queryInternalResult<TContext>(
 
     return enforceExecutionRowLimitResult(rows, guardrails);
   });
+}
+
+export async function queryInternal<TContext>(input: QueryInput<TContext>): Promise<QueryRow[]> {
+  return unwrapQueryResult(await queryInternalResult(input));
 }
 
 function normalizeExplainSql(sql: string): string {
@@ -210,41 +231,32 @@ export async function explainInternalResult<TContext>(
   return Result.gen(async function* () {
     const resolvedInput = yield* normalizeRuntimeSchemaResult(input);
     const guardrails = resolveGuardrails(input.queryGuardrails);
-    const lowered = yield* lowerSqlToRelResult(resolvedInput.sql, resolvedInput.schema);
-    const rewrittenRel = yield* expandRelViewsResult(
-      lowered.rel,
-      resolvedInput.schema,
-      resolvedInput.context,
-    );
-    const plannerNodeCount = countRelNodes(rewrittenRel);
-
-    yield* enforcePlannerNodeLimitResult(plannerNodeCount, guardrails);
-    const capabilityResolution = yield* resolveSyncProviderCapabilityForRelResult(
-      resolvedInput,
-      rewrittenRel,
-    );
-    const physicalPlan = yield* Result.await(
-      planPhysicalQueryResult(
-        lowered.rel,
+    const plannedQuery = yield* Result.await(
+      buildPhysicalQueryPlanResult(
+        resolvedInput.sql,
         resolvedInput.schema,
         resolvedInput.providers,
         resolvedInput.context,
-        resolvedInput.sql,
       ),
     );
-    const fragments = collectExplainFragments(physicalPlan.rel);
+    yield* enforcePlannerNodeLimitResult(plannedQuery.plannerNodeCount, guardrails);
+    const capabilityResolution = yield* resolveSyncProviderCapabilityForRelResult(
+      resolvedInput,
+      plannedQuery.rewrittenRel,
+    );
+    const fragments = collectExplainFragments(plannedQuery.physicalPlan.rel);
     const providerPlans = yield* Result.await(
       compileExplainProviderPlansResult(resolvedInput, fragments),
     );
 
     return Result.ok({
       sql: normalizeExplainSql(resolvedInput.sql),
-      initialRel: lowered.rel,
-      rewrittenRel,
-      physicalPlan,
+      initialRel: plannedQuery.initialRel,
+      rewrittenRel: plannedQuery.rewrittenRel,
+      physicalPlan: plannedQuery.physicalPlan,
       fragments,
       providerPlans,
-      plannerNodeCount,
+      plannerNodeCount: plannedQuery.plannerNodeCount,
       diagnostics:
         capabilityResolution?.diagnostics.map((diagnostic) => ({
           stage: "physical_planning" as const,

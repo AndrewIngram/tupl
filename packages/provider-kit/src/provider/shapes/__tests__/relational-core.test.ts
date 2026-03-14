@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isRelProjectColumnMapping, relContainsSqlNode, type RelNode } from "@tupl/foundation";
+import { isRelProjectColumnMapping, type RelNode } from "@tupl/foundation";
 import {
   buildSingleQueryPlan,
   canCompileBasicRel,
@@ -186,6 +186,5 @@ describe("relational provider core", () => {
     expect(resolveBranchStrategy(buildJoinProjectRel())).toBe("basic");
     expect(resolveBranchStrategy(buildSetOpRel())).toBe("set_op");
     expect(resolveBranchStrategy(buildWithRel())).toBe("with");
-    expect(relContainsSqlNode(buildJoinProjectRel())).toBe(false);
   });
 });

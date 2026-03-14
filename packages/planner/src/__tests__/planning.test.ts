@@ -4,13 +4,25 @@ import { describe, expect, it } from "vitest";
 import {
   buildProviderFragmentForRelResult,
   expandRelViewsResult,
-  lowerSqlToRel,
   lowerSqlToRelResult,
-  planPhysicalQuery,
   planPhysicalQueryResult,
 } from "@tupl/planner";
 import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
 import { finalizeProviders } from "@tupl/test-support/runtime";
+
+function lowerSqlToRel(sql: string, schema: Parameters<typeof lowerSqlToRelResult>[1]) {
+  return lowerSqlToRelResult(sql, schema).unwrap();
+}
+
+async function planPhysicalQuery<TContext>(
+  rel: Parameters<typeof planPhysicalQueryResult<TContext>>[0],
+  schema: Parameters<typeof planPhysicalQueryResult<TContext>>[1],
+  providers: Parameters<typeof planPhysicalQueryResult<TContext>>[2],
+  context: Parameters<typeof planPhysicalQueryResult<TContext>>[3],
+  _sql?: string,
+) {
+  return (await planPhysicalQueryResult(rel, schema, providers, context)).unwrap();
+}
 
 describe("query/planning", () => {
   it("lowers simple select/join into relational operators", () => {
@@ -91,8 +103,8 @@ describe("query/planning", () => {
     }
 
     expect(result.error).toMatchObject({
-      _tag: "TuplPlanningError",
-      name: "TuplPlanningError",
+      _tag: "RelLoweringError",
+      name: "RelLoweringError",
       message: "Unknown table: missing_table",
     });
   });
@@ -114,8 +126,8 @@ describe("query/planning", () => {
     }
 
     expect(result.error).toMatchObject({
-      _tag: "TuplPlanningError",
-      name: "TuplPlanningError",
+      _tag: "RelRewriteError",
+      name: "RelRewriteError",
       message: "Unknown table in view rel scan: missing_table",
     });
   });
@@ -137,13 +149,13 @@ describe("query/planning", () => {
     }
 
     expect(result.error).toMatchObject({
-      _tag: "TuplPlanningError",
-      name: "TuplPlanningError",
+      _tag: "RelRewriteError",
+      name: "RelRewriteError",
       message: "Unknown table in view rel scan: missing_table",
     });
   });
 
-  it("returns tagged planning errors from physical planning when a provider is missing", async () => {
+  it("returns tagged planning errors from physical planning when a provider adapter is missing", async () => {
     const schema = buildEntitySchema({
       users: {
         provider: "warehouse",
@@ -154,13 +166,7 @@ describe("query/planning", () => {
     });
 
     const lowered = lowerSqlToRel("SELECT id FROM users", schema);
-    const result = await planPhysicalQueryResult(
-      lowered.rel,
-      schema,
-      {},
-      {},
-      "SELECT id FROM users",
-    );
+    const result = await planPhysicalQueryResult(lowered.rel, schema, {}, {});
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
@@ -168,9 +174,9 @@ describe("query/planning", () => {
     }
 
     expect(result.error).toMatchObject({
-      _tag: "TuplPlanningError",
-      name: "TuplPlanningError",
-      message: "Missing provider: warehouse",
+      _tag: "PhysicalPlanningError",
+      name: "PhysicalPlanningError",
+      message: "Missing provider adapter: warehouse",
     });
   });
 

@@ -236,16 +236,6 @@ export interface RelRepeatUnionNode extends RelNodeBase {
   iterative: RelNode;
 }
 
-/**
- * SQL nodes are escape hatches for query shapes not lowered into canonical relational operators.
- * They require provider pushdown and are not executable by the local relational runtime.
- */
-export interface RelSqlNode extends RelNodeBase {
-  kind: "sql";
-  sql: string;
-  tables: string[];
-}
-
 /** Relational nodes are the full logical IR consumed by runtime and provider normalization. */
 export type RelNode =
   | RelScanNode
@@ -259,26 +249,13 @@ export type RelNode =
   | RelLimitOffsetNode
   | RelSetOpNode
   | RelWithNode
-  | RelRepeatUnionNode
-  | RelSqlNode;
+  | RelRepeatUnionNode;
 
 let relIdCounter = 0;
 
 function nextRelId(prefix: string): string {
   relIdCounter += 1;
   return `${prefix}_${relIdCounter}`;
-}
-
-/** `createSqlRel` wraps an opaque SQL fallback shape as a local-convention relational node. */
-export function createSqlRel(sql: string, tables: string[]): RelSqlNode {
-  return {
-    id: nextRelId("sql"),
-    kind: "sql",
-    convention: "local",
-    sql,
-    tables,
-    output: [],
-  };
 }
 
 /** `createValuesRel` materializes literal rows without any backing table/provider. */
@@ -293,53 +270,6 @@ export function createValuesRel(
     rows,
     output,
   };
-}
-
-/**
- * `relContainsSqlNode` detects whether a relational tree or any nested scalar subquery expression
- * still depends on SQL-shaped execution semantics that only a provider can satisfy.
- */
-export function relContainsSqlNode(node: RelNode): boolean {
-  const exprContainsSqlNode = (expr: RelExpr): boolean => {
-    switch (expr.kind) {
-      case "literal":
-      case "column":
-        return false;
-      case "function":
-        return expr.args.some(exprContainsSqlNode);
-      case "subquery":
-        return relContainsSqlNode(expr.rel);
-    }
-  };
-
-  switch (node.kind) {
-    case "sql":
-      return true;
-    case "scan":
-    case "values":
-      return false;
-    case "filter":
-      return relContainsSqlNode(node.input) || (node.expr ? exprContainsSqlNode(node.expr) : false);
-    case "project":
-      return (
-        relContainsSqlNode(node.input) ||
-        node.columns.some((column) => "expr" in column && exprContainsSqlNode(column.expr))
-      );
-    case "aggregate":
-    case "window":
-    case "sort":
-    case "limit_offset":
-      return relContainsSqlNode(node.input);
-    case "join":
-    case "set_op":
-      return relContainsSqlNode(node.left) || relContainsSqlNode(node.right);
-    case "repeat_union":
-      return relContainsSqlNode(node.seed) || relContainsSqlNode(node.iterative);
-    case "with":
-      return (
-        node.ctes.some((cte) => relContainsSqlNode(cte.query)) || relContainsSqlNode(node.body)
-      );
-  }
 }
 
 /** `countRelNodes` measures the size of a relational tree for guardrails and diagnostics. */
@@ -359,7 +289,6 @@ export function countRelNodes(node: RelNode): number {
   switch (node.kind) {
     case "scan":
     case "values":
-    case "sql":
       return 1;
     case "filter":
       return 1 + countRelNodes(node.input) + (node.expr ? countExpr(node.expr) : 0);
@@ -404,13 +333,6 @@ export function collectRelTables(node: RelNode): string[] {
         }
         return;
       case "values":
-        return;
-      case "sql":
-        for (const table of current.tables) {
-          if (!scopedCteNames.has(table)) {
-            out.add(table);
-          }
-        }
         return;
       case "filter":
         if (current.expr) {

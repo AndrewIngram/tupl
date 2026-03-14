@@ -704,30 +704,6 @@ describe("drizzle adapter", () => {
       },
     };
     expect(provider.canExecute(unknownScan, {})).toBe(false);
-
-    const sqlRel: RelNode = {
-      id: "sql_1",
-      kind: "sql",
-      convention: "provider:warehouse",
-      sql: "SELECT 1",
-      tables: ["users"],
-      output: [],
-    };
-    const relFragment: ProviderFragment = {
-      kind: "rel",
-      provider: "warehouse",
-      rel: sqlRel,
-    };
-    expect(provider.canExecute(relFragment, {})).toEqual(
-      expect.objectContaining({
-        supported: false,
-        routeFamily: "rel-core",
-        reason: "rel fragment must not contain sql nodes.",
-      }),
-    );
-    await expect(
-      Promise.resolve(provider.compile(relFragment, {})).then((result) => result.unwrap()),
-    ).rejects.toThrow("Unsupported relational fragment for drizzle provider.");
   });
 
   it("derives columns from the table object when columns are omitted", async () => {

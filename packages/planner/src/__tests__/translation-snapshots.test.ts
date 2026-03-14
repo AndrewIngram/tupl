@@ -3,13 +3,27 @@ import { describe, expect, it } from "vitest";
 
 import {
   expandRelViewsResult,
-  lowerSqlToRel,
+  lowerSqlToRelResult,
   normalizePhysicalPlanForSnapshot,
   normalizeRelForSnapshot,
-  planPhysicalQuery,
+  planPhysicalQueryResult,
 } from "@tupl/planner";
 import { buildEntitySchema } from "@tupl/test-support/schema";
 import { finalizeProviders } from "@tupl/test-support/runtime";
+
+function lowerSqlToRel(sql: string, schema: Parameters<typeof lowerSqlToRelResult>[1]) {
+  return lowerSqlToRelResult(sql, schema).unwrap();
+}
+
+async function planPhysicalQuery<TContext>(
+  rel: Parameters<typeof planPhysicalQueryResult<TContext>>[0],
+  schema: Parameters<typeof planPhysicalQueryResult<TContext>>[1],
+  providers: Parameters<typeof planPhysicalQueryResult<TContext>>[2],
+  context: Parameters<typeof planPhysicalQueryResult<TContext>>[3],
+  _sql?: string,
+) {
+  return (await planPhysicalQueryResult(rel, schema, providers, context)).unwrap();
+}
 
 describe("query/translation-snapshots", () => {
   it("captures initial and rewritten trees for SELECT without FROM", () => {

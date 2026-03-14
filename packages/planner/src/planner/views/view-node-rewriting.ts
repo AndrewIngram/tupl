@@ -13,7 +13,7 @@ import {
  * View node rewriting owns alias-aware recursive rewriting of non-scan relational nodes.
  */
 export function rewriteExpandedViewNode<TContext>(
-  node: Exclude<RelNode, { kind: "scan" | "values" | "sql" }>,
+  node: Exclude<RelNode, { kind: "scan" | "values" }>,
   schema: SchemaDefinition,
   context: TContext | undefined,
   expandRelViewsInternal: (

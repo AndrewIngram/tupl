@@ -1,5 +1,6 @@
 import { Result } from "better-result";
-import { defaultSqlAstParser, lowerSqlToRel } from "@tupl/planner";
+
+import { lowerSqlToRelResult } from "@tupl/planner";
 import type { QueryExecutionPlan, QuerySession, QueryStepEvent } from "@tupl/runtime/session";
 import type { ExplainResult, QueryRow, SchemaDefinition } from "@tupl/schema";
 import { resolveSchemaLinkedEnums, resolveTableColumnDefinition } from "@tupl/schema-model";
@@ -11,7 +12,6 @@ import {
   isSandboxQuerySession,
   readSandboxSessionId,
 } from "./playground-sandbox-session";
-import { hasSqlNode } from "./playground-sql-validation";
 import { requestSandboxWorker } from "./playground-sandbox-client";
 import {
   buildPlaygroundModules,
@@ -131,18 +131,18 @@ export async function preparePlaygroundInput(
       }
 
       let schema = schemaResult.schema;
-      const linkedEnumsResult = resolveSchemaLinkedEnums(schema, {
-        resolveEnumValues: (ref) => resolveDownstreamEnumValues(ref),
-        onUnresolved: "error",
-        strictUnmapped: true,
-      });
-      if (Result.isError(linkedEnumsResult)) {
+      try {
+        schema = resolveSchemaLinkedEnums(schema, {
+          resolveEnumValues: (ref) => resolveDownstreamEnumValues(ref),
+          onUnresolved: "throw",
+          strictUnmapped: true,
+        });
+      } catch (error) {
         return {
           ok: false,
-          issues: [linkedEnumsResult.error.message],
+          issues: [error instanceof Error ? error.message : "Invalid enum linkage in schema."],
         };
       }
-      schema = linkedEnumsResult.value;
 
       const rowsResult = parseDownstreamRowsText(rowsText);
       const parsedRows = rowsResult.rows;
@@ -183,39 +183,11 @@ export function compilePreparedPlaygroundQuery(
     };
   }
 
-  let ast: unknown;
-  try {
-    ast = defaultSqlAstParser.astify(normalizedSql);
-    if (Array.isArray(ast)) {
-      throw new Error("Only a single SQL statement is supported.");
-    }
-
-    const type = (ast as { type?: unknown }).type;
-    if (type !== "select") {
-      throw new Error("Only SELECT statements are currently supported.");
-    }
-  } catch (error) {
+  const lowered = lowerSqlToRelResult(normalizedSql, schema);
+  if (Result.isError(lowered)) {
     return {
       ok: false,
-      issues: [error instanceof Error ? error.message : "Invalid SQL query."],
-    };
-  }
-
-  let lowered;
-  try {
-    lowered = lowerSqlToRel(normalizedSql, schema);
-  } catch (error) {
-    return {
-      ok: false,
-      issues: [error instanceof Error ? error.message : "Invalid SQL query."],
-    };
-  }
-  if (hasSqlNode(lowered.rel)) {
-    return {
-      ok: false,
-      issues: [
-        "This query shape is not executable in the current provider runtime yet (for example CTE/window, UNION, or subquery-heavy forms).",
-      ],
+      issues: [lowered.error.message],
     };
   }
 

@@ -263,28 +263,3 @@ export function buildLimitOffsetStep(
   });
   return id;
 }
-
-export function buildSqlStep(
-  state: PlanBuildState,
-  node: Extract<RelNode, { kind: "sql" }>,
-  scopeId: string,
-): string {
-  const id = nextPlanId(state, "remote_fragment");
-  state.steps.push({
-    id,
-    kind: "remote_fragment",
-    dependsOn: [],
-    summary: "Execute SQL-shaped relational fragment",
-    phase: "fetch",
-    operation: {
-      name: "provider_fragment",
-      details: { fragment: "sql" },
-    },
-    request: {
-      tables: node.tables,
-    },
-    sqlOrigin: "SELECT",
-    scopeId,
-  });
-  return id;
-}

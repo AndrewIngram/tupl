@@ -2580,7 +2580,7 @@ export function App(): React.JSX.Element {
                                           </div>
                                           <div className="rounded-md border bg-slate-50 p-3">
                                             <div className="text-[10px] uppercase tracking-wide text-slate-500">
-                                              Calcite-style signature
+                                              Operator signature
                                             </div>
                                             <div className="mt-1 font-mono text-[12px] leading-5 text-slate-800">
                                               {selectedStepPresentation?.signature ??

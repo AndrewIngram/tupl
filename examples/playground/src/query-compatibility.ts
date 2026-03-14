@@ -1,5 +1,6 @@
-import { relContainsSqlNode } from "@tupl/foundation";
-import { defaultSqlAstParser, lowerSqlToRel } from "@tupl/planner";
+import { Result } from "better-result";
+
+import { lowerSqlToRelResult } from "@tupl/planner";
 import type { SchemaDefinition } from "@tupl/schema";
 
 import type {
@@ -29,39 +30,15 @@ export function checkQueryCompatibility(schema: SchemaDefinition, sql: string): 
     };
   }
 
-  try {
-    const parsed = defaultSqlAstParser.astify(normalizedSql);
-    if (Array.isArray(parsed)) {
-      return {
-        compatible: false,
-        reason: "Only a single SQL statement is supported.",
-      };
-    }
-
-    const astType = (parsed as { type?: unknown }).type;
-    if (astType !== "select") {
-      return {
-        compatible: false,
-        reason: "Only SELECT statements are currently supported.",
-      };
-    }
-
-    const lowered = lowerSqlToRel(normalizedSql, schema);
-    if (relContainsSqlNode(lowered.rel)) {
-      return {
-        compatible: false,
-        reason:
-          "This query shape is not executable in the current provider runtime yet (for example CTE/window, UNION, or subquery-heavy forms).",
-      };
-    }
-
-    return { compatible: true };
-  } catch (error) {
+  const lowered = lowerSqlToRelResult(normalizedSql, schema);
+  if (Result.isError(lowered)) {
     return {
       compatible: false,
-      reason: asReason(error),
+      reason: asReason(lowered.error),
     };
   }
+
+  return { compatible: true };
 }
 
 export function buildQueryCompatibilityMap(

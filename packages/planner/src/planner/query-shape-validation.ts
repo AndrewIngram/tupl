@@ -1,4 +1,7 @@
+import { Result } from "better-result";
+
 import type { SelectAst } from "./sqlite-parser/ast";
+import { toUnsupportedQueryShapeError } from "./planner-errors";
 import { isCorrelatedSubquery, parseSubqueryAst } from "./sql-expr-lowering";
 import {
   parseSupportedCorrelatedExistsSubquery,
@@ -9,11 +12,13 @@ import {
 /**
  * Query-shape validation owns the unsupported SQL checks that run before relational lowering.
  */
-export function assertNoUnsupportedQueryShapes(ast: SelectAst): void {
+export function validateQueryShapeResult(ast: SelectAst) {
   const reason = findUnsupportedQueryShape(ast, new Set<string>());
   if (reason) {
-    throw new Error(reason);
+    return Result.err(toUnsupportedQueryShapeError(reason));
   }
+
+  return Result.ok(ast);
 }
 
 function findUnsupportedQueryShape(ast: SelectAst, cteNames: Set<string>): string | null {

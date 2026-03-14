@@ -1,13 +1,13 @@
 import { Result, type Result as BetterResult } from "better-result";
 
-import { TuplPlanningError, type RelNode } from "@tupl/foundation";
-import { normalizeCapability, type ProviderMap } from "@tupl/provider-kit";
+import { PhysicalPlanningError, type RelNode, type TuplError } from "@tupl/foundation";
+import { normalizeCapability, type ProvidersMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
 import { resolveSingleProvider } from "../provider/conventions";
 import { buildProviderFragmentForNodeResult } from "../provider-fragments";
 import { nextPhysicalStepId } from "../physical/planner-ids";
-import { toTuplPlanningError } from "../planner-errors";
+import { toPhysicalPlanningError } from "../planner-errors";
 import type { PhysicalStep } from "../physical/physical";
 import { recordPhysicalStep, type PhysicalPlanningState } from "./physical-plan-state";
 
@@ -17,21 +17,21 @@ import { recordPhysicalStep, type PhysicalPlanningState } from "./physical-plan-
 export async function tryPlanRemoteFragmentResult<TContext>(
   node: RelNode,
   schema: SchemaDefinition,
-  providers: ProviderMap<TContext>,
+  providers: ProvidersMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
-): Promise<BetterResult<string | null, TuplPlanningError>> {
+): Promise<BetterResult<string | null, TuplError>> {
   const provider = resolveSingleProvider(node, schema);
   if (!provider) {
     return Result.ok(null);
   }
 
-  const remoteProvider = providers[provider];
-  if (!remoteProvider) {
+  const adapter = providers[provider];
+  if (!adapter) {
     return Result.err(
-      new TuplPlanningError({
+      new PhysicalPlanningError({
         operation: "plan remote fragment",
-        message: `Missing provider: ${provider}`,
+        message: `Missing provider adapter: ${provider}`,
       }),
     );
   }
@@ -42,8 +42,8 @@ export async function tryPlanRemoteFragmentResult<TContext>(
   }
 
   const capabilityResult = await Result.tryPromise({
-    try: () => Promise.resolve(remoteProvider.canExecute(fragmentResult.value, context)),
-    catch: (error) => toTuplPlanningError(error, "plan remote fragment"),
+    try: () => Promise.resolve(adapter.canExecute(fragmentResult.value, context)),
+    catch: (error) => toPhysicalPlanningError(error, "plan remote fragment"),
   });
   if (Result.isError(capabilityResult)) {
     return capabilityResult;

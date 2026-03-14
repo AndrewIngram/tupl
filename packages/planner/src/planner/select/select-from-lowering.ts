@@ -78,8 +78,6 @@ export function appearsInRel(node: RelNode, alias: string): boolean {
       return appearsInRel(node.seed, alias) || appearsInRel(node.iterative, alias);
     case "with":
       return appearsInRel(node.body, alias);
-    case "sql":
-      return false;
   }
 }
 

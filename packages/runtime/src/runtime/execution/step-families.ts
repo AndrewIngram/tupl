@@ -16,7 +16,7 @@ export function tryPlanRemoteFragmentStep<TContext>(
   node: RelNode,
   scopeId: string,
 ): string | null {
-  if (node.kind === "scan" || node.kind === "sql") {
+  if (node.kind === "scan") {
     return null;
   }
 

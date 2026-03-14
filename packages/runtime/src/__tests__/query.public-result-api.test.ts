@@ -92,7 +92,7 @@ describe("public result APIs", () => {
     }
 
     expect(result.error).toMatchObject({
-      _tag: "TuplPlanningError",
+      _tag: "RelLoweringError",
       message: "Unknown table: missing_table",
     });
   });

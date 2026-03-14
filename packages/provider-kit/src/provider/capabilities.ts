@@ -221,8 +221,6 @@ function collectCapabilityAtomsForRel(node: RelNode, atoms: Set<ProviderCapabili
       collectCapabilityAtomsForRel(node.seed, atoms);
       collectCapabilityAtomsForRel(node.iterative, atoms);
       return;
-    case "sql":
-      return;
   }
 }
 
@@ -340,7 +338,6 @@ function hasAdvancedRelFeatures(node: RelNode): boolean {
     case "values":
       return false;
     case "scan":
-    case "sql":
       return false;
     case "filter":
     case "project":

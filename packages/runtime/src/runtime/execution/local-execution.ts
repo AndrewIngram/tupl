@@ -22,7 +22,7 @@ import {
   TuplExecutionError,
   TuplGuardrailError,
   type RelNode,
-  type TuplPlanningError,
+  type TuplError,
 } from "@tupl/foundation";
 import type { ProviderMap } from "@tupl/provider-kit";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema-model";
@@ -44,15 +44,9 @@ export interface RelExecutionContext<TContext> {
   subqueryResults: Map<string, unknown>;
 }
 
-export type RelExecutionResult = BetterResult<
-  QueryRow[] | InternalRow[],
-  TuplPlanningError | TuplExecutionError | TuplGuardrailError
->;
+export type RelExecutionResult = BetterResult<QueryRow[] | InternalRow[], TuplError>;
 
-export type RemoteExecutionResult = BetterResult<
-  QueryRow[] | null,
-  TuplPlanningError | TuplExecutionError | TuplGuardrailError
->;
+export type RemoteExecutionResult = BetterResult<QueryRow[] | null, TuplError>;
 
 function toTuplExecutionError(error: unknown, operation: string) {
   if (TuplExecutionError.is(error) || TuplGuardrailError.is(error)) {
@@ -83,7 +77,7 @@ export async function tryExecutionStepAsync<T>(operation: string, fn: () => Prom
 export async function executeRelLocallyResult<TContext>(
   rel: RelNode,
   executionContext: RelExecutionContext<TContext>,
-): Promise<BetterResult<QueryRow[], TuplPlanningError | TuplExecutionError | TuplGuardrailError>> {
+): Promise<BetterResult<QueryRow[], TuplError>> {
   // Scalar and EXISTS subqueries are prepared once up front so downstream node execution can treat
   // them as memoized inputs instead of recursively re-running subtrees at each expression use site.
   const subqueryPrepResult = await prepareSubqueryResultsResult(rel, executionContext);
@@ -150,12 +144,5 @@ export async function executeRelNodeResult<TContext>(
       return executeWithResult(node, context);
     case "repeat_union":
       return executeRepeatUnionResult(node, context);
-    case "sql":
-      return Result.err(
-        new TuplExecutionError({
-          operation: "execute relational node",
-          message: "SQL-shaped rel nodes are not executable in the current provider runtime.",
-        }),
-      );
   }
 }

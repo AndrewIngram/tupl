@@ -99,7 +99,6 @@ export function canCompileBasicRel(
     case "set_op":
     case "with":
     case "repeat_union":
-    case "sql":
       return false;
   }
 }
@@ -283,7 +282,6 @@ export function extractRelPipeline(node: RelNode): RelationalPipeline {
       case "set_op":
       case "with":
       case "window":
-      case "sql":
         throw new UnsupportedRelationalPlanError(
           `Rel node "${current.kind}" is not supported in single-query pushdown.`,
         );

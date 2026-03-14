@@ -9,7 +9,6 @@ import {
   buildProjectStep,
   buildScanStep,
   buildSortStep,
-  buildSqlStep,
   buildValuesStep,
   buildWindowStep,
 } from "./execution-step-builders";
@@ -74,8 +73,6 @@ export function buildExecutionGraph<TContext>(
         });
         return id;
       }
-      case "sql":
-        return buildSqlStep(state, node, scopeId);
     }
   };
 

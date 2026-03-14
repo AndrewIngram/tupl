@@ -1,7 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
 
-import { TuplPlanningError, type RelNode } from "@tupl/foundation";
-import type { ProviderMap } from "@tupl/provider-kit";
+import { type RelNode, type TuplError } from "@tupl/foundation";
+import type { ProvidersMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
 import { nextPhysicalStepId } from "../physical/planner-ids";
@@ -14,10 +14,10 @@ import { tryPlanRemoteFragmentResult } from "./remote-fragment-planning";
 export async function planPhysicalNodeResult<TContext>(
   node: RelNode,
   schema: SchemaDefinition,
-  providers: ProviderMap<TContext>,
+  providers: ProvidersMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
-): Promise<BetterResult<string, TuplPlanningError>> {
+): Promise<BetterResult<string, TuplError>> {
   return Result.gen(async function* () {
     const remoteStepId = yield* Result.await(
       tryPlanRemoteFragmentResult(node, schema, providers, context, state),
@@ -120,15 +120,6 @@ export async function planPhysicalNodeResult<TContext>(
           }),
         );
       }
-      case "sql":
-        return Result.ok(
-          recordPhysicalStep(state, {
-            id: nextPhysicalStepId("local_project"),
-            kind: "local_project",
-            dependsOn: [],
-            summary: "Local SQL fallback execution",
-          }),
-        );
     }
   });
 }
@@ -136,10 +127,10 @@ export async function planPhysicalNodeResult<TContext>(
 async function planUnaryLocalNodeResult<TContext>(
   node: Extract<RelNode, { kind: "filter" | "project" | "aggregate" | "sort" | "limit_offset" }>,
   schema: SchemaDefinition,
-  providers: ProviderMap<TContext>,
+  providers: ProvidersMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
-): Promise<BetterResult<string, TuplPlanningError>> {
+): Promise<BetterResult<string, TuplError>> {
   return Result.gen(async function* () {
     const input = yield* Result.await(
       planPhysicalNodeResult(node.input, schema, providers, context, state),
@@ -169,10 +160,10 @@ async function planUnaryLocalNodeResult<TContext>(
 async function planJoinNodeResult<TContext>(
   node: Extract<RelNode, { kind: "join" }>,
   schema: SchemaDefinition,
-  providers: ProviderMap<TContext>,
+  providers: ProvidersMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
-): Promise<BetterResult<string, TuplPlanningError>> {
+): Promise<BetterResult<string, TuplError>> {
   return Result.gen(async function* () {
     const left = yield* Result.await(
       planPhysicalNodeResult(node.left, schema, providers, context, state),

@@ -498,7 +498,7 @@ describe("query/local executor", () => {
     }
 
     expect(result.error).toMatchObject({
-      _tag: "TuplPlanningError",
+      _tag: "RelRewriteError",
       message: "Unknown table in view rel scan: missing_table",
       operation: "expand relational views",
     });

@@ -25,7 +25,7 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
   node: RelNode,
   context: RelExecutionContext<TContext>,
 ): Promise<RemoteExecutionResult> {
-  if (node.kind === "sql" || node.kind === "scan") {
+  if (node.kind === "scan") {
     return Result.ok(null);
   }
 
@@ -132,7 +132,5 @@ function findNodeProvider<TContext>(
         node.ctes.map((cte) => findNodeProvider(cte.query, providerName)).find(Boolean) ??
         findNodeProvider(node.body, providerName)
       );
-    case "sql":
-      return undefined;
   }
 }
