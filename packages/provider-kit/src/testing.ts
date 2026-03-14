@@ -21,10 +21,6 @@ export interface ProviderConformanceOptions<
   provider: TProvider | ((binding: TBinding) => TProvider);
   providerBinding?: TBinding;
   context: TContext;
-  scan: {
-    fragment: Extract<ProviderFragment, { kind: "scan" }>;
-    expectedRows: QueryRow[];
-  };
   rel: {
     fragment: Extract<ProviderFragment, { kind: "rel" }>;
     expectedRows: QueryRow[];
@@ -46,15 +42,6 @@ export function createProviderConformanceCases<
       : options.provider;
 
   return [
-    {
-      name: "executes scan fragments",
-      async run() {
-        const provider = resolveProvider();
-        await assertFragmentSupported(provider, options.scan.fragment, options.context);
-        const rows = await executeFragment(provider, options.scan.fragment, options.context);
-        assertRowsEqual("scan fragment", rows, options.scan.expectedRows);
-      },
-    },
     {
       name: "executes relational fragments",
       async run() {

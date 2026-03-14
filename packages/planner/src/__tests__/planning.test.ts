@@ -455,12 +455,12 @@ describe("query/planning", () => {
     const providers = finalizeProviders({
       warehouse: {
         canExecute(fragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },

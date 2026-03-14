@@ -1,9 +1,9 @@
-import { Result } from "better-result";
 import {
   AdapterResult,
-  bindProviderEntities,
+  bindAdapterEntities,
   createDataEntityHandle,
-  type Provider,
+  type ProviderAdapter,
+  type ProviderFragment,
 } from "@tupl/provider-kit";
 import { stringifyUnknownValue } from "@tupl/foundation";
 import {
@@ -19,24 +19,44 @@ import {
 function createMemoryProvider<TContext>(
   schema: SchemaDefinition,
   tables: Record<string, QueryRow[]>,
-): Provider<TContext> {
-  const provider: Provider<TContext> = {
+): ProviderAdapter<TContext> {
+  const toScanRequest = (fragment: ProviderFragment): TableScanRequest | null => {
+    if (fragment.rel.kind !== "scan") {
+      return null;
+    }
+
+    return {
+      table: fragment.rel.table,
+      ...(fragment.rel.alias ? { alias: fragment.rel.alias } : {}),
+      select: fragment.rel.select,
+      ...(fragment.rel.where ? { where: fragment.rel.where } : {}),
+      ...(fragment.rel.orderBy ? { orderBy: fragment.rel.orderBy } : {}),
+      ...(fragment.rel.limit != null ? { limit: fragment.rel.limit } : {}),
+      ...(fragment.rel.offset != null ? { offset: fragment.rel.offset } : {}),
+    };
+  };
+
+  const adapter: ProviderAdapter<TContext> = {
     name: "memory",
     entities: {},
     canExecute(fragment) {
-      return fragment.kind === "scan";
+      return fragment.rel.kind === "scan";
     },
     async compile(fragment) {
       return AdapterResult.ok({
         provider: "memory",
-        kind: fragment.kind,
+        kind: "rel",
         payload: fragment,
       });
     },
     async execute(plan) {
-      const fragment = plan.payload as { kind: "scan"; table: string; request: TableScanRequest };
-      const rows = tables[fragment.table] ?? [];
-      return AdapterResult.ok(scanRows(rows, fragment.request));
+      const fragment = plan.payload as ProviderFragment;
+      const request = toScanRequest(fragment);
+      if (!request) {
+        return AdapterResult.ok([]);
+      }
+      const rows = tables[request.table] ?? [];
+      return AdapterResult.ok(scanRows(rows, request));
     },
     async lookupMany(request) {
       const rows = tables[request.table] ?? [];
@@ -50,10 +70,10 @@ function createMemoryProvider<TContext>(
   };
 
   for (const [tableName, table] of Object.entries(schema.tables)) {
-    provider.entities![tableName] = createDataEntityHandle({
+    adapter.entities![tableName] = createDataEntityHandle({
       entity: tableName,
-      provider: provider.name,
-      providerInstance: provider,
+      provider: adapter.name,
+      adapter,
       columns: Object.fromEntries(
         Object.entries(table.columns).map(([columnName, definition]) => [
           columnName,
@@ -69,7 +89,7 @@ function createMemoryProvider<TContext>(
     });
   }
 
-  return bindProviderEntities(provider);
+  return bindAdapterEntities(adapter);
 }
 
 function scanRows(rows: QueryRow[], request: TableScanRequest): QueryRow[] {
@@ -178,18 +198,6 @@ function projectRow(row: QueryRow, select: string[]): QueryRow {
   return out;
 }
 
-function unwrapResult<T, E>(result: Result<T, E>): T {
-  if (Result.isError(result)) {
-    throw result.error;
-  }
-
-  return result.value;
-}
-
-async function unwrapPromiseResult<T, E>(result: Promise<Result<T, E>>): Promise<T> {
-  return unwrapResult(await result);
-}
-
 async function main(): Promise<void> {
   const ordersRawEntity = createDataEntityHandle({
     entity: "orders_raw",
@@ -217,7 +225,7 @@ async function main(): Promise<void> {
       org_id: "text",
     },
   });
-  const rawSchema = unwrapResult(rawSchemaBuilder.build());
+  const rawSchema = rawSchemaBuilder.build();
 
   const tableData = {
     orders_raw: [
@@ -323,45 +331,37 @@ async function main(): Promise<void> {
     },
   );
 
-  const executableSchema = unwrapResult(
-    createExecutableSchema<Record<string, never>>(schemaBuilder),
-  );
+  const executableSchema = createExecutableSchema<Record<string, never>>(schemaBuilder);
 
-  const ddl = unwrapResult(toSqlDDL(rawSchema, { ifNotExists: true }));
+  const ddl = toSqlDDL(rawSchema, { ifNotExists: true });
 
-  const virtualRows = await unwrapPromiseResult(
-    executableSchema.query({
-      context: {},
-      sql: `
+  const virtualRows = await executableSchema.query({
+    context: {},
+    sql: `
       SELECT id, totalDollars, isLargeOrder
       FROM myOrders
       WHERE totalDollars >= 20
       ORDER BY totalDollars DESC
     `,
-    }),
-  );
+  });
 
-  const orderFactRows = await unwrapPromiseResult(
-    executableSchema.query({
-      context: {},
-      sql: `
+  const orderFactRows = await executableSchema.query({
+    context: {},
+    sql: `
       SELECT orderId, vendorName, totalDollars, isLargeOrder
       FROM myOrderFacts
       ORDER BY totalDollars DESC
     `,
-    }),
-  );
+  });
 
-  const spendRows = await unwrapPromiseResult(
-    executableSchema.query({
-      context: {},
-      sql: `
+  const spendRows = await executableSchema.query({
+    context: {},
+    sql: `
       SELECT vendorName, totalSpendCents, orderCount
       FROM myVendorSpend
       ORDER BY totalSpendCents DESC
     `,
-    }),
-  );
+  });
 
   console.log("Generated DDL:");
   console.log(ddl);

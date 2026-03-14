@@ -2,7 +2,12 @@ import Database from "better-sqlite3";
 
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
-import { stringifyUnknownValue, type DataEntityColumnMap } from "@tupl/foundation";
+import {
+  stringifyUnknownValue,
+  type DataEntityColumnMap,
+  type RelNode,
+  type RelScanNode,
+} from "@tupl/foundation";
 import {
   bindProviderEntities,
   createDataEntityHandle,
@@ -370,48 +375,56 @@ export function createMethodsProvider<TContext>(
     name: providerName,
     entities: {},
     canExecute(fragment) {
-      switch (fragment.kind) {
-        case "scan":
-          return !!methods[fragment.table]?.scan;
-        case "aggregate":
-          return !!methods[fragment.table]?.aggregate;
-        case "rel":
-          return false;
-        default:
-          return false;
+      const executable = extractMethodsExecutableRel(fragment.rel);
+      if (!executable) {
+        return false;
       }
+
+      const method = methods[executable.table];
+      if (!method) {
+        return false;
+      }
+
+      return executable.kind === "scan" ? !!method.scan : !!method.aggregate;
     },
     async compile(fragment) {
       return Result.ok({
         provider: providerName,
-        kind: fragment.kind,
+        kind: "rel",
         payload: fragment,
       });
     },
     async execute(plan, context) {
-      const fragment = plan.payload as ProviderFragment;
-      switch (fragment.kind) {
-        case "scan": {
-          const method = methods[fragment.table];
-          if (!method?.scan) {
-            return Result.err(
-              new Error(`No table methods registered for table: ${fragment.table}`),
-            );
-          }
-          return Result.ok(await executePlannedScan(method, fragment.request, context));
-        }
-        case "aggregate": {
-          const method = methods[fragment.table];
-          if (!method?.aggregate) {
-            return Result.err(
-              new Error(`No aggregate method registered for table: ${fragment.table}`),
-            );
-          }
-          return Result.ok(await executePlannedAggregate(method, fragment.request, context));
-        }
-        case "rel":
-          return Result.err(new Error("Methods-based provider does not support rel fragments."));
+      if (plan.kind !== "rel") {
+        return Result.err(new Error(`Unsupported methods provider compiled plan: ${plan.kind}`));
       }
+
+      const fragment = plan.payload as ProviderFragment;
+      const executable = extractMethodsExecutableRel(fragment.rel);
+      if (!executable) {
+        return Result.err(new Error("Methods-based provider does not support this rel fragment."));
+      }
+
+      const method = methods[executable.table];
+      if (!method) {
+        return Result.err(new Error(`No table methods registered for table: ${executable.table}`));
+      }
+
+      if (executable.kind === "scan") {
+        if (!method.scan) {
+          return Result.err(
+            new Error(`No table scan method registered for table: ${executable.table}`),
+          );
+        }
+        return Result.ok(await executePlannedScan(method, executable.request, context));
+      }
+
+      if (!method.aggregate) {
+        return Result.err(
+          new Error(`No aggregate method registered for table: ${executable.table}`),
+        );
+      }
+      return Result.ok(await executePlannedAggregate(method, executable.request, context));
     },
     async lookupMany(request, context) {
       const method = methods[request.table];
@@ -472,6 +485,104 @@ export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDe
   }
 
   return withUnwrappedExecutableSchema(unwrapResult(createExecutableSchema(builder)));
+}
+
+function extractMethodsExecutableRel(rel: RelNode):
+  | {
+      kind: "scan";
+      table: string;
+      request: TableScanRequest;
+    }
+  | {
+      kind: "aggregate";
+      table: string;
+      request: TableAggregateRequest;
+    }
+  | null {
+  if (rel.kind === "scan") {
+    return {
+      kind: "scan",
+      table: rel.table,
+      request: toMethodsScanRequest(rel),
+    };
+  }
+
+  if (rel.kind !== "aggregate") {
+    return null;
+  }
+
+  const extracted = extractAggregateMethodsInput(rel.input);
+  if (!extracted) {
+    return null;
+  }
+
+  return {
+    kind: "aggregate",
+    table: extracted.scan.table,
+    request: {
+      table: extracted.scan.table,
+      ...(extracted.scan.alias ? { alias: extracted.scan.alias } : {}),
+      ...(extracted.where.length > 0 || (extracted.scan.where?.length ?? 0) > 0
+        ? {
+            where: [...(extracted.scan.where ?? []), ...extracted.where],
+          }
+        : {}),
+      ...(rel.groupBy.length > 0
+        ? {
+            groupBy: rel.groupBy.map((column) => column.column),
+          }
+        : {}),
+      metrics: rel.metrics.map((metric) => ({
+        fn: metric.fn,
+        as: metric.as,
+        ...(metric.distinct ? { distinct: true } : {}),
+        ...(metric.column ? { column: metric.column.column } : {}),
+      })),
+    },
+  };
+}
+
+function toMethodsScanRequest(scan: RelScanNode): TableScanRequest {
+  return {
+    table: scan.table,
+    ...(scan.alias ? { alias: scan.alias } : {}),
+    select: scan.select,
+    ...(scan.where ? { where: scan.where } : {}),
+    ...(scan.orderBy ? { orderBy: scan.orderBy } : {}),
+    ...(scan.limit != null ? { limit: scan.limit } : {}),
+    ...(scan.offset != null ? { offset: scan.offset } : {}),
+  };
+}
+
+function extractAggregateMethodsInput(node: RelNode): {
+  scan: RelScanNode;
+  where: ScanFilterClause[];
+} | null {
+  const where: ScanFilterClause[] = [];
+  let current = node;
+
+  while (current.kind === "filter") {
+    if (current.expr) {
+      return null;
+    }
+    if (current.where) {
+      where.push(...current.where);
+    }
+    current = current.input;
+  }
+
+  if (current.kind !== "scan") {
+    return null;
+  }
+
+  if (current.orderBy?.length || current.limit != null || current.offset != null) {
+    return null;
+  }
+
+  return {
+    scan: current,
+    where,
+  };
 }
 
 async function executePlannedScan<TContext>(
@@ -1071,25 +1182,32 @@ function createMemoryProvider<TContext>(
   return {
     name: "memory",
     canExecute(fragment) {
-      return fragment.kind === "scan";
+      const executable = extractMethodsExecutableRel(fragment.rel);
+      return executable?.kind === "scan" || executable?.kind === "aggregate";
     },
     async compile(fragment) {
-      if (fragment.kind !== "scan") {
-        return Result.err(new Error(`Unsupported memory provider fragment: ${fragment.kind}`));
-      }
       return Result.ok({
         provider: "memory",
-        kind: "scan",
+        kind: "rel",
         payload: fragment,
       });
     },
     async execute(plan) {
-      if (plan.kind !== "scan") {
+      if (plan.kind !== "rel") {
         return Result.err(new Error(`Unsupported memory provider compiled plan: ${plan.kind}`));
       }
 
-      const fragment = plan.payload as Extract<ProviderFragment, { kind: "scan" }>;
-      return Result.ok(scanRows(rowsByTable[fragment.table] ?? [], fragment.request));
+      const fragment = plan.payload as ProviderFragment;
+      const executable = extractMethodsExecutableRel(fragment.rel);
+      if (!executable) {
+        return Result.err(new Error("Unsupported memory provider rel fragment."));
+      }
+
+      if (executable.kind === "scan") {
+        return Result.ok(scanRows(rowsByTable[executable.table] ?? [], executable.request));
+      }
+
+      return Result.ok(aggregateArrayRows(rowsByTable[executable.table] ?? [], executable.request));
     },
     async lookupMany(request) {
       const scanRequest: TableScanRequest = {

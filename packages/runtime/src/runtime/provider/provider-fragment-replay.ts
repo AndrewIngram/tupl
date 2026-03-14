@@ -6,12 +6,7 @@ import {
   type FragmentProvider,
   type ProviderFragment,
 } from "@tupl/provider-kit";
-import {
-  getNormalizedTableBinding,
-  mapProviderRowsToLogical,
-  mapProviderRowsToRelOutput,
-  type QueryRow,
-} from "@tupl/schema-model";
+import { mapProviderRowsToRelOutput, type QueryRow } from "@tupl/schema-model";
 
 import type { QueryGuardrails, TuplDiagnostic } from "../contracts";
 import type { QuerySessionInput, QueryStepEvent, QueryStepState } from "../session/contracts";
@@ -72,36 +67,16 @@ export async function runProviderFragmentOnceResult<TContext>(input: {
   }
 
   let rows: QueryRow[] = executeRowsResult.value;
-  if (input.fragment.kind === "rel") {
-    const mappedRowsResult = tryQueryStep("map provider rows to logical rel output rows", () =>
-      mapProviderRowsToRelOutput(rows, input.rel, input.sessionInput.schema),
-    );
-    if (Result.isError(mappedRowsResult)) {
-      return Result.err({
-        error: mappedRowsResult.error,
-        state: failProviderFragmentState(state, mappedRowsResult.error, Date.now()),
-      });
-    }
-    rows = mappedRowsResult.value;
-  } else if (input.fragment.kind === "scan" && input.rel.kind === "scan") {
-    const scanRel = input.rel;
-    const mappedRowsResult = tryQueryStep("map provider rows to logical rows", () => {
-      const binding = getNormalizedTableBinding(input.sessionInput.schema, scanRel.table);
-      return mapProviderRowsToLogical(
-        rows,
-        scanRel.select,
-        binding?.kind === "physical" ? binding : null,
-        input.sessionInput.schema.tables[scanRel.table],
-      );
+  const mappedRowsResult = tryQueryStep("map provider rows to logical rel output rows", () =>
+    mapProviderRowsToRelOutput(rows, input.rel, input.sessionInput.schema),
+  );
+  if (Result.isError(mappedRowsResult)) {
+    return Result.err({
+      error: mappedRowsResult.error,
+      state: failProviderFragmentState(state, mappedRowsResult.error, Date.now()),
     });
-    if (Result.isError(mappedRowsResult)) {
-      return Result.err({
-        error: mappedRowsResult.error,
-        state: failProviderFragmentState(state, mappedRowsResult.error, Date.now()),
-      });
-    }
-    rows = mappedRowsResult.value;
   }
+  rows = mappedRowsResult.value;
 
   const limitedRowsResult = enforceExecutionRowLimitResult(rows, input.guardrails);
   if (Result.isError(limitedRowsResult)) {

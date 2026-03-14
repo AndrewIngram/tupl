@@ -88,10 +88,17 @@ export async function executeScanResult<TContext>(
   const request = requestResult.value;
 
   const fragment: ProviderFragment = {
-    kind: "scan",
+    kind: "rel",
     provider: providerName,
-    table: request.table,
-    request,
+    rel: {
+      ...scan,
+      table: request.table,
+      select: request.select,
+      ...(request.where ? { where: request.where } : {}),
+      ...(request.orderBy ? { orderBy: request.orderBy } : {}),
+      ...(request.limit != null ? { limit: request.limit } : {}),
+      ...(request.offset != null ? { offset: request.offset } : {}),
+    },
   };
 
   const capabilityResult = await tryExecutionStepAsync("check scan provider capability", () =>

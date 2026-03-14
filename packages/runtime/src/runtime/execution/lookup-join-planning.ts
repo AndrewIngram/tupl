@@ -55,13 +55,9 @@ export function resolveSyncLookupJoinCandidate<TContext>(
 
   const capability = rightAdapter.canExecute(
     {
-      kind: "scan",
+      kind: "rel",
       provider: rightProvider,
-      table: rightScan.entity?.entity ?? rightScan.table,
-      request: {
-        table: rightScan.entity?.entity ?? rightScan.table,
-        select: rightScan.select,
-      },
+      rel: rightScan,
     },
     input.context,
   );

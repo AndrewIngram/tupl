@@ -3,11 +3,9 @@ import { Result } from "better-result";
 import { type RelNode } from "@tupl/foundation";
 import { type SchemaDefinition } from "@tupl/schema-model";
 import type { ProviderFragment } from "@tupl/provider-kit";
-import { buildAggregateProviderFragment } from "./aggregate/aggregate-provider-fragment";
 import { toProviderFragmentBuildError } from "./planner-errors";
 import { resolveSingleProvider } from "./provider/conventions";
 import { normalizeRelForProvider } from "./provider/provider-rel-normalization";
-import { normalizeScanForProvider } from "./provider/provider-scan-normalization";
 import { expandRelViewsResult } from "./view-expansion";
 
 /**
@@ -45,31 +43,6 @@ function buildProviderFragmentForNode(
   schema: SchemaDefinition,
   provider: string,
 ): ProviderFragment {
-  if (node.kind === "scan") {
-    const normalizedScan = normalizeScanForProvider(node, schema);
-    return {
-      kind: "scan",
-      provider,
-      table: normalizedScan.table,
-      request: {
-        table: normalizedScan.table,
-        ...(normalizedScan.alias ? { alias: normalizedScan.alias } : {}),
-        select: normalizedScan.select,
-        ...(normalizedScan.where ? { where: normalizedScan.where } : {}),
-        ...(normalizedScan.orderBy ? { orderBy: normalizedScan.orderBy } : {}),
-        ...(normalizedScan.limit != null ? { limit: normalizedScan.limit } : {}),
-        ...(normalizedScan.offset != null ? { offset: normalizedScan.offset } : {}),
-      },
-    };
-  }
-
-  if (node.kind === "aggregate") {
-    const aggregateFragment = buildAggregateProviderFragment(node, schema, provider);
-    if (aggregateFragment) {
-      return aggregateFragment;
-    }
-  }
-
   return {
     kind: "rel",
     provider,

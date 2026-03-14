@@ -66,30 +66,11 @@ export interface RelProviderFragment {
   rel: RelNode;
 }
 
-/** Scan fragments ask a provider to execute a single physical scan request directly. */
-export interface ScanProviderFragment {
-  kind: "scan";
-  provider: string;
-  table: string;
-  request: TableScanRequest;
-}
-
-/** Aggregate fragments ask a provider to execute one grouped aggregate request directly. */
-export interface AggregateProviderFragment {
-  kind: "aggregate";
-  provider: string;
-  table: string;
-  request: TableAggregateRequest;
-}
-
 /**
  * Provider fragments are the only units of work the runtime asks a provider to reason about.
- * Providers must not assume they can inspect planner internals beyond this fragment shape.
+ * Providers compile canonical relational subtrees rather than planner-specific scan/aggregate routes.
  */
-export type ProviderFragment =
-  | RelProviderFragment
-  | ScanProviderFragment
-  | AggregateProviderFragment;
+export type ProviderFragment = RelProviderFragment;
 
 export type ProviderOperationResult<T, E = Error> = AdapterResult<T, E>;
 export type { ProviderRuntimeBinding };

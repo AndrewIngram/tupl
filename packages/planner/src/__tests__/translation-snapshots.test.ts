@@ -1067,17 +1067,27 @@ describe("query/translation-snapshots", () => {
           {
             "dependsOn": [],
             "fragment": {
-              "kind": "scan",
+              "kind": "rel",
               "provider": "orders",
-              "request": {
+              "rel": {
                 "alias": "o",
+                "convention": "provider:orders",
+                "id": "scan_3",
+                "kind": "scan",
+                "output": [
+                  {
+                    "name": "o.id",
+                  },
+                  {
+                    "name": "o.user_id",
+                  },
+                ],
                 "select": [
                   "id",
                   "user_id",
                 ],
                 "table": "orders",
               },
-              "table": "orders",
             },
             "id": "step_1",
             "kind": "remote_fragment",
@@ -1087,17 +1097,27 @@ describe("query/translation-snapshots", () => {
           {
             "dependsOn": [],
             "fragment": {
-              "kind": "scan",
+              "kind": "rel",
               "provider": "users",
-              "request": {
+              "rel": {
                 "alias": "u",
+                "convention": "provider:users",
+                "id": "scan_4",
+                "kind": "scan",
+                "output": [
+                  {
+                    "name": "u.email",
+                  },
+                  {
+                    "name": "u.id",
+                  },
+                ],
                 "select": [
                   "email",
                   "id",
                 ],
                 "table": "users",
               },
-              "table": "users",
             },
             "id": "step_2",
             "kind": "remote_fragment",

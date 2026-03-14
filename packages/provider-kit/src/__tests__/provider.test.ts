@@ -4,18 +4,17 @@ import { describe, expect, it } from "vitest";
 import {
   createDataEntityHandle,
   createRelationalProviderAdapter,
-  DEFAULT_RELATIONAL_CAPABILITY_ATOMS,
-  type FragmentProvider,
-  getDataEntityProvider,
-  type LookupProvider,
+  type FragmentProviderAdapter,
+  getDataEntityAdapter,
+  type LookupProviderAdapter,
   type QueryRow,
-  type Provider,
+  type ProviderAdapter,
   type ProviderCapabilityAtom,
   type ProviderFragment,
   type ScanFilterClause,
   type TableScanRequest,
 } from "@tupl/provider-kit";
-import { getNormalizedTableBinding, validateProviderBindings } from "@tupl/schema-model";
+import { getNormalizedTableBinding, validateProviderBindingsResult } from "@tupl/schema-model";
 import {
   createExecutableSchemaFromProviders,
   createSessionFromExecutableSchema,
@@ -24,12 +23,57 @@ import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
 
 import { collectCapabilityAtomsForFragment } from "../provider/capabilities";
 
-type TestProvider = Omit<FragmentProvider, "name"> & Partial<Pick<LookupProvider, "lookupMany">>;
+type TestProvider = Omit<FragmentProviderAdapter, "name"> &
+  Partial<Pick<LookupProviderAdapter, "lookupMany">>;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function createScanFragment(input: {
+  provider?: string;
+  table: string;
+  select: string[];
+  where?: TableScanRequest["where"];
+  orderBy?: TableScanRequest["orderBy"];
+  limit?: number;
+  offset?: number;
+}): ProviderFragment {
+  const provider = input.provider ?? "warehouse";
+  return {
+    kind: "rel",
+    provider,
+    rel: {
+      id: `${provider}:${input.table}`,
+      kind: "scan",
+      convention: `provider:${provider}`,
+      table: input.table,
+      select: input.select,
+      output: input.select.map((name) => ({ name })),
+      ...(input.where ? { where: input.where } : {}),
+      ...(input.orderBy ? { orderBy: input.orderBy } : {}),
+      ...(input.limit != null ? { limit: input.limit } : {}),
+      ...(input.offset != null ? { offset: input.offset } : {}),
+    },
+  };
+}
+
+function toScanRequest(fragment: ProviderFragment): TableScanRequest | null {
+  if (fragment.rel.kind !== "scan") {
+    return null;
+  }
+
+  return {
+    table: fragment.rel.table,
+    ...(fragment.rel.alias ? { alias: fragment.rel.alias } : {}),
+    select: fragment.rel.select,
+    ...(fragment.rel.where ? { where: fragment.rel.where } : {}),
+    ...(fragment.rel.orderBy ? { orderBy: fragment.rel.orderBy } : {}),
+    ...(fragment.rel.limit != null ? { limit: fragment.rel.limit } : {}),
+    ...(fragment.rel.offset != null ? { offset: fragment.rel.offset } : {}),
+  };
 }
 
 function scanRows(rows: QueryRow[], request: TableScanRequest): QueryRow[] {
@@ -210,7 +254,7 @@ describe("query/provider runtime", () => {
       id: { source: "id", type: "text" },
       total_cents: { source: "total_cents", type: "integer" },
     });
-    expect(getDataEntityProvider(adapter.entities.orders)).toBe(adapter);
+    expect(getDataEntityAdapter(adapter.entities.orders)).toBe(adapter);
   });
 
   it("returns structured capability reports for unsupported relational fragments", async () => {
@@ -238,7 +282,7 @@ describe("query/provider runtime", () => {
         return Result.ok([]);
       },
       isRelStrategySupported(args) {
-        requiredAtomsByCheck.push(args.requiredAtoms);
+        requiredAtomsByCheck.push(args.requiredAtoms ?? []);
         return true;
       },
     });
@@ -306,8 +350,8 @@ describe("query/provider runtime", () => {
       isRelStrategySupported(args) {
         observed.push({
           routeFamily: args.routeFamily,
-          requiredAtoms: args.requiredAtoms,
-          missingAtoms: args.missingAtoms,
+          requiredAtoms: args.requiredAtoms ?? [],
+          missingAtoms: args.missingAtoms ?? [],
           strategy: args.strategy,
         });
         return true;
@@ -376,8 +420,8 @@ describe("query/provider runtime", () => {
       entities: {
         orders: {},
       },
-      resolveRelCompileStrategy() {
-        return null;
+      resolveRelCompileStrategy({ fragment }) {
+        return fragment.rel.kind === "scan" && fragment.rel.table === "orders" ? "basic" : null;
       },
       async compileRelFragment() {
         return Result.ok({
@@ -393,32 +437,29 @@ describe("query/provider runtime", () => {
 
     expect(
       adapter.canExecute(
-        {
-          kind: "scan",
+        createScanFragment({
           provider: "warehouse",
           table: "orders",
-          request: {
-            table: "orders",
-            select: ["id"],
-          },
-        },
+          select: ["id"],
+        }),
         {},
       ),
     ).toBe(true);
     expect(
       adapter.canExecute(
-        {
-          kind: "scan",
+        createScanFragment({
           provider: "warehouse",
           table: "users",
-          request: {
-            table: "users",
-            select: ["id"],
-          },
-        },
+          select: ["id"],
+        }),
         {},
       ),
-    ).toBe(false);
+    ).toEqual(
+      expect.objectContaining({
+        supported: false,
+        routeFamily: "scan",
+      }),
+    );
   });
 
   it("wires lookupMany only when relational lookup hooks are provided", async () => {
@@ -482,36 +523,30 @@ describe("query/provider runtime", () => {
   });
 
   it("does not require expr.null_distinct for is_null and is_not_null scan filters", () => {
-    const isNullAtoms = collectCapabilityAtomsForFragment({
-      kind: "scan",
-      provider: "warehouse",
-      table: "orders",
-      request: {
+    const isNullAtoms = collectCapabilityAtomsForFragment(
+      createScanFragment({
+        provider: "warehouse",
         table: "orders",
         select: ["id"],
         where: [{ column: "org_id", op: "is_null" }],
-      },
-    });
-    const isNotNullAtoms = collectCapabilityAtomsForFragment({
-      kind: "scan",
-      provider: "warehouse",
-      table: "orders",
-      request: {
+      }),
+    );
+    const isNotNullAtoms = collectCapabilityAtomsForFragment(
+      createScanFragment({
+        provider: "warehouse",
         table: "orders",
         select: ["id"],
         where: [{ column: "org_id", op: "is_not_null" }],
-      },
-    });
-    const distinctAtoms = collectCapabilityAtomsForFragment({
-      kind: "scan",
-      provider: "warehouse",
-      table: "orders",
-      request: {
+      }),
+    );
+    const distinctAtoms = collectCapabilityAtomsForFragment(
+      createScanFragment({
+        provider: "warehouse",
         table: "orders",
         select: ["id"],
         where: [{ column: "org_id", op: "is_distinct_from", value: null }],
-      },
-    });
+      }),
+    );
 
     expect(isNullAtoms).toContain("scan.filter.basic");
     expect(isNotNullAtoms).toContain("scan.filter.basic");
@@ -520,7 +555,7 @@ describe("query/provider runtime", () => {
     expect(distinctAtoms).toContain("expr.null_distinct");
   });
 
-  it("routes same-provider queries through scan fragments", async () => {
+  it("routes same-provider queries through rel fragments", async () => {
     const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",
@@ -539,12 +574,12 @@ describe("query/provider runtime", () => {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
           canExecuteCalls += 1;
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
@@ -587,15 +622,13 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "rel" || fragment.kind === "scan";
+          return fragment.kind === "rel";
         },
         async compile(fragment: ProviderFragment) {
-          if (fragment.kind === "rel") {
-            sawRelCompile = true;
-          }
+          sawRelCompile = true;
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
@@ -663,7 +696,7 @@ describe("query/provider runtime", () => {
 
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
@@ -727,17 +760,17 @@ describe("query/provider runtime", () => {
       });
     });
 
-    let capturedScan: { request: TableScanRequest } | null = null;
+    let capturedScan: TableScanRequest | null = null;
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
-          capturedScan = fragment.kind === "scan" ? fragment : null;
+          capturedScan = toScanRequest(fragment);
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
@@ -759,7 +792,10 @@ describe("query/provider runtime", () => {
     });
 
     expect(capturedScan).not.toBeNull();
-    const capturedRequest = (capturedScan as unknown as { request: TableScanRequest }).request;
+    if (!capturedScan) {
+      throw new Error("Expected provider scan request to be captured.");
+    }
+    const capturedRequest = capturedScan as TableScanRequest;
     expect(capturedRequest.select).toEqual(["id", "total_cents", "created_at"]);
     expect(rows).toEqual([
       {
@@ -802,40 +838,42 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       orders_provider: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "orders_provider",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
-          return Result.ok(scanRows(ordersRows, fragment.request));
+          return Result.ok(scanRows(ordersRows, request));
         },
       } satisfies TestProvider,
       users_provider: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "users_provider",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
-          return Result.ok(scanRows(usersRows, fragment.request));
+          return Result.ok(scanRows(usersRows, request));
         },
         async lookupMany(request) {
           lookupCalls += 1;
@@ -910,16 +948,17 @@ describe("query/provider runtime", () => {
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "orders_provider",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
-          return Result.ok(scanRows(ordersRows, fragment.request));
+          return Result.ok(scanRows(ordersRows, request));
         },
       } satisfies TestProvider,
       users_provider: {
@@ -929,16 +968,17 @@ describe("query/provider runtime", () => {
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "users_provider",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
-          return Result.ok(scanRows(usersRows, fragment.request));
+          return Result.ok(scanRows(usersRows, request));
         },
         async lookupMany(request) {
           const keys = new Set(request.keys);
@@ -991,40 +1031,42 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       orders_provider: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "orders_provider",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
-          return Result.ok(scanRows(ordersRows, fragment.request));
+          return Result.ok(scanRows(ordersRows, request));
         },
       } satisfies TestProvider,
       users_provider: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "users_provider",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
-          return Result.ok(scanRows(usersRows, fragment.request));
+          return Result.ok(scanRows(usersRows, request));
         },
         async lookupMany(request) {
           const keys = new Set(request.keys);
@@ -1096,18 +1138,19 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
 
@@ -1118,7 +1161,7 @@ describe("query/provider runtime", () => {
                 { id: "o1", total_cents: 500 },
                 { id: "o2", total_cents: 700 },
               ],
-              fragment.request,
+              request,
             ),
           );
         },
@@ -1175,18 +1218,19 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
 
@@ -1197,7 +1241,7 @@ describe("query/provider runtime", () => {
                 { id: "o2", total_cents: 3200 },
                 { id: "o3", total_cents: 2100 },
               ],
-              fragment.request,
+              request,
             ),
           );
         },
@@ -1254,7 +1298,7 @@ describe("query/provider runtime", () => {
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
@@ -1317,7 +1361,7 @@ describe("query/provider runtime", () => {
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
@@ -1367,22 +1411,23 @@ describe("query/provider runtime", () => {
   it("executes views that scan data entities directly without intermediate facade tables", async () => {
     const warehouseProvider = {
       canExecute(fragment: ProviderFragment) {
-        return fragment.kind === "scan";
+        return fragment.rel.kind === "scan";
       },
       async compile(fragment: ProviderFragment) {
         return Result.ok({
           provider: "warehouse",
-          kind: fragment.kind,
+          kind: "rel",
           payload: fragment,
         });
       },
       async execute(plan) {
         const fragment = plan.payload as ProviderFragment;
-        if (fragment.kind !== "scan") {
+        const request = toScanRequest(fragment);
+        if (!request) {
           return Result.ok([]);
         }
 
-        if (fragment.request.table === "orders_raw") {
+        if (request.table === "orders_raw") {
           return Result.ok(
             scanRows(
               [
@@ -1390,19 +1435,19 @@ describe("query/provider runtime", () => {
                 { id: "o2", vendor_id: "v1", total_cents: 800 },
                 { id: "o3", vendor_id: "v2", total_cents: 500 },
               ],
-              fragment.request,
+              request,
             ),
           );
         }
 
-        if (fragment.request.table === "vendors_raw") {
+        if (request.table === "vendors_raw") {
           return Result.ok(
             scanRows(
               [
                 { id: "v1", name: "Acme" },
                 { id: "v2", name: "Bolt" },
               ],
-              fragment.request,
+              request,
             ),
           );
         }
@@ -1414,7 +1459,7 @@ describe("query/provider runtime", () => {
     const ordersEntity = createDataEntityHandle({
       entity: "orders_raw",
       provider: "warehouse",
-      providerInstance: warehouseProvider as unknown as Provider,
+      adapter: warehouseProvider as unknown as ProviderAdapter,
       columns: {
         id: { source: "id", type: "text", nullable: false },
         vendorId: { source: "vendor_id", type: "text", nullable: false },
@@ -1424,7 +1469,7 @@ describe("query/provider runtime", () => {
     const vendorsEntity = createDataEntityHandle({
       entity: "vendors_raw",
       provider: "warehouse",
-      providerInstance: warehouseProvider as unknown as Provider,
+      adapter: warehouseProvider as unknown as ProviderAdapter,
       columns: {
         id: { source: "id", type: "text", nullable: false },
         name: { source: "name", type: "text", nullable: false },
@@ -1570,18 +1615,19 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
 
@@ -1597,7 +1643,7 @@ describe("query/provider runtime", () => {
             product_access_raw: [{ product_id: "p1" }, { product_id: "p2" }],
           };
 
-          return Result.ok(scanRows(rowsByTable[fragment.table] ?? [], fragment.request));
+          return Result.ok(scanRows(rowsByTable[request.table] ?? [], request));
         },
       } satisfies TestProvider,
     });
@@ -1731,18 +1777,19 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
 
@@ -1759,7 +1806,7 @@ describe("query/provider runtime", () => {
             product_access_raw: [{ product_id: "p1" }, { product_id: "p2" }],
           };
 
-          return Result.ok(scanRows(rowsByTable[fragment.table] ?? [], fragment.request));
+          return Result.ok(scanRows(rowsByTable[request.table] ?? [], request));
         },
       } satisfies TestProvider,
     });
@@ -1833,18 +1880,19 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
 
@@ -1854,29 +1902,30 @@ describe("query/provider runtime", () => {
                 { id: "p1", name: "Edge Router" },
                 { id: "p2", name: "Backup Service" },
               ],
-              fragment.request,
+              request,
             ),
           );
         },
       } satisfies TestProvider,
       kv: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "kv",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
 
-          return Result.ok(scanRows([{ product_id: "p1", view_count: 12 }], fragment.request));
+          return Result.ok(scanRows([{ product_id: "p1", view_count: 12 }], request));
         },
       } satisfies TestProvider,
     });
@@ -1973,7 +2022,7 @@ describe("query/provider runtime", () => {
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
@@ -2009,12 +2058,12 @@ describe("query/provider runtime", () => {
       } satisfies TestProvider,
       kv: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "kv",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
@@ -2078,21 +2127,22 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
-          return Result.ok(scanRows([{ id: "o1" }], fragment.request));
+          return Result.ok(scanRows([{ id: "o1" }], request));
         },
       } satisfies TestProvider,
     });
@@ -2128,26 +2178,27 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
           return Result.ok(
             scanRows(
-              fragment.table === "orders"
+              request.table === "orders"
                 ? [{ id: "o1", user_id: "u1" }]
                 : [{ id: "u1", email: "a@example.com" }],
-              fragment.request,
+              request,
             ),
           );
         },
@@ -2176,7 +2227,7 @@ describe("query/provider runtime", () => {
     );
   });
 
-  it("defaults relational provider capability atoms for common SQL-like adapters", () => {
+  it("omits relational capability atoms unless the adapter declares them", () => {
     const adapter = createRelationalProviderAdapter({
       name: "warehouse",
       entities: {
@@ -2190,7 +2241,7 @@ describe("query/provider runtime", () => {
       },
     });
 
-    expect(adapter.capabilityAtoms).toEqual([...DEFAULT_RELATIONAL_CAPABILITY_ATOMS]);
+    expect(adapter.capabilityAtoms).toBeUndefined();
   });
 
   it("builds the default relational compiled-plan payload when no custom compiler is provided", async () => {
@@ -2307,21 +2358,22 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
-          return Result.ok(scanRows([], fragment.request));
+          return Result.ok(scanRows([], request));
         },
       } satisfies TestProvider,
     });
@@ -2358,22 +2410,23 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
           await sleep(25);
-          return Result.ok(scanRows([{ id: "u1" }], fragment.request));
+          return Result.ok(scanRows([{ id: "u1" }], request));
         },
       } satisfies TestProvider,
     });
@@ -2403,7 +2456,7 @@ describe("query/provider runtime", () => {
       },
     });
 
-    const result = validateProviderBindings(schema, {});
+    const result = validateProviderBindingsResult(schema, {});
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
       throw new Error("Expected provider binding validation to fail.");
@@ -2433,18 +2486,19 @@ describe("query/provider runtime", () => {
     const executableSchema = createExecutableSchemaFromProviders(schema, {
       warehouse: {
         canExecute(fragment: ProviderFragment) {
-          return fragment.kind === "scan";
+          return fragment.rel.kind === "scan";
         },
         async compile(fragment: ProviderFragment) {
           return Result.ok({
             provider: "warehouse",
-            kind: fragment.kind,
+            kind: "rel",
             payload: fragment,
           });
         },
         async execute(plan) {
           const fragment = plan.payload as ProviderFragment;
-          if (fragment.kind !== "scan") {
+          const request = toScanRequest(fragment);
+          if (!request) {
             return Result.ok([]);
           }
           return Result.ok(
@@ -2454,7 +2508,7 @@ describe("query/provider runtime", () => {
                 { id: "u2", email: "beta@sample.com", score: 7 },
                 { id: "u3", email: "Gamma@Example.com", score: 4 },
               ],
-              fragment.request,
+              request,
             ),
           );
         },

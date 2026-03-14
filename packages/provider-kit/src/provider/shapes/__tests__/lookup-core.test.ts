@@ -12,12 +12,15 @@ import {
 describe("lookup provider core", () => {
   it("builds a standard unsupported report for non-lookup fragments", () => {
     const fragment: ProviderFragment = {
-      kind: "scan",
+      kind: "rel",
       provider: "redisProvider",
-      table: "product_view_counts",
-      request: {
+      rel: {
+        id: "redis:product_view_counts",
+        kind: "scan",
+        convention: "provider:redisProvider",
         table: "product_view_counts",
         select: ["product_id", "view_count"],
+        output: [{ name: "product_id" }, { name: "view_count" }],
       },
     };
 

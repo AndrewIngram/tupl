@@ -274,28 +274,11 @@ function normalizeProviderFragmentForSnapshot(
   fragment: ProviderFragment,
   state: RelNormalizationState,
 ) {
-  switch (fragment.kind) {
-    case "scan":
-      return {
-        kind: "scan",
-        provider: fragment.provider,
-        table: fragment.table,
-        request: fragment.request,
-      };
-    case "aggregate":
-      return {
-        kind: "aggregate",
-        provider: fragment.provider,
-        table: fragment.table,
-        request: fragment.request,
-      };
-    case "rel":
-      return {
-        kind: "rel",
-        provider: fragment.provider,
-        rel: normalizeRelNode(fragment.rel, state),
-      };
-  }
+  return {
+    kind: "rel",
+    provider: fragment.provider,
+    rel: normalizeRelNode(fragment.rel, state),
+  };
 }
 
 function normalizePhysicalStepForSnapshot(

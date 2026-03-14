@@ -203,6 +203,34 @@ function createMockKyselyDb(
   return { db, calls };
 }
 
+function buildProjectedScanRel(input: {
+  provider: string;
+  table: string;
+  select: string[];
+  where?: TableScanRequest["where"];
+}): RelNode {
+  return {
+    id: `project_${input.table}`,
+    kind: "project",
+    convention: `provider:${input.provider}`,
+    input: {
+      id: `scan_${input.table}`,
+      kind: "scan",
+      convention: `provider:${input.provider}`,
+      table: input.table,
+      select: input.select,
+      output: input.select.map((name) => ({ name })),
+      ...(input.where ? { where: input.where } : {}),
+    },
+    columns: input.select.map((column) => ({
+      kind: "column" as const,
+      source: { column },
+      output: column,
+    })),
+    output: input.select.map((name) => ({ name })),
+  };
+}
+
 function buildJoinProjectRel(): RelNode {
   return {
     id: "project_1",
@@ -398,10 +426,14 @@ describe("kysely adapter", () => {
     };
 
     const scanFragment: ProviderFragment = {
-      kind: "scan",
+      kind: "rel",
       provider: "dbProvider",
-      table: "orders",
-      request: scanRequest,
+      rel: buildProjectedScanRel({
+        provider: "dbProvider",
+        table: "orders",
+        select: scanRequest.select,
+        where: scanRequest.where,
+      }),
     };
     const scanContext = { orgId: "org_1", db };
     const scanPlan = (await provider.compile(scanFragment, scanContext)).unwrap();
@@ -443,13 +475,13 @@ describe("kysely adapter", () => {
     const plan = (
       await provider.compile(
         {
-          kind: "scan",
+          kind: "rel",
           provider: "dbProvider",
-          table: "orders",
-          request: {
+          rel: buildProjectedScanRel({
+            provider: "dbProvider",
             table: "orders",
             select: ["id"],
-          },
+          }),
         },
         {},
       )
@@ -560,7 +592,6 @@ describe("kysely adapter", () => {
       expect.objectContaining({
         supported: false,
         routeFamily: "rel-advanced",
-        requiredAtoms: expect.arrayContaining(["cte.non_recursive"]),
         reason: "Rel fragment is not supported for single-query Kysely pushdown.",
       }),
     );

@@ -82,46 +82,21 @@ export function normalizeCapability(
 }
 
 export function inferRouteFamilyForFragment(fragment: ProviderFragment) {
-  switch (fragment.kind) {
-    case "scan":
-      return "scan";
-    case "aggregate":
-      return "aggregate";
-    case "rel":
-      return hasAdvancedRelFeatures(fragment.rel) ? "rel-advanced" : "rel-core";
+  if (fragment.rel.kind === "scan") {
+    return "scan";
   }
+  if (fragment.rel.kind === "aggregate") {
+    return "aggregate";
+  }
+  return hasAdvancedRelFeatures(fragment.rel) ? "rel-advanced" : "rel-core";
 }
 
 export function collectCapabilityAtomsForFragment(
   fragment: ProviderFragment,
 ): ProviderCapabilityAtom[] {
   const atoms = new Set<ProviderCapabilityAtom>();
-
-  switch (fragment.kind) {
-    case "scan":
-      atoms.add("scan.project");
-      if ((fragment.request.where ?? []).length > 0) {
-        for (const clause of fragment.request.where ?? []) {
-          addFilterAtom(atoms, clause.op);
-        }
-      }
-      if ((fragment.request.orderBy ?? []).length > 0) {
-        atoms.add("scan.sort");
-      }
-      if (fragment.request.limit != null || fragment.request.offset != null) {
-        atoms.add("scan.limit_offset");
-      }
-      return [...atoms];
-    case "aggregate":
-      atoms.add("aggregate.group_by");
-      for (const clause of fragment.request.where ?? []) {
-        addFilterAtom(atoms, clause.op);
-      }
-      return [...atoms];
-    case "rel":
-      collectCapabilityAtomsForRel(fragment.rel, atoms);
-      return [...atoms];
-  }
+  collectCapabilityAtomsForRel(fragment.rel, atoms);
+  return [...atoms];
 }
 
 function collectCapabilityAtomsForRel(node: RelNode, atoms: Set<ProviderCapabilityAtom>): void {

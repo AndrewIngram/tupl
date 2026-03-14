@@ -1,4 +1,4 @@
-import { bindProviderEntities } from "../entity-handles";
+import { bindAdapterEntities } from "../entity-handles";
 import { AdapterResult } from "../operations";
 import type {
   ProviderCompiledPlan,
@@ -11,16 +11,14 @@ import {
   resolveRelationalCapabilityContext,
 } from "./relational-capabilities";
 import { buildRelationalEntityHandles } from "./relational-entities";
-import {
-  DEFAULT_RELATIONAL_CAPABILITY_ATOMS,
-  type RelationalProviderCompileRelArgs,
-} from "./relational-adapter-types";
+import { type RelationalProviderCompileRelArgs } from "./relational-adapter-types";
 import type {
-  RelationalProvider,
+  RelationalProviderAdapter,
+  RelationalProviderAdapterOptions,
+  RelationalProviderAdapterOptionsWithLookup,
+  RelationalProviderAdapterWithLookup,
   RelationalProviderEntityConfig,
-  RelationalProviderOptions,
   RelationalProviderRelCompileStrategy,
-  RelationalProviderWithLookup,
 } from "./relational-adapter-types";
 
 const DEFAULT_RELATIONAL_ROUTE_FAMILIES = [
@@ -31,64 +29,35 @@ const DEFAULT_RELATIONAL_ROUTE_FAMILIES = [
 ] as const;
 const LOOKUP_CAPABILITY_ATOM = "lookup.bulk" as const;
 
-export { DEFAULT_RELATIONAL_CAPABILITY_ATOMS } from "./relational-adapter-types";
-
 export type {
+  RelationalProviderAdapterOptions,
+  RelationalProviderAdapterOptionsWithLookup,
   RelationalProviderCapabilityContext,
   RelationalProviderCompileRelArgs,
-  RelationalProviderCompileScanArgs,
   RelationalProviderDescribeArgs,
   RelationalProviderEntityColumnsArgs,
   RelationalProviderEntityConfig,
   RelationalProviderExecuteArgs,
   RelationalProviderLookupArgs,
-  RelationalProviderOptions,
   RelationalProviderRelCompileStrategy,
+  RelationalProviderSupportArgs,
 } from "./relational-adapter-types";
 
-type RelationalProviderOptionsWithLookup<
-  TContext,
-  TEntities extends Record<string, RelationalProviderEntityConfig>,
-  TStrategy extends RelationalProviderRelCompileStrategy,
-> = RelationalProviderOptions<TContext, TEntities, TStrategy> & {
-  lookupMany: NonNullable<RelationalProviderOptions<TContext, TEntities, TStrategy>["lookupMany"]>;
-};
+function getCapabilityAtoms<TAtoms extends readonly string[] | undefined>(
+  declaredAtoms: TAtoms,
+  includeLookupAtom: boolean,
+) {
+  const atoms = [
+    ...new Set([...(declaredAtoms ?? []), ...(includeLookupAtom ? [LOOKUP_CAPABILITY_ATOM] : [])]),
+  ];
+  return atoms.length > 0 ? atoms : undefined;
+}
+
 function describeRelationalCompiledPlan(
   name: string,
   plan: ProviderCompiledPlan,
 ): ProviderPlanDescription {
   switch (plan.kind) {
-    case "scan": {
-      const payload = plan.payload as { table?: unknown; request?: unknown } | null;
-      const table =
-        payload && typeof payload === "object" && typeof payload.table === "string"
-          ? payload.table
-          : undefined;
-      return {
-        kind: "scan_fragment",
-        summary: table ? `${name} scan on ${table}` : `${name} scan fragment`,
-        operations: [
-          {
-            kind: "scan",
-            ...(table ? { target: table } : {}),
-            raw: plan.payload,
-          },
-        ],
-        raw: plan.payload,
-      };
-    }
-    case "aggregate":
-      return {
-        kind: "aggregate_fragment",
-        summary: `${name} aggregate fragment`,
-        operations: [
-          {
-            kind: "aggregate",
-            raw: plan.payload,
-          },
-        ],
-        raw: plan.payload,
-      };
     case "rel": {
       const payload = plan.payload as { strategy?: unknown; sql?: unknown } | null;
       const strategy =
@@ -135,24 +104,27 @@ export function createRelationalProviderAdapter<
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends RelationalProviderRelCompileStrategy,
 >(
-  options: RelationalProviderOptionsWithLookup<TContext, TEntities, TStrategy>,
-): RelationalProviderWithLookup<TContext, TEntities>;
+  options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
+): RelationalProviderAdapter<TContext, TEntities>;
 export function createRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends RelationalProviderRelCompileStrategy,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy> & {
-    lookupMany?: undefined;
-  },
-): RelationalProvider<TContext, TEntities>;
+  options: RelationalProviderAdapterOptionsWithLookup<TContext, TEntities, TStrategy>,
+): RelationalProviderAdapterWithLookup<TContext, TEntities>;
 export function createRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends RelationalProviderRelCompileStrategy,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy>,
-): RelationalProvider<TContext, TEntities> | RelationalProviderWithLookup<TContext, TEntities> {
+  options:
+    | RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>
+    | RelationalProviderAdapterOptionsWithLookup<TContext, TEntities, TStrategy>,
+):
+  | RelationalProviderAdapter<TContext, TEntities>
+  | RelationalProviderAdapterWithLookup<TContext, TEntities> {
+  const capabilityAtoms = getCapabilityAtoms(options.declaredAtoms, Boolean(options.lookupMany));
   const adapter = {
     name: options.name,
     routeFamilies: [
@@ -161,85 +133,53 @@ export function createRelationalProviderAdapter<
           ? [...DEFAULT_RELATIONAL_ROUTE_FAMILIES, "lookup"]
           : DEFAULT_RELATIONAL_ROUTE_FAMILIES)),
     ],
-    capabilityAtoms: [
-      ...new Set([
-        ...(options.declaredAtoms ?? DEFAULT_RELATIONAL_CAPABILITY_ATOMS),
-        ...(options.lookupMany ? [LOOKUP_CAPABILITY_ATOM] : []),
-      ]),
-    ],
+    ...(capabilityAtoms ? { capabilityAtoms } : {}),
     ...(options.fallbackPolicy ? { fallbackPolicy: options.fallbackPolicy } : {}),
     canExecute(fragment: ProviderFragment, context: TContext) {
       return canExecuteRelationalFragment(options, fragment, context);
     },
     async compile(fragment: ProviderFragment, context: TContext) {
-      switch (fragment.kind) {
-        case "scan":
-          if (!Object.hasOwn(options.entities, fragment.table)) {
-            return AdapterResult.err(
-              new Error(`Unknown ${options.name} entity config: ${fragment.table}`),
-            );
-          }
-          return (
-            options.compileScanFragment?.({
-              context,
-              entities: options.entities,
-              fragment,
-              name: options.name,
-            }) ??
-            AdapterResult.ok({
-              provider: options.name,
-              kind: "scan",
-              payload: fragment,
-            } satisfies ProviderCompiledPlan)
-          );
-        case "rel": {
-          const capabilityContext = await resolveRelationalCapabilityContext(
-            options,
-            fragment,
-            context,
-          );
-          if (!capabilityContext.strategy) {
-            return AdapterResult.err(
-              new Error(
-                options.unsupportedRelCompileMessage ??
-                  `Unsupported relational fragment for ${options.name} provider.`,
-              ),
-            );
-          }
-
-          const support = await options.isRelStrategySupported?.(capabilityContext);
-          if (support !== undefined && support !== true) {
-            return AdapterResult.err(
-              new Error(typeof support === "string" ? support : (support.reason ?? "Unsupported.")),
-            );
-          }
-
-          const compileArgs = {
-            context,
-            entities: options.entities,
-            fragment,
-            name: options.name,
-            strategy: capabilityContext.strategy,
-          } satisfies RelationalProviderCompileRelArgs<TContext, TEntities, TStrategy>;
-
-          if (options.compileRelFragment) {
-            return options.compileRelFragment(compileArgs);
-          }
-
-          return AdapterResult.ok({
-            provider: options.name,
-            kind: "rel",
-            payload: options.buildRelPlanPayload?.(compileArgs) ?? {
-              strategy: capabilityContext.strategy,
-              rel: fragment.rel,
-            },
-          } satisfies ProviderCompiledPlan);
-        }
-        default:
-          return AdapterResult.err(
-            new Error(`Unsupported ${options.name} fragment kind: ${fragment.kind}`),
-          );
+      const capabilityContext = await resolveRelationalCapabilityContext(
+        options,
+        fragment,
+        context,
+      );
+      if (!capabilityContext.strategy) {
+        return AdapterResult.err(
+          new Error(
+            options.unsupportedRelCompileMessage ??
+              `Unsupported relational fragment for ${options.name} provider.`,
+          ),
+        );
       }
+
+      const support = await options.isRelStrategySupported?.(capabilityContext);
+      if (support !== undefined && support !== true) {
+        return AdapterResult.err(
+          new Error(typeof support === "string" ? support : (support.reason ?? "Unsupported.")),
+        );
+      }
+
+      const compileArgs = {
+        context,
+        entities: options.entities,
+        fragment,
+        name: options.name,
+        strategy: capabilityContext.strategy,
+      } satisfies RelationalProviderCompileRelArgs<TContext, TEntities, TStrategy>;
+
+      if (options.compileRelFragment) {
+        return options.compileRelFragment(compileArgs);
+      }
+
+      return AdapterResult.ok({
+        provider: options.name,
+        kind: "rel",
+        payload: options.buildRelPlanPayload?.(compileArgs) ?? {
+          strategy: capabilityContext.strategy,
+          rel: fragment.rel,
+        },
+      } satisfies ProviderCompiledPlan);
     },
     async execute(plan: ProviderCompiledPlan, context: TContext) {
       return options.executeCompiledPlan({
@@ -262,14 +202,13 @@ export function createRelationalProviderAdapter<
   };
 
   const entities = buildRelationalEntityHandles(adapter, options);
-  const lookupMany = options.lookupMany;
   const boundAdapter = {
     ...adapter,
     entities,
-    ...(lookupMany
+    ...(options.lookupMany
       ? {
           async lookupMany(request: ProviderLookupManyRequest, context: TContext) {
-            return lookupMany({
+            return options.lookupMany({
               context,
               entities: options.entities,
               name: options.name,
@@ -280,5 +219,5 @@ export function createRelationalProviderAdapter<
       : {}),
   };
 
-  return bindProviderEntities(boundAdapter);
+  return bindAdapterEntities(boundAdapter);
 }

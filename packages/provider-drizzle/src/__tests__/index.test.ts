@@ -163,6 +163,34 @@ function createJoinCapableDb(
   return { db, calls };
 }
 
+function buildProjectedScanRel(input: {
+  provider: string;
+  table: string;
+  select: string[];
+  where?: Array<{ op: string; column: string; value?: unknown; values?: unknown[] }>;
+}) {
+  return {
+    id: `project_${input.table}`,
+    kind: "project" as const,
+    convention: `provider:${input.provider}` as const,
+    input: {
+      id: `scan_${input.table}`,
+      kind: "scan" as const,
+      convention: `provider:${input.provider}` as const,
+      table: input.table,
+      select: input.select,
+      output: input.select.map((name) => ({ name })),
+      ...(input.where ? { where: input.where } : {}),
+    },
+    columns: input.select.map((column) => ({
+      kind: "column" as const,
+      source: { column },
+      output: column,
+    })),
+    output: input.select.map((name) => ({ name })),
+  } satisfies RelNode;
+}
+
 function flattenSqlTokens(value: unknown): unknown[] {
   const out: unknown[] = [];
 
@@ -685,25 +713,34 @@ describe("drizzle adapter", () => {
     });
 
     const scanFragment: ProviderFragment = {
-      kind: "scan",
+      kind: "rel",
       provider: "warehouse",
-      table: "users",
-      request: {
+      rel: buildProjectedScanRel({
+        provider: "warehouse",
         table: "users",
         select: ["id"],
-      },
+      }),
     };
     expect(provider.canExecute(scanFragment, {})).toBe(true);
 
     const unknownScan: ProviderFragment = {
-      ...scanFragment,
-      table: "missing",
-      request: {
+      rel: {
+        id: "scan_missing",
+        kind: "scan",
+        convention: "provider:warehouse",
         table: "missing",
         select: ["id"],
+        output: [{ name: "id" }],
       },
+      provider: "warehouse",
+      kind: "rel",
     };
-    expect(provider.canExecute(unknownScan, {})).toBe(false);
+    expect(provider.canExecute(unknownScan, {})).toEqual(
+      expect.objectContaining({
+        supported: false,
+        routeFamily: "scan",
+      }),
+    );
   });
 
   it("derives columns from the table object when columns are omitted", async () => {
@@ -739,13 +776,13 @@ describe("drizzle adapter", () => {
     const plan = (
       await provider.compile(
         {
-          kind: "scan",
+          kind: "rel",
           provider: "drizzle",
-          table: "users",
-          request: {
+          rel: buildProjectedScanRel({
+            provider: "drizzle",
             table: "users",
             select: ["user_id", "email"],
-          },
+          }),
         },
         {},
       )
@@ -779,13 +816,13 @@ describe("drizzle adapter", () => {
     const plan = (
       await provider.compile(
         {
-          kind: "scan",
+          kind: "rel",
           provider: "drizzle",
-          table: "users",
-          request: {
+          rel: buildProjectedScanRel({
+            provider: "drizzle",
             table: "users",
             select: ["id"],
-          },
+          }),
         },
         { db },
       )
@@ -810,23 +847,19 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = (
-      await provider.compile(
+    await expect(
+      provider.compile(
         {
-          kind: "scan",
+          kind: "rel",
           provider: "drizzle",
-          table: "users",
-          request: {
+          rel: buildProjectedScanRel({
+            provider: "drizzle",
             table: "users",
             select: ["id"],
-          },
+          }),
         },
         {},
-      )
-    ).unwrap();
-
-    await expect(
-      Promise.resolve(provider.execute(plan, {})).then((result) => result.unwrap()),
+      ),
     ).rejects.toThrow(
       "Drizzle provider runtime binding did not resolve to a valid database instance.",
     );
@@ -844,23 +877,19 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const plan = (
-      await provider.compile(
+    await expect(
+      provider.compile(
         {
-          kind: "scan",
+          kind: "rel",
           provider: "drizzle",
-          table: "users",
-          request: {
+          rel: buildProjectedScanRel({
+            provider: "drizzle",
             table: "users",
             select: ["id"],
-          },
+          }),
         },
         {},
-      )
-    ).unwrap();
-
-    await expect(
-      Promise.resolve(provider.execute(plan, {})).then((result) => result.unwrap()),
+      ),
     ).rejects.toThrow(
       'Unable to derive columns for table "users". Provide an explicit columns map.',
     );

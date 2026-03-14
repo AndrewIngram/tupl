@@ -87,13 +87,9 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
     return rowsResult;
   }
 
-  if (fragment.kind === "rel") {
-    return tryExecutionStep("map provider rows to logical rel output rows", () =>
-      mapProviderRowsToRelOutput(rowsResult.value, fragment.rel, context.schema),
-    );
-  }
-
-  return Result.ok(rowsResult.value);
+  return tryExecutionStep("map provider rows to logical rel output rows", () =>
+    mapProviderRowsToRelOutput(rowsResult.value, fragment.rel, context.schema),
+  );
 }
 
 function resolveProviderForNode<TContext>(

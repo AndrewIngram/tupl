@@ -238,23 +238,10 @@ export function createIoredisProvider<
     capabilityAtoms: [...LOOKUP_ATOMS],
     entities: handles,
     canExecute(fragment): boolean | ProviderCapabilityReport {
-      switch (fragment.kind) {
-        case "scan":
-          return buildLookupOnlyUnsupportedReport(
-            fragment,
-            "Ioredis provider is lookup-only in v1 and does not support scan pushdown.",
-          );
-        case "aggregate":
-          return buildLookupOnlyUnsupportedReport(
-            fragment,
-            "Ioredis provider is lookup-only in v1 and does not support aggregate pushdown.",
-          );
-        case "rel":
-          return buildLookupOnlyUnsupportedReport(
-            fragment,
-            "Ioredis provider is lookup-only in v1 and does not support relational pushdown.",
-          );
-      }
+      return buildLookupOnlyUnsupportedReport(
+        fragment,
+        "Ioredis provider is lookup-only in v1 and does not support relational pushdown.",
+      );
     },
     async lookupMany(request, context) {
       const entity = getEntityConfigOrThrow(entitiesByName, request.table);

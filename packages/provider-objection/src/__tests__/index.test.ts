@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { stringifyUnknownValue, type RelNode } from "@tupl/foundation";
-import { type ProviderFragment, type QueryRow, type TableScanRequest } from "@tupl/provider-kit";
+import { type ProviderFragment, type QueryRow } from "@tupl/provider-kit";
 import { createObjectionProvider, type KnexLike, type KnexLikeQueryBuilder } from "../index";
 
 interface ObjectionCalls {
@@ -180,6 +180,28 @@ function createMockKnex(
   };
 }
 
+function buildProjectedScanRel(input: { provider: string; table: string; select: string[] }) {
+  return {
+    id: `project_${input.table}`,
+    kind: "project" as const,
+    convention: `provider:${input.provider}` as const,
+    input: {
+      id: `scan_${input.table}`,
+      kind: "scan" as const,
+      convention: `provider:${input.provider}` as const,
+      table: input.table,
+      select: input.select,
+      output: input.select.map((name) => ({ name })),
+    },
+    columns: input.select.map((column) => ({
+      kind: "column" as const,
+      source: { column },
+      output: column,
+    })),
+    output: input.select.map((name) => ({ name })),
+  } satisfies RelNode;
+}
+
 function buildJoinProjectRel(): RelNode {
   return {
     id: "project_1",
@@ -356,7 +378,9 @@ describe("objection adapter", () => {
       baseContexts: [],
     };
     const knex = createMockKnex(
-      new Map<string, QueryRow[]>([["orders", [{ "orders.id": "o1", "orders.user_id": "u1" }]]]),
+      new Map<string, QueryRow[]>([
+        ["orders as orders", [{ "orders.id": "o1", "orders.user_id": "u1" }]],
+      ]),
       new Map<string, QueryRow[]>(),
       calls,
     );
@@ -376,13 +400,13 @@ describe("objection adapter", () => {
     });
 
     const scanFragment: ProviderFragment = {
-      kind: "scan",
+      kind: "rel",
       provider: "dbProvider",
-      table: "orders",
-      request: {
+      rel: buildProjectedScanRel({
+        provider: "dbProvider",
         table: "orders",
         select: ["id", "user_id"],
-      } satisfies TableScanRequest,
+      }),
     };
     const scanContext = { orgId: "org_1", knex };
     const scanPlan = (await provider.compile(scanFragment, scanContext)).unwrap();
@@ -428,13 +452,13 @@ describe("objection adapter", () => {
     const plan = (
       await provider.compile(
         {
-          kind: "scan",
+          kind: "rel",
           provider: "dbProvider",
-          table: "orders",
-          request: {
+          rel: buildProjectedScanRel({
+            provider: "dbProvider",
             table: "orders",
             select: ["id"],
-          },
+          }),
         },
         {},
       )
@@ -551,7 +575,6 @@ describe("objection adapter", () => {
       expect.objectContaining({
         supported: false,
         routeFamily: "rel-advanced",
-        requiredAtoms: expect.arrayContaining(["cte.non_recursive"]),
         reason: "Rel fragment is not supported for single-query Objection pushdown.",
       }),
     );

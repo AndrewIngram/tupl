@@ -1,30 +1,31 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
-import { createExecutableSchema } from "@tupl/runtime";
-import { createExecutableSchemaSession } from "@tupl/runtime/session";
+import { createExecutableSchemaResult } from "@tupl/runtime";
+import { createExecutableSchemaSessionResult } from "@tupl/runtime/session";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema-model";
 import {
   createDataEntityHandle,
-  type FragmentProvider,
-  type LookupProvider,
+  type FragmentProviderAdapter,
+  type LookupProviderAdapter,
   type ProviderFragment,
 } from "@tupl/provider-kit";
-import { createSchemaBuilder, resolveTableProvider } from "@tupl/schema-model";
-import { buildSchema } from "@tupl/test-support/schema";
+import { createSchemaBuilder, resolveTableProviderResult } from "@tupl/schema-model";
+import { createExecutableSchemaFromProviders } from "@tupl/test-support/runtime";
+import { buildEntitySchema, buildSchema } from "@tupl/test-support/schema";
 
-type TestProvider = FragmentProvider & Partial<Pick<LookupProvider, "lookupMany">>;
+type TestProvider = Omit<FragmentProviderAdapter, "name"> &
+  Partial<Pick<LookupProviderAdapter, "lookupMany">>;
 
 function createRowsProvider(rows: QueryRow[] = [{ id: "u1" }]): TestProvider {
   return {
-    name: "warehouse",
     canExecute(fragment: ProviderFragment) {
-      return fragment.kind === "scan";
+      return fragment.rel.kind === "scan";
     },
     async compile(fragment: ProviderFragment) {
       return Result.ok({
         provider: "warehouse",
-        kind: fragment.kind,
+        kind: "rel",
         payload: fragment,
       });
     },
@@ -34,42 +35,89 @@ function createRowsProvider(rows: QueryRow[] = [{ id: "u1" }]): TestProvider {
   };
 }
 
-function createUsersExecutableSchema(provider: TestProvider) {
-  const builder = createSchemaBuilder<Record<string, never>>();
-  builder.table(
-    "users",
-    createDataEntityHandle({
-      entity: "users",
-      provider: "warehouse",
-      providerInstance: provider as FragmentProvider,
-    }),
-    {
-      columns: {
-        id: "text",
-      },
-    },
-  );
-
-  const result = createExecutableSchema(builder);
-  if (Result.isError(result)) {
-    throw result.error;
-  }
-
-  return result.value;
-}
-
 describe("public result APIs", () => {
-  it("returns tagged parse errors from query", async () => {
-    const executableSchema = createUsersExecutableSchema(createRowsProvider());
+  it("executes provider-owned root rel queries through the canonical executor path", async () => {
+    const schema = buildEntitySchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          user_id: "text",
+        },
+      },
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          email: "text",
+        },
+      },
+    });
 
-    const result = await executableSchema.query({
+    let sawRelCompile = false;
+
+    const executableSchema = createExecutableSchemaFromProviders(schema, {
+      warehouse: {
+        canExecute(fragment: ProviderFragment) {
+          return fragment.kind === "rel";
+        },
+        async compile(fragment: ProviderFragment) {
+          if (fragment.kind === "rel") {
+            sawRelCompile = true;
+          }
+
+          return Result.ok({
+            provider: "warehouse",
+            kind: "rel",
+            payload: fragment,
+          });
+        },
+        async execute() {
+          return Result.ok([{ id: "o1", email: "a@example.com" }]);
+        },
+      } satisfies TestProvider,
+    });
+
+    const result = await executableSchema.queryResult({
+      context: {},
+      sql: `
+        SELECT o.id, u.email
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+      `,
+    });
+
+    expect(Result.isOk(result)).toBe(true);
+    if (Result.isError(result)) {
+      throw new Error("Expected queryResult to succeed.");
+    }
+
+    expect(result.value).toEqual([{ id: "o1", email: "a@example.com" }]);
+    expect(sawRelCompile).toBe(true);
+  });
+
+  it("returns tagged parse errors from queryResult", async () => {
+    const schema = buildEntitySchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+        },
+      },
+    });
+
+    const executableSchema = createExecutableSchemaFromProviders(schema, {
+      warehouse: createRowsProvider(),
+    });
+
+    const result = await executableSchema.queryResult({
       context: {},
       sql: "INSERT INTO users VALUES ('u1')",
     });
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected query to fail.");
+      throw new Error("Expected queryResult to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -78,17 +126,28 @@ describe("public result APIs", () => {
     });
   });
 
-  it("returns tagged schema-normalization errors from query", async () => {
-    const executableSchema = createUsersExecutableSchema(createRowsProvider());
+  it("returns tagged planning errors from queryResult", async () => {
+    const schema = buildEntitySchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+        },
+      },
+    });
 
-    const result = await executableSchema.query({
+    const executableSchema = createExecutableSchemaFromProviders(schema, {
+      warehouse: createRowsProvider(),
+    });
+
+    const result = await executableSchema.queryResult({
       context: {},
       sql: "SELECT id FROM missing_table",
     });
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected query to fail.");
+      throw new Error("Expected queryResult to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -97,32 +156,42 @@ describe("public result APIs", () => {
     });
   });
 
-  it("returns tagged runtime errors from query", async () => {
-    const executableSchema = createUsersExecutableSchema({
-      name: "warehouse",
-      canExecute(fragment: ProviderFragment) {
-        return fragment.kind === "scan";
+  it("returns tagged runtime errors from queryResult", async () => {
+    const schema = buildEntitySchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+        },
       },
-      async compile(fragment: ProviderFragment) {
-        return Result.ok({
-          provider: "warehouse",
-          kind: fragment.kind,
-          payload: fragment,
-        });
-      },
-      async execute() {
-        return Result.err(new Error("warehouse exploded"));
-      },
-    } satisfies TestProvider);
+    });
 
-    const result = await executableSchema.query({
+    const executableSchema = createExecutableSchemaFromProviders(schema, {
+      warehouse: {
+        canExecute(fragment: ProviderFragment) {
+          return fragment.rel.kind === "scan";
+        },
+        async compile(fragment: ProviderFragment) {
+          return Result.ok({
+            provider: "warehouse",
+            kind: "rel",
+            payload: fragment,
+          });
+        },
+        async execute() {
+          return Result.err(new Error("warehouse exploded"));
+        },
+      } satisfies TestProvider,
+    });
+
+    const result = await executableSchema.queryResult({
       context: {},
       sql: "SELECT id FROM users",
     });
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected query to fail.");
+      throw new Error("Expected queryResult to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -132,22 +201,22 @@ describe("public result APIs", () => {
   });
 
   it("returns tagged runtime errors when executable schema provider bindings are inconsistent", () => {
-    const provider = {
+    const adapter = {
       name: "actual",
       canExecute(fragment: ProviderFragment) {
-        return fragment.kind === "scan";
+        return fragment.rel.kind === "scan";
       },
       async compile(fragment: ProviderFragment) {
         return Result.ok({
           provider: "actual",
-          kind: fragment.kind,
+          kind: "rel",
           payload: fragment,
         });
       },
       async execute() {
         return Result.ok([{ id: "u1" }]);
       },
-    } satisfies FragmentProvider;
+    } satisfies FragmentProviderAdapter;
 
     const builder = createSchemaBuilder<Record<string, never>>();
     builder.table(
@@ -155,7 +224,7 @@ describe("public result APIs", () => {
       createDataEntityHandle({
         entity: "users",
         provider: "warehouse",
-        providerInstance: provider,
+        adapter,
       }),
       {
         columns: {
@@ -164,24 +233,35 @@ describe("public result APIs", () => {
       },
     );
 
-    const result = createExecutableSchema(builder);
+    const result = createExecutableSchemaResult(builder);
 
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected createExecutableSchema to fail.");
+      throw new Error("Expected createExecutableSchemaResult to fail.");
     }
 
     expect(result.error).toMatchObject({
       _tag: "TuplRuntimeError",
       message:
-        "Table users is bound to provider warehouse, but the attached provider is named actual.",
+        "Table users is bound to provider warehouse, but the attached adapter is named actual.",
     });
   });
 
-  it("returns tagged setup errors from createExecutableSchemaSession", () => {
-    const executableSchema = createUsersExecutableSchema(createRowsProvider());
+  it("returns tagged setup errors from createExecutableSchemaSessionResult", () => {
+    const schema = buildEntitySchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+        },
+      },
+    });
 
-    const result = createExecutableSchemaSession(executableSchema, {
+    const executableSchema = createExecutableSchemaFromProviders(schema, {
+      warehouse: createRowsProvider(),
+    });
+
+    const result = createExecutableSchemaSessionResult(executableSchema, {
       context: {},
       sql: "INSERT INTO users VALUES ('u1')",
     });
@@ -197,7 +277,7 @@ describe("public result APIs", () => {
     });
   });
 
-  it("returns tagged errors from createExecutableSchema", () => {
+  it("returns tagged errors from createExecutableSchemaResult", () => {
     const builder = createSchemaBuilder<Record<string, never>>();
     builder.table(
       "users",
@@ -212,10 +292,10 @@ describe("public result APIs", () => {
       },
     );
 
-    const result = createExecutableSchema(builder);
+    const result = createExecutableSchemaResult(builder);
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected createExecutableSchema to fail.");
+      throw new Error("Expected createExecutableSchemaResult to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -226,7 +306,7 @@ describe("public result APIs", () => {
   });
 });
 
-describe("resolveTableProvider", () => {
+describe("resolveTableProviderResult", () => {
   it("returns a tagged error for views without a direct provider", () => {
     const schema = buildSchema((builder) => {
       builder.view("active_users", ({ scan }) => scan("users"), {
@@ -236,10 +316,10 @@ describe("resolveTableProvider", () => {
       });
     });
 
-    const result = resolveTableProvider(schema, "active_users");
+    const result = resolveTableProviderResult(schema, "active_users");
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected resolveTableProvider to fail.");
+      throw new Error("Expected resolveTableProviderResult to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -253,10 +333,10 @@ describe("resolveTableProvider", () => {
       tables: {},
     };
 
-    const result = resolveTableProvider(schema, "missing");
+    const result = resolveTableProviderResult(schema, "missing");
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected resolveTableProvider to fail.");
+      throw new Error("Expected resolveTableProviderResult to fail.");
     }
 
     expect(result.error).toMatchObject({
@@ -276,10 +356,10 @@ describe("resolveTableProvider", () => {
       },
     };
 
-    const result = resolveTableProvider(schema, "users");
+    const result = resolveTableProviderResult(schema, "users");
     expect(Result.isError(result)).toBe(true);
     if (Result.isOk(result)) {
-      throw new Error("Expected resolveTableProvider to fail.");
+      throw new Error("Expected resolveTableProviderResult to fail.");
     }
 
     expect(result.error).toMatchObject({

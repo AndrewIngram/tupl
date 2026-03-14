@@ -6,29 +6,30 @@ import {
 import type { ProviderFragment } from "../contracts";
 import type { MaybePromise } from "../operations";
 import type {
+  RelationalProviderAdapterOptions,
+  RelationalProviderAdapterOptionsWithLookup,
   RelationalProviderCapabilityContext,
   RelationalProviderEntityConfig,
-  RelationalProviderOptions,
 } from "./relational-adapter-types";
-import { DEFAULT_RELATIONAL_CAPABILITY_ATOMS } from "./relational-adapter-types";
+
+type RelationalOptions<
+  TContext,
+  TEntities extends Record<string, RelationalProviderEntityConfig>,
+  TStrategy extends string,
+> =
+  | RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>
+  | RelationalProviderAdapterOptionsWithLookup<TContext, TEntities, TStrategy>;
 
 export function canExecuteRelationalFragment<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy>,
+  options: RelationalOptions<TContext, TEntities, TStrategy>,
   fragment: ProviderFragment,
   context: TContext,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
-  switch (fragment.kind) {
-    case "scan":
-      return Object.hasOwn(options.entities, fragment.table);
-    case "rel":
-      return evaluateRelationalCapability(options, fragment, context);
-    default:
-      return false;
-  }
+  return evaluateRelationalCapability(options, fragment, context);
 }
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
@@ -39,26 +40,16 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   );
 }
 
-function getDeclaredAtoms<
-  TContext,
-  TEntities extends Record<string, RelationalProviderEntityConfig>,
-  TStrategy extends string,
->(options: RelationalProviderOptions<TContext, TEntities, TStrategy>) {
-  return options.declaredAtoms ?? DEFAULT_RELATIONAL_CAPABILITY_ATOMS;
-}
-
 export async function resolveRelationalCapabilityContext<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy>,
+  options: RelationalOptions<TContext, TEntities, TStrategy>,
   fragment: Extract<ProviderFragment, { kind: "rel" }>,
   context: TContext,
 ): Promise<RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>> {
-  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
-  const declaredAtoms = getDeclaredAtoms(options);
-  const missingAtoms = requiredAtoms.filter((atom) => !declaredAtoms.includes(atom));
+  const atomMetadata = buildAtomMetadata(options, fragment);
   const routeFamily = inferRouteFamilyForFragment(fragment);
   const strategy = await options.resolveRelCompileStrategy({
     context,
@@ -70,8 +61,7 @@ export async function resolveRelationalCapabilityContext<
     entities: options.entities,
     fragment,
     routeFamily,
-    requiredAtoms,
-    missingAtoms,
+    ...atomMetadata,
     strategy,
   };
 
@@ -83,13 +73,11 @@ function evaluateRelationalCapability<
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy>,
+  options: RelationalOptions<TContext, TEntities, TStrategy>,
   fragment: Extract<ProviderFragment, { kind: "rel" }>,
   context: TContext,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
-  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
-  const declaredAtoms = getDeclaredAtoms(options);
-  const missingAtoms = requiredAtoms.filter((atom) => !declaredAtoms.includes(atom));
+  const atomMetadata = buildAtomMetadata(options, fragment);
   const routeFamily = inferRouteFamilyForFragment(fragment);
   const strategy = options.resolveRelCompileStrategy({
     context,
@@ -103,8 +91,7 @@ function evaluateRelationalCapability<
         entities: options.entities,
         fragment,
         routeFamily,
-        requiredAtoms,
-        missingAtoms,
+        ...atomMetadata,
         strategy: resolvedStrategy,
       }),
     );
@@ -115,8 +102,7 @@ function evaluateRelationalCapability<
     entities: options.entities,
     fragment,
     routeFamily,
-    requiredAtoms,
-    missingAtoms,
+    ...atomMetadata,
     strategy,
   });
 }
@@ -126,15 +112,17 @@ function evaluateRelationalCapabilityWithContext<
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy>,
+  options: RelationalOptions<TContext, TEntities, TStrategy>,
   capabilityContext: RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
   if (!capabilityContext.strategy) {
     return {
       supported: false,
       routeFamily: capabilityContext.routeFamily,
-      requiredAtoms: capabilityContext.requiredAtoms,
-      missingAtoms: capabilityContext.missingAtoms,
+      ...(capabilityContext.requiredAtoms
+        ? { requiredAtoms: capabilityContext.requiredAtoms }
+        : {}),
+      ...(capabilityContext.missingAtoms ? { missingAtoms: capabilityContext.missingAtoms } : {}),
       reason:
         options.unsupportedRelReason?.(capabilityContext) ??
         options.unsupportedRelReasonMessage ??
@@ -166,10 +154,28 @@ function normalizeCapabilitySupport<
     return {
       supported: false,
       routeFamily: capabilityContext.routeFamily,
-      requiredAtoms: capabilityContext.requiredAtoms,
-      missingAtoms: capabilityContext.missingAtoms,
+      ...(capabilityContext.requiredAtoms
+        ? { requiredAtoms: capabilityContext.requiredAtoms }
+        : {}),
+      ...(capabilityContext.missingAtoms ? { missingAtoms: capabilityContext.missingAtoms } : {}),
       reason: support,
     };
   }
   return support;
+}
+
+function buildAtomMetadata<
+  TContext,
+  TEntities extends Record<string, RelationalProviderEntityConfig>,
+  TStrategy extends string,
+>(options: RelationalOptions<TContext, TEntities, TStrategy>, fragment: ProviderFragment) {
+  if (!options.declaredAtoms) {
+    return null;
+  }
+
+  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
+  return {
+    requiredAtoms,
+    missingAtoms: requiredAtoms.filter((atom) => !options.declaredAtoms?.includes(atom)),
+  };
 }
