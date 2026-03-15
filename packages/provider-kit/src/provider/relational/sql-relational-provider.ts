@@ -111,33 +111,10 @@ export interface SqlRelationalOutputOrderTerm {
 export type SqlRelationalOrderTerm = SqlRelationalQualifiedOrderTerm | SqlRelationalOutputOrderTerm;
 
 /**
- * Planning hooks own backend-specific rel compilation knowledge such as projected scans or custom
- * strategy checks. Ordinary SQL-like backends usually only need `createScanBinding`.
+ * Query translation hooks own backend-specific query-builder lowering once provider-kit has chosen
+ * a rel strategy and assembled the backend-neutral single-query shape.
  */
-export interface SqlRelationalPlanningBackend<
-  TResolvedEntity extends SqlRelationalResolvedEntity,
-  TBinding extends SqlRelationalScanBinding<TResolvedEntity>,
-> {
-  createScanBinding(
-    scan: Extract<RelNode, { kind: "scan" }>,
-    resolvedEntities: Record<string, TResolvedEntity>,
-  ): TBinding;
-  buildSingleQueryPlan?(
-    rel: RelNode,
-    resolvedEntities: Record<string, TResolvedEntity>,
-  ): RelationalSingleQueryPlan<TBinding>;
-  resolveRelCompileStrategy?(
-    node: RelNode,
-    resolvedEntities: Record<string, TResolvedEntity>,
-    options?: { requireColumnProjectMappings?: boolean },
-  ): SqlRelationalCompileStrategy | null;
-}
-
-/**
- * Query hooks own query-builder translation once provider-kit has chosen a rel strategy and
- * assembled the backend-neutral single-query shape.
- */
-export interface SqlRelationalQueryBackend<
+export interface SqlRelationalQueryTranslationBackend<
   TContext,
   TResolvedEntity extends SqlRelationalResolvedEntity,
   TBinding extends SqlRelationalScanBinding<TResolvedEntity>,
@@ -228,15 +205,23 @@ export interface SqlRelationalQueryBackend<
   executeQuery(args: { query: TQuery; context: TContext; runtime: TRuntime }): Promise<QueryRow[]>;
 }
 
-export interface SqlRelationalBackend<
+export interface SqlRelationalQueryBackend<
   TContext,
   TResolvedEntity extends SqlRelationalResolvedEntity,
-  TBinding extends SqlRelationalScanBinding<TResolvedEntity>,
   TRuntime,
   TQuery,
 > {
-  planning: SqlRelationalPlanningBackend<TResolvedEntity, TBinding>;
-  query: SqlRelationalQueryBackend<TContext, TResolvedEntity, TBinding, TRuntime, TQuery>;
+  buildQueryForStrategy(args: {
+    rel: RelNode;
+    strategy: SqlRelationalCompileStrategy;
+    resolvedEntities: Record<string, TResolvedEntity>;
+    runtime: TRuntime;
+    context: TContext;
+    compileOptions?: {
+      requireColumnProjectMappings?: boolean;
+    };
+  }): MaybePromise<TQuery>;
+  executeQuery(args: { query: TQuery; context: TContext; runtime: TRuntime }): Promise<QueryRow[]>;
 }
 
 export interface SqlRelationalSupportArgs<
@@ -301,11 +286,24 @@ interface SqlRelationalProviderOptionsBase<
 > {
   name: string;
   entities: TEntities;
-  backend: SqlRelationalBackend<TContext, TResolvedEntity, TBinding, TRuntime, TQuery>;
+  queryBackend: SqlRelationalQueryBackend<TContext, TResolvedEntity, TRuntime, TQuery>;
   resolveRuntime(context: TContext): MaybePromise<TRuntime>;
-  resolveEntity<TEntityName extends Extract<keyof TEntities, string>>(
+  resolveEntity?<TEntityName extends Extract<keyof TEntities, string>>(
     args: SqlRelationalEntityArgs<TEntities, TEntityName>,
   ): TResolvedEntity;
+  createScanBinding?(
+    scan: Extract<RelNode, { kind: "scan" }>,
+    resolvedEntities: Record<string, TResolvedEntity>,
+  ): TBinding;
+  buildSingleQueryPlan?(
+    rel: RelNode,
+    resolvedEntities: Record<string, TResolvedEntity>,
+  ): RelationalSingleQueryPlan<TBinding>;
+  resolveRelCompileStrategy?(
+    node: RelNode,
+    resolvedEntities: Record<string, TResolvedEntity>,
+    options?: { requireColumnProjectMappings?: boolean },
+  ): SqlRelationalCompileStrategy | null;
   compileOptions?: {
     requireColumnProjectMappings?: boolean;
   };
@@ -419,6 +417,20 @@ function resolveSqlRelationalEntities<
   return out;
 }
 
+function defaultResolveSqlRelationalEntity<
+  TEntities extends Record<string, RelationalProviderEntityConfig>,
+  TEntityName extends Extract<keyof TEntities, string>,
+>(
+  args: SqlRelationalEntityArgs<TEntities, TEntityName>,
+): SqlRelationalResolvedEntity<TEntities[TEntityName]> {
+  const tableCandidate = (args.config as { table?: unknown }).table;
+  return {
+    entity: args.entity,
+    table: typeof tableCandidate === "string" ? tableCandidate : args.entity,
+    config: args.config,
+  };
+}
+
 /**
  * SQL-relational helpers own the ordinary adapter-authoring path for SQL-like backends.
  * They centralize recursive rel compilation so adapters mostly describe backend differences.
@@ -480,7 +492,8 @@ export function createSqlRelationalProviderAdapter<
   | LookupCapableRelationalProviderAdapter<TContext, TEntities> {
   const resolveEntity = <TEntityName extends Extract<keyof TEntities, string>>(
     args: SqlRelationalEntityArgs<TEntities, TEntityName>,
-  ) => options.resolveEntity(args);
+  ) =>
+    (options.resolveEntity?.(args) ?? defaultResolveSqlRelationalEntity(args)) as TResolvedEntity;
   const resolvedEntities = resolveSqlRelationalEntities(
     options.name,
     options.entities,
@@ -489,11 +502,26 @@ export function createSqlRelationalProviderAdapter<
   const createScanBinding = (
     scan: Extract<RelNode, { kind: "scan" }>,
     resolvedEntities: Record<string, TResolvedEntity>,
-  ) => options.backend.planning.createScanBinding(scan, resolvedEntities);
+  ) =>
+    (options.createScanBinding?.(scan, resolvedEntities) ??
+      createSqlRelationalScanBinding(scan, resolvedEntities)) as TBinding;
   const compileHelpers = createSqlRelationalCompileHelpers(
     resolvedEntities,
     createScanBinding,
-    options.backend.planning,
+    {
+      ...(options.buildSingleQueryPlan
+        ? {
+            buildSingleQueryPlan: (rel, compileResolvedEntities) =>
+              options.buildSingleQueryPlan!(rel, compileResolvedEntities),
+          }
+        : {}),
+      ...(options.resolveRelCompileStrategy
+        ? {
+            resolveRelCompileStrategy: (node, compileResolvedEntities, compileOptions) =>
+              options.resolveRelCompileStrategy!(node, compileResolvedEntities, compileOptions),
+          }
+        : {}),
+    },
     options.compileOptions,
   );
   const resolveEntityColumns = options.resolveEntityColumns
@@ -527,30 +555,42 @@ export function createSqlRelationalProviderAdapter<
             routeFamily: ProviderRouteFamily;
             strategy: SqlRelationalCompileStrategy | null;
           }) {
-            const runtime = options.resolveRuntime(args.context);
-            if (isPromiseLikeValue(runtime)) {
-              return runtime.then((resolvedRuntime) =>
-                options.isStrategySupported!({
-                  context: args.context,
-                  entities: options.entities,
-                  resolvedEntities,
-                  rel: args.rel,
-                  routeFamily: args.routeFamily,
-                  strategy: args.strategy as SqlRelationalCompileStrategy | null,
-                  runtime: resolvedRuntime,
-                }),
-              );
-            }
-
-            return options.isStrategySupported!({
-              context: args.context,
-              entities: options.entities,
-              resolvedEntities,
-              rel: args.rel,
+            const toUnsupported = (error: unknown) => ({
+              supported: false as const,
               routeFamily: args.routeFamily,
-              strategy: args.strategy as SqlRelationalCompileStrategy | null,
-              runtime,
+              reason: error instanceof Error ? error.message : String(error),
             });
+
+            try {
+              const runtime = options.resolveRuntime(args.context);
+              if (isPromiseLikeValue(runtime)) {
+                return Promise.resolve(runtime)
+                  .then((resolvedRuntime) =>
+                    options.isStrategySupported!({
+                      context: args.context,
+                      entities: options.entities,
+                      resolvedEntities,
+                      rel: args.rel,
+                      routeFamily: args.routeFamily,
+                      strategy: args.strategy as SqlRelationalCompileStrategy | null,
+                      runtime: resolvedRuntime,
+                    }),
+                  )
+                  .catch(toUnsupported);
+              }
+
+              return options.isStrategySupported!({
+                context: args.context,
+                entities: options.entities,
+                resolvedEntities,
+                rel: args.rel,
+                routeFamily: args.routeFamily,
+                strategy: args.strategy as SqlRelationalCompileStrategy | null,
+                runtime,
+              });
+            } catch (error) {
+              return toUnsupported(error);
+            }
           },
         }
       : {}),
@@ -581,21 +621,18 @@ export function createSqlRelationalProviderAdapter<
       return AdapterResult.tryPromise({
         try: async () => {
           const runtime = await options.resolveRuntime(context);
-
           switch (plan.kind) {
             case "rel": {
               const compiled = plan.payload as SqlRelationalCompiledPlan;
-              const query = await buildSqlRelationalQueryForStrategyWithHelpers(
-                compiled.rel,
-                compiled.strategy,
+              const query = await options.queryBackend.buildQueryForStrategy({
+                rel: compiled.rel,
+                strategy: compiled.strategy,
                 resolvedEntities,
-                options.backend,
                 runtime,
                 context,
-                options.compileOptions,
-                compileHelpers,
-              );
-              return options.backend.query.executeQuery({ query, context, runtime });
+                ...(options.compileOptions ? { compileOptions: options.compileOptions } : {}),
+              });
+              return options.queryBackend.executeQuery({ query, context, runtime });
             }
             default:
               throw new Error(`Unsupported ${options.name} compiled plan kind: ${plan.kind}`);
@@ -728,7 +765,17 @@ function createSqlRelationalCompileHelpers<
     scan: Extract<RelNode, { kind: "scan" }>,
     resolvedEntities: Record<string, TResolvedEntity>,
   ) => TBinding,
-  planningBackend: SqlRelationalPlanningBackend<TResolvedEntity, TBinding>,
+  planningHooks: {
+    buildSingleQueryPlan?: (
+      rel: RelNode,
+      resolvedEntities: Record<string, TResolvedEntity>,
+    ) => RelationalSingleQueryPlan<TBinding>;
+    resolveRelCompileStrategy?: (
+      node: RelNode,
+      resolvedEntities: Record<string, TResolvedEntity>,
+      options?: { requireColumnProjectMappings?: boolean },
+    ) => SqlRelationalCompileStrategy | null;
+  },
   options?: {
     requireColumnProjectMappings?: boolean;
   },
@@ -736,13 +783,13 @@ function createSqlRelationalCompileHelpers<
   return {
     buildSingleQueryPlan(rel) {
       return (
-        planningBackend.buildSingleQueryPlan?.(rel, resolvedEntities) ??
+        planningHooks.buildSingleQueryPlan?.(rel, resolvedEntities) ??
         buildSqlRelationalSingleQueryPlan(rel, resolvedEntities, createScanBinding)
       );
     },
     resolveStrategy(node) {
       return (
-        planningBackend.resolveRelCompileStrategy?.(node, resolvedEntities, options) ??
+        planningHooks.resolveRelCompileStrategy?.(node, resolvedEntities, options) ??
         resolveSqlRelationalCompileStrategy(node, resolvedEntities, createScanBinding, options)
       );
     },
@@ -759,21 +806,59 @@ export async function buildSqlRelationalQueryForStrategy<
   rel: RelNode,
   strategy: SqlRelationalCompileStrategy,
   resolvedEntities: Record<string, TResolvedEntity>,
-  backend: SqlRelationalBackend<TContext, TResolvedEntity, TBinding, TRuntime, TQuery>,
+  backend: SqlRelationalQueryTranslationBackend<
+    TContext,
+    TResolvedEntity,
+    TBinding,
+    TRuntime,
+    TQuery
+  >,
   runtime: TRuntime,
   context: TContext,
+  planningHooks: {
+    createScanBinding(
+      scan: Extract<RelNode, { kind: "scan" }>,
+      resolvedEntities: Record<string, TResolvedEntity>,
+    ): TBinding;
+    buildSingleQueryPlan?(
+      rel: RelNode,
+      resolvedEntities: Record<string, TResolvedEntity>,
+    ): RelationalSingleQueryPlan<TBinding>;
+    resolveRelCompileStrategy?(
+      node: RelNode,
+      resolvedEntities: Record<string, TResolvedEntity>,
+      options?: { requireColumnProjectMappings?: boolean },
+    ): SqlRelationalCompileStrategy | null;
+  },
   options?: {
     requireColumnProjectMappings?: boolean;
   },
 ): Promise<TQuery> {
-  const createScanBinding = (
+  const createPlanningScanBinding = (
     scan: Extract<RelNode, { kind: "scan" }>,
-    currentResolvedEntities: Record<string, TResolvedEntity>,
-  ) => backend.planning.createScanBinding(scan, currentResolvedEntities);
+    bindingResolvedEntities: Record<string, TResolvedEntity>,
+  ) => planningHooks.createScanBinding(scan, bindingResolvedEntities);
   const compileHelpers = createSqlRelationalCompileHelpers(
     resolvedEntities,
-    createScanBinding,
-    backend.planning,
+    createPlanningScanBinding,
+    {
+      ...(planningHooks.buildSingleQueryPlan
+        ? {
+            buildSingleQueryPlan: (rel, compileResolvedEntities) =>
+              planningHooks.buildSingleQueryPlan!(rel, compileResolvedEntities),
+          }
+        : {}),
+      ...(planningHooks.resolveRelCompileStrategy
+        ? {
+            resolveRelCompileStrategy: (node, compileResolvedEntities, compileOptions) =>
+              planningHooks.resolveRelCompileStrategy!(
+                node,
+                compileResolvedEntities,
+                compileOptions,
+              ),
+          }
+        : {}),
+    },
     options,
   );
   return buildSqlRelationalQueryForStrategyWithHelpers(
@@ -798,7 +883,13 @@ async function buildSqlRelationalQueryForStrategyWithHelpers<
   rel: RelNode,
   strategy: SqlRelationalCompileStrategy,
   resolvedEntities: Record<string, TResolvedEntity>,
-  backend: SqlRelationalBackend<TContext, TResolvedEntity, TBinding, TRuntime, TQuery>,
+  backend: SqlRelationalQueryTranslationBackend<
+    TContext,
+    TResolvedEntity,
+    TBinding,
+    TRuntime,
+    TQuery
+  >,
   runtime: TRuntime,
   context: TContext,
   options: { requireColumnProjectMappings?: boolean } | undefined,
@@ -847,7 +938,13 @@ async function buildBasicSqlRelationalQuery<
 >(
   rel: RelNode,
   resolvedEntities: Record<string, TResolvedEntity>,
-  backend: SqlRelationalBackend<TContext, TResolvedEntity, TBinding, TRuntime, TQuery>,
+  backend: SqlRelationalQueryTranslationBackend<
+    TContext,
+    TResolvedEntity,
+    TBinding,
+    TRuntime,
+    TQuery
+  >,
   runtime: TRuntime,
   context: TContext,
   options?: {
@@ -855,18 +952,16 @@ async function buildBasicSqlRelationalQuery<
   },
   compileHelpers?: SqlRelationalCompileHelpers<TResolvedEntity, TBinding>,
 ): Promise<TQuery> {
+  const defaultScanBinding = (
+    scan: Extract<RelNode, { kind: "scan" }>,
+    currentResolvedEntities: Record<string, TResolvedEntity>,
+  ) => createSqlRelationalScanBinding(scan, currentResolvedEntities) as TBinding;
   const helpers =
     compileHelpers ??
-    createSqlRelationalCompileHelpers(
-      resolvedEntities,
-      (scan, currentResolvedEntities) =>
-        backend.planning.createScanBinding(scan, currentResolvedEntities),
-      backend.planning,
-      options,
-    );
+    createSqlRelationalCompileHelpers(resolvedEntities, defaultScanBinding, {}, options);
   const plan = helpers.buildSingleQueryPlan(rel);
   const selection = buildSqlRelationalSelection(plan);
-  let query: TQuery = (await backend.query.createRootQuery({
+  let query: TQuery = (await backend.createRootQuery({
     runtime,
     root: plan.joinPlan.root,
     context,
@@ -899,7 +994,7 @@ async function buildBasicSqlRelationalQuery<
         options,
         helpers,
       );
-      query = (await backend.query.applySemiJoin({
+      query = (await backend.applySemiJoin({
         query,
         leftKey: join.leftKey,
         subquery,
@@ -910,7 +1005,7 @@ async function buildBasicSqlRelationalQuery<
       continue;
     }
 
-    query = (await backend.query.applyRegularJoin({
+    query = (await backend.applyRegularJoin({
       query,
       join,
       aliases: plan.joinPlan.aliases,
@@ -921,7 +1016,7 @@ async function buildBasicSqlRelationalQuery<
 
   for (const binding of plan.joinPlan.aliases.values()) {
     for (const clause of binding.scan.where ?? []) {
-      query = backend.query.applyWhereClause({
+      query = backend.applyWhereClause({
         query,
         clause,
         plan,
@@ -934,7 +1029,7 @@ async function buildBasicSqlRelationalQuery<
 
   for (const filter of plan.pipeline.filters) {
     for (const clause of filter.where ?? []) {
-      query = backend.query.applyWhereClause({
+      query = backend.applyWhereClause({
         query,
         clause,
         plan,
@@ -945,7 +1040,7 @@ async function buildBasicSqlRelationalQuery<
     }
   }
 
-  query = (await backend.query.applySelection({
+  query = (await backend.applySelection({
     query,
     plan,
     selection,
@@ -955,7 +1050,7 @@ async function buildBasicSqlRelationalQuery<
   })) as TQuery;
 
   if (plan.pipeline.aggregate && plan.pipeline.aggregate.groupBy.length > 0) {
-    query = (await backend.query.applyGroupBy({
+    query = (await backend.applyGroupBy({
       query,
       groupBy: plan.pipeline.aggregate.groupBy,
       aliases: plan.joinPlan.aliases,
@@ -965,7 +1060,7 @@ async function buildBasicSqlRelationalQuery<
   }
 
   if (plan.pipeline.sort) {
-    query = (await backend.query.applyOrderBy({
+    query = (await backend.applyOrderBy({
       query,
       plan,
       selection,
@@ -977,7 +1072,7 @@ async function buildBasicSqlRelationalQuery<
   }
 
   if (plan.pipeline.limitOffset?.limit != null) {
-    query = (await backend.query.applyLimit({
+    query = (await backend.applyLimit({
       query,
       limit: plan.pipeline.limitOffset.limit,
       context,
@@ -986,7 +1081,7 @@ async function buildBasicSqlRelationalQuery<
   }
 
   if (plan.pipeline.limitOffset?.offset != null) {
-    query = (await backend.query.applyOffset({
+    query = (await backend.applyOffset({
       query,
       offset: plan.pipeline.limitOffset.offset,
       context,
@@ -1006,7 +1101,13 @@ async function buildSetOpSqlRelationalQuery<
 >(
   rel: RelNode,
   resolvedEntities: Record<string, TResolvedEntity>,
-  backend: SqlRelationalBackend<TContext, TResolvedEntity, TBinding, TRuntime, TQuery>,
+  backend: SqlRelationalQueryTranslationBackend<
+    TContext,
+    TResolvedEntity,
+    TBinding,
+    TRuntime,
+    TQuery
+  >,
   runtime: TRuntime,
   context: TContext,
   options?: {
@@ -1014,15 +1115,13 @@ async function buildSetOpSqlRelationalQuery<
   },
   compileHelpers?: SqlRelationalCompileHelpers<TResolvedEntity, TBinding>,
 ): Promise<TQuery> {
+  const defaultScanBinding = (
+    scan: Extract<RelNode, { kind: "scan" }>,
+    currentResolvedEntities: Record<string, TResolvedEntity>,
+  ) => createSqlRelationalScanBinding(scan, currentResolvedEntities) as TBinding;
   const helpers =
     compileHelpers ??
-    createSqlRelationalCompileHelpers(
-      resolvedEntities,
-      (scan, currentResolvedEntities) =>
-        backend.planning.createScanBinding(scan, currentResolvedEntities),
-      backend.planning,
-      options,
-    );
+    createSqlRelationalCompileHelpers(resolvedEntities, defaultScanBinding, {}, options);
   const wrapper = unwrapSetOpRel(rel);
   if (!wrapper) {
     throw new UnsupportedSqlRelationalPlanError("Expected set-op relational shape.");
@@ -1059,7 +1158,7 @@ async function buildSetOpSqlRelationalQuery<
 
   validateSetOpProjection(wrapper);
 
-  let query: TQuery = (await backend.query.applySetOp({
+  let query: TQuery = (await backend.applySetOp({
     left,
     right,
     wrapper,
@@ -1068,7 +1167,7 @@ async function buildSetOpSqlRelationalQuery<
   })) as TQuery;
 
   if (wrapper.sort) {
-    query = (await backend.query.applyOrderBy({
+    query = (await backend.applyOrderBy({
       query,
       plan: wrapper,
       orderBy: wrapper.sort.orderBy.map((term) => {
@@ -1090,7 +1189,7 @@ async function buildSetOpSqlRelationalQuery<
   }
 
   if (wrapper.limitOffset?.limit != null) {
-    query = (await backend.query.applyLimit({
+    query = (await backend.applyLimit({
       query,
       limit: wrapper.limitOffset.limit,
       context,
@@ -1099,7 +1198,7 @@ async function buildSetOpSqlRelationalQuery<
   }
 
   if (wrapper.limitOffset?.offset != null) {
-    query = (await backend.query.applyOffset({
+    query = (await backend.applyOffset({
       query,
       offset: wrapper.limitOffset.offset,
       context,
@@ -1119,7 +1218,13 @@ async function buildWithSqlRelationalQuery<
 >(
   rel: RelNode,
   resolvedEntities: Record<string, TResolvedEntity>,
-  backend: SqlRelationalBackend<TContext, TResolvedEntity, TBinding, TRuntime, TQuery>,
+  backend: SqlRelationalQueryTranslationBackend<
+    TContext,
+    TResolvedEntity,
+    TBinding,
+    TRuntime,
+    TQuery
+  >,
   runtime: TRuntime,
   context: TContext,
   options?: {
@@ -1127,15 +1232,13 @@ async function buildWithSqlRelationalQuery<
   },
   compileHelpers?: SqlRelationalCompileHelpers<TResolvedEntity, TBinding>,
 ): Promise<TQuery> {
+  const defaultScanBinding = (
+    scan: Extract<RelNode, { kind: "scan" }>,
+    currentResolvedEntities: Record<string, TResolvedEntity>,
+  ) => createSqlRelationalScanBinding(scan, currentResolvedEntities) as TBinding;
   const helpers =
     compileHelpers ??
-    createSqlRelationalCompileHelpers(
-      resolvedEntities,
-      (scan, currentResolvedEntities) =>
-        backend.planning.createScanBinding(scan, currentResolvedEntities),
-      backend.planning,
-      options,
-    );
+    createSqlRelationalCompileHelpers(resolvedEntities, defaultScanBinding, {}, options);
   if (rel.kind !== "with") {
     throw new UnsupportedSqlRelationalPlanError(`Expected with node, received "${rel.kind}".`);
   }
@@ -1171,7 +1274,7 @@ async function buildWithSqlRelationalQuery<
     );
   }
 
-  let query: TQuery = (await backend.query.buildWithQuery({
+  let query: TQuery = (await backend.buildWithQuery({
     body,
     ctes,
     projection: buildWithSelection(body),
@@ -1181,7 +1284,7 @@ async function buildWithSqlRelationalQuery<
   })) as TQuery;
 
   if (body.limitOffset?.limit != null) {
-    query = (await backend.query.applyLimit({
+    query = (await backend.applyLimit({
       query,
       limit: body.limitOffset.limit,
       context,
@@ -1190,7 +1293,7 @@ async function buildWithSqlRelationalQuery<
   }
 
   if (body.limitOffset?.offset != null) {
-    query = (await backend.query.applyOffset({
+    query = (await backend.applyOffset({
       query,
       offset: body.limitOffset.offset,
       context,

@@ -265,6 +265,25 @@ describe("package boundaries", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("keeps first-party SQL-like providers on the canonical sql relational helper", () => {
+    const providerRoots = [
+      "packages/provider-drizzle/src/index.ts",
+      "packages/provider-kysely/src/index.ts",
+      "packages/provider-objection/src/index.ts",
+    ] as const;
+
+    for (const file of providerRoots) {
+      const contents = readFileSync(join(REPO_ROOT, file), "utf8");
+      expect(contents, `${file} should use createSqlRelationalProviderAdapter`).toContain(
+        "createSqlRelationalProviderAdapter",
+      );
+      expect(
+        contents,
+        `${file} should not import createRelationalProviderAdapter directly`,
+      ).not.toMatch(/createRelationalProviderAdapter/);
+    }
+  });
+
   it("keeps canonical public subpaths pointing at real modules", () => {
     for (const entry of DIRECT_SUBPATH_EXPORTS) {
       const pkg = JSON.parse(readFileSync(join(REPO_ROOT, entry.packageJson), "utf8")) as {

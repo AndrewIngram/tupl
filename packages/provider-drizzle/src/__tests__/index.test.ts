@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import { stringifyUnknownValue, type RelNode } from "@tupl/foundation";
@@ -831,16 +832,17 @@ describe("drizzle adapter", () => {
       },
     });
 
-    await expect(
-      provider.compile(
-        buildProjectedScanRel({
-          provider: "drizzle",
-          table: "users",
-          select: ["id"],
-        }),
-        {},
-      ),
-    ).rejects.toThrow(
+    const result = await provider.compile(
+      buildProjectedScanRel({
+        provider: "drizzle",
+        table: "users",
+        select: ["id"],
+      }),
+      {},
+    );
+
+    expect(Result.isError(result)).toBe(true);
+    expect(Result.isError(result) ? result.error.message : "").toContain(
       "Drizzle provider runtime binding did not resolve to a valid database instance.",
     );
   });

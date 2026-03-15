@@ -47,6 +47,7 @@ Consumer guidance:
 
 - Provider implementations should prefer `@tupl/provider-kit`, `@tupl/provider-kit/shapes`, and `@tupl/provider-kit/testing` for ordinary adapter work.
 - Ordinary SQL-like provider adapters should start with `createSqlRelationalProviderAdapter(...)`; lower-level `createRelationalProviderAdapter(...)` remains for unusual adapters that do not fit that shape.
+- The SQL-relational helper should keep provider roots close to manual provider authoring: top-level lifecycle/config fields plus one nested `queryBackend` for backend query translation.
 - The primary provider contract is rel-first: `canExecute(rel)`, `compile(rel)`, optional `describeCompiledPlan(plan)`, and `execute(plan)`.
 - Capability atoms are optional helper vocabulary used inside `canExecute(...)`, not declared adapter metadata and not the semantic source of truth.
 - `@tupl/foundation` remains available for primitive relational helpers, but it is not the primary extension boundary.

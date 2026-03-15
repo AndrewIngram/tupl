@@ -2257,7 +2257,7 @@ describe("query/provider runtime", () => {
     });
   });
 
-  it("rejects fallback when query policy forbids missing capability atoms", async () => {
+  it("rejects fallback when query policy forbids provider fallback", async () => {
     const schema = buildEntitySchema({
       orders: {
         provider: "warehouse",

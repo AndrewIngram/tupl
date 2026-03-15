@@ -1,20 +1,20 @@
 import {
   AdapterResult,
-  createRelationalProviderAdapter,
+  createSqlRelationalProviderAdapter,
   type FragmentProviderAdapter,
 } from "@tupl/provider-kit";
 import type { LookupManyCapableProviderAdapter } from "@tupl/provider-kit/shapes";
 
-import { executeCompiledPlan } from "./execution/plan-execution";
 import { executeLookupMany } from "./execution/lookup-execution";
-import {
-  resolveObjectionRelCompileStrategy,
-  type ObjectionRelCompiledPlan,
-  type ObjectionRelCompileStrategy,
-} from "./planning/rel-strategy";
+import { executeScan } from "./execution/scan-execution";
+import { buildObjectionRelBuilderForStrategy } from "./planning/rel-builder";
+import { resolveObjectionRelCompileStrategy, type ScanBinding } from "./planning/rel-strategy";
+import { resolveKnex } from "./backend/runtime-checks";
+import { executeQuery } from "./backend/query-helpers";
 import type {
   CreateObjectionProviderOptions,
   KnexLike,
+  KnexLikeQueryBuilder,
   ObjectionProviderEntities,
   ObjectionProviderEntityConfig,
   ResolvedEntityConfig,
@@ -45,35 +45,47 @@ export function createObjectionProvider<
   entities: ObjectionProviderEntities<TEntities>;
 } {
   const providerName = options.name ?? "objection";
-  const entityConfigs = resolveEntityConfigs(options);
   const entityOptions = (options.entities ?? {}) as TEntities;
 
-  return createRelationalProviderAdapter<TContext, TEntities, ObjectionRelCompileStrategy>({
+  return createSqlRelationalProviderAdapter<
+    TContext,
+    TEntities,
+    ResolvedEntityConfig<TContext>,
+    ScanBinding<TContext>,
+    KnexLike,
+    KnexLikeQueryBuilder
+  >({
     name: providerName,
     entities: entityOptions,
+    resolveRuntime(context) {
+      return resolveKnex(options, context);
+    },
     unsupportedRelCompileMessage: "Unsupported relational fragment for Objection provider.",
     unsupportedRelReasonMessage:
       "Rel fragment is not supported for single-query Objection pushdown.",
-    resolveRelCompileStrategy({ rel }) {
-      return resolveObjectionRelCompileStrategy(rel, entityConfigs);
+    queryBackend: {
+      buildQueryForStrategy({ rel, strategy, resolvedEntities, runtime, context }) {
+        return buildObjectionRelBuilderForStrategy(
+          runtime,
+          resolvedEntities,
+          rel,
+          strategy,
+          context,
+        );
+      },
+      executeQuery({ query }) {
+        return executeQuery(query);
+      },
     },
-    buildRelPlanPayload({ rel, strategy }) {
-      return {
-        strategy,
-        rel,
-      } satisfies ObjectionRelCompiledPlan;
+    async executeScan({ request, context, resolvedEntities, runtime }) {
+      return executeScan(runtime, resolvedEntities, request, context);
     },
-    async executeCompiledPlan({ plan, context }) {
-      const knex = await resolveKnex(options, context);
+    resolveRelCompileStrategy(rel, resolvedEntities) {
+      return resolveObjectionRelCompileStrategy(rel, resolvedEntities);
+    },
+    async lookupMany({ request, context, resolvedEntities, runtime }) {
       return AdapterResult.tryPromise({
-        try: () => executeCompiledPlan(knex, entityConfigs, plan, context),
-        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-      });
-    },
-    async lookupMany({ request, context }) {
-      const knex = await resolveKnex(options, context);
-      return AdapterResult.tryPromise({
-        try: () => executeLookupMany(knex, entityConfigs, request, context),
+        try: () => executeLookupMany(runtime, resolvedEntities, request, context),
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
@@ -81,38 +93,4 @@ export function createObjectionProvider<
     LookupManyCapableProviderAdapter<TContext> & {
       entities: ObjectionProviderEntities<TEntities>;
     };
-}
-
-export async function resolveKnex<TContext>(
-  options: CreateObjectionProviderOptions<TContext>,
-  context: TContext,
-): Promise<KnexLike> {
-  const knex = typeof options.knex === "function" ? await options.knex(context) : options.knex;
-  const candidate = knex as Partial<KnexLike> | null | undefined;
-  if (
-    !candidate ||
-    typeof candidate.table !== "function" ||
-    typeof candidate.queryBuilder !== "function"
-  ) {
-    throw new Error(
-      "Objection provider runtime binding did not resolve to a valid knex instance. Check your context and knex callback.",
-    );
-  }
-  return candidate as KnexLike;
-}
-
-function resolveEntityConfigs<TContext>(
-  options: CreateObjectionProviderOptions<TContext>,
-): Record<string, ResolvedEntityConfig<TContext>> {
-  const out: Record<string, ResolvedEntityConfig<TContext>> = {};
-
-  for (const [entity, config] of Object.entries(options.entities ?? {})) {
-    out[entity] = {
-      entity,
-      table: config.table ?? entity,
-      config,
-    };
-  }
-
-  return out;
 }

@@ -1,147 +1,154 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildSqlRelationalQueryForStrategy,
   createSqlRelationalProviderAdapter,
   type QueryRow,
   type RelationalProviderEntityConfig,
+  type SqlRelationalQueryTranslationBackend,
   unwrapProviderOperationResult,
 } from "@tupl/provider-kit";
 
 type FakeEntityConfig = RelationalProviderEntityConfig & { table?: string };
 type FakeQuery = { steps: string[] };
 
-const fakeBackend = {
-  planning: {
-    createScanBinding(scan: Extract<any, { kind: "scan" }>, resolvedEntities: Record<string, any>) {
-      const resolved = resolvedEntities[scan.table];
-      if (!resolved) {
-        throw new Error(`missing entity ${scan.table}`);
-      }
-      return {
-        alias: scan.alias ?? resolved.table,
-        entity: resolved.entity,
-        table: resolved.table,
-        scan,
-        resolved,
-      };
-    },
+const fakePlanning = {
+  createScanBinding(scan: Extract<any, { kind: "scan" }>, resolvedEntities: Record<string, any>) {
+    const resolved = resolvedEntities[scan.table];
+    if (!resolved) {
+      throw new Error(`missing entity ${scan.table}`);
+    }
+    return {
+      alias: scan.alias ?? resolved.table,
+      entity: resolved.entity,
+      table: resolved.table,
+      scan,
+      resolved,
+    };
   },
-  query: {
-    createRootQuery({ root }: { root: { alias: string } }): FakeQuery {
-      return { steps: [`root:${root.alias}`] };
-    },
-    applyRegularJoin({
-      query,
-      join,
-    }: {
-      query: FakeQuery;
-      join: { joinType: string; right: { alias: string } };
-    }): FakeQuery {
-      return { steps: [...query.steps, `join:${join.joinType}:${join.right.alias}`] };
-    },
-    applySemiJoin({
-      query,
-      leftKey,
-    }: {
-      query: FakeQuery;
-      leftKey: { alias: string; column: string };
-    }): FakeQuery {
-      return { steps: [...query.steps, `semi:${leftKey.alias}.${leftKey.column}`] };
-    },
-    applyWhereClause({
-      query,
-      clause,
-    }: {
-      query: FakeQuery;
-      clause: { column: string; op: string };
-    }): FakeQuery {
-      return { steps: [...query.steps, `where:${clause.column}:${clause.op}`] };
-    },
-    applySelection({
-      query,
-      selection,
-    }: {
-      query: FakeQuery;
-      selection: Array<{ kind: string; output: string }>;
-    }): FakeQuery {
-      return {
-        steps: [
-          ...query.steps,
-          `select:${selection.map((entry) => `${entry.kind}:${entry.output}`).join(",")}`,
-        ],
-      };
-    },
-    applyGroupBy({
-      query,
-      groupBy,
-    }: {
-      query: FakeQuery;
-      groupBy: Array<{ alias?: string; table?: string; column: string }>;
-    }): FakeQuery {
-      return {
-        steps: [
-          ...query.steps,
-          `group:${groupBy.map((entry) => `${entry.alias ?? entry.table}.${entry.column}`).join(",")}`,
-        ],
-      };
-    },
-    applyOrderBy({
-      query,
-      orderBy,
-    }: {
-      query: FakeQuery;
-      orderBy: Array<{ kind: string; column?: string; source?: { column: string } }>;
-    }): FakeQuery {
-      return {
-        steps: [
-          ...query.steps,
-          `order:${orderBy
-            .map((entry) => (entry.kind === "output" ? entry.column : entry.source?.column))
-            .join(",")}`,
-        ],
-      };
-    },
-    applyLimit({ query, limit }: { query: FakeQuery; limit: number }): FakeQuery {
-      return { steps: [...query.steps, `limit:${limit}`] };
-    },
-    applyOffset({ query, offset }: { query: FakeQuery; offset: number }): FakeQuery {
-      return { steps: [...query.steps, `offset:${offset}`] };
-    },
-    applySetOp({
-      left,
-      right,
-      wrapper,
-    }: {
-      left: FakeQuery;
-      right: FakeQuery;
-      wrapper: { setOp: { op: string } };
-    }): FakeQuery {
-      return {
-        steps: [...left.steps, `set:${wrapper.setOp.op}`, ...right.steps],
-      };
-    },
-    buildWithQuery({
-      ctes,
-      projection,
-      orderBy,
-    }: {
-      ctes: Array<{ name: string }>;
-      projection: Array<{ kind: string; output: string }>;
-      orderBy: Array<{ kind: string; column?: string; source?: { column: string } }>;
-    }): FakeQuery {
-      return {
-        steps: [
-          `with:${ctes.map((cte) => cte.name).join(",")}`,
-          `with-select:${projection.map((entry) => `${entry.kind}:${entry.output}`).join(",")}`,
-          `with-order:${orderBy
-            .map((entry) => (entry.kind === "output" ? entry.column : entry.source?.column))
-            .join(",")}`,
-        ],
-      };
-    },
-    async executeQuery({ query }: { query: FakeQuery }): Promise<QueryRow[]> {
-      return [{ steps: query.steps.join(" > ") }];
-    },
+};
+
+const fakeTranslationBackend: SqlRelationalQueryTranslationBackend<
+  unknown,
+  any,
+  any,
+  unknown,
+  FakeQuery
+> = {
+  createRootQuery({ root }: { root: { alias: string } }): FakeQuery {
+    return { steps: [`root:${root.alias}`] };
+  },
+  applyRegularJoin({
+    query,
+    join,
+  }: {
+    query: FakeQuery;
+    join: { joinType: string; right: { alias: string } };
+  }): FakeQuery {
+    return { steps: [...query.steps, `join:${join.joinType}:${join.right.alias}`] };
+  },
+  applySemiJoin({
+    query,
+    leftKey,
+  }: {
+    query: FakeQuery;
+    leftKey: { alias: string; column: string };
+  }): FakeQuery {
+    return { steps: [...query.steps, `semi:${leftKey.alias}.${leftKey.column}`] };
+  },
+  applyWhereClause({
+    query,
+    clause,
+  }: {
+    query: FakeQuery;
+    clause: { column: string; op: string };
+  }): FakeQuery {
+    return { steps: [...query.steps, `where:${clause.column}:${clause.op}`] };
+  },
+  applySelection({
+    query,
+    selection,
+  }: {
+    query: FakeQuery;
+    selection: Array<{ kind: string; output: string }>;
+  }): FakeQuery {
+    return {
+      steps: [
+        ...query.steps,
+        `select:${selection.map((entry) => `${entry.kind}:${entry.output}`).join(",")}`,
+      ],
+    };
+  },
+  applyGroupBy({
+    query,
+    groupBy,
+  }: {
+    query: FakeQuery;
+    groupBy: Array<{ alias?: string; table?: string; column: string }>;
+  }): FakeQuery {
+    return {
+      steps: [
+        ...query.steps,
+        `group:${groupBy.map((entry) => `${entry.alias ?? entry.table}.${entry.column}`).join(",")}`,
+      ],
+    };
+  },
+  applyOrderBy({
+    query,
+    orderBy,
+  }: {
+    query: FakeQuery;
+    orderBy: Array<{ kind: string; column?: string; source?: { column: string } }>;
+  }): FakeQuery {
+    return {
+      steps: [
+        ...query.steps,
+        `order:${orderBy
+          .map((entry) => (entry.kind === "output" ? entry.column : entry.source?.column))
+          .join(",")}`,
+      ],
+    };
+  },
+  applyLimit({ query, limit }: { query: FakeQuery; limit: number }): FakeQuery {
+    return { steps: [...query.steps, `limit:${limit}`] };
+  },
+  applyOffset({ query, offset }: { query: FakeQuery; offset: number }): FakeQuery {
+    return { steps: [...query.steps, `offset:${offset}`] };
+  },
+  applySetOp({
+    left,
+    right,
+    wrapper,
+  }: {
+    left: FakeQuery;
+    right: FakeQuery;
+    wrapper: { setOp: { op: string } };
+  }): FakeQuery {
+    return {
+      steps: [...left.steps, `set:${wrapper.setOp.op}`, ...right.steps],
+    };
+  },
+  buildWithQuery({
+    ctes,
+    projection,
+    orderBy,
+  }: {
+    ctes: Array<{ name: string }>;
+    projection: Array<{ kind: string; output: string }>;
+    orderBy: Array<{ kind: string; column?: string; source?: { column: string } }>;
+  }): FakeQuery {
+    return {
+      steps: [
+        `with:${ctes.map((cte) => cte.name).join(",")}`,
+        `with-select:${projection.map((entry) => `${entry.kind}:${entry.output}`).join(",")}`,
+        `with-order:${orderBy
+          .map((entry) => (entry.kind === "output" ? entry.column : entry.source?.column))
+          .join(",")}`,
+      ],
+    };
+  },
+  async executeQuery({ query }: { query: FakeQuery }): Promise<QueryRow[]> {
+    return [{ steps: query.steps.join(" > ") }];
   },
 };
 
@@ -154,14 +161,26 @@ function createFakeProvider() {
   return createSqlRelationalProviderAdapter({
     name: "warehouse",
     entities,
-    resolveEntity({ entity, config }) {
-      return {
-        entity,
-        table: entity,
-        config,
-      };
+    queryBackend: {
+      buildQueryForStrategy({ rel, strategy, resolvedEntities, runtime, context, compileOptions }) {
+        return buildSqlRelationalQueryForStrategy(
+          rel,
+          strategy,
+          resolvedEntities,
+          fakeTranslationBackend,
+          runtime,
+          context,
+          {
+            createScanBinding: (scan, resolvedEntities) =>
+              fakePlanning.createScanBinding(scan, resolvedEntities),
+          },
+          compileOptions,
+        );
+      },
+      async executeQuery({ query }) {
+        return fakeTranslationBackend.executeQuery({ query, context: {}, runtime: {} });
+      },
     },
-    backend: fakeBackend,
     resolveRuntime() {
       return {};
     },
@@ -172,6 +191,65 @@ function createFakeProvider() {
 }
 
 describe("sql relational provider factory", () => {
+  it("defaults resolved entity tables from config.table or entity name", async () => {
+    const provider = createSqlRelationalProviderAdapter({
+      name: "warehouse",
+      entities: {
+        orders: { table: "orders_raw", shape: { id: "text" } },
+      },
+      queryBackend: {
+        buildQueryForStrategy({
+          rel,
+          strategy,
+          resolvedEntities,
+          runtime,
+          context,
+          compileOptions,
+        }) {
+          return buildSqlRelationalQueryForStrategy(
+            rel,
+            strategy,
+            resolvedEntities,
+            fakeTranslationBackend,
+            runtime,
+            context,
+            {
+              createScanBinding: (scan, resolvedEntities) =>
+                fakePlanning.createScanBinding(scan, resolvedEntities),
+            },
+            compileOptions,
+          );
+        },
+        async executeQuery({ query }) {
+          return fakeTranslationBackend.executeQuery({ query, context: {}, runtime: {} });
+        },
+      },
+      resolveRuntime() {
+        return {};
+      },
+      async executeScan() {
+        return [];
+      },
+    });
+
+    const compiled = unwrapProviderOperationResult(
+      await provider.compile(
+        {
+          id: "scan",
+          kind: "scan",
+          convention: "local",
+          table: "orders",
+          select: ["id"],
+          output: [{ name: "id" }],
+        },
+        {},
+      ),
+    );
+    const rows = unwrapProviderOperationResult(await provider.execute(compiled, {}));
+
+    expect(rows).toEqual([{ steps: "root:orders_raw > select:column:orders_raw.id" }]);
+  });
+
   it("executes shared basic single-query pushdown through the public factory", async () => {
     const provider = createFakeProvider();
     const compiled = unwrapProviderOperationResult(

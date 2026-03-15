@@ -1,20 +1,19 @@
 import {
   AdapterResult,
-  createRelationalProviderAdapter,
+  createSqlRelationalProviderAdapter,
   type FragmentProviderAdapter,
 } from "@tupl/provider-kit";
 import type { LookupManyCapableProviderAdapter } from "@tupl/provider-kit/shapes";
 
-import { executeCompiledPlan } from "./execution/plan-execution";
 import { executeLookupMany } from "./execution/lookup-execution";
-import {
-  resolveKyselyRelCompileStrategy,
-  type KyselyRelCompiledPlan,
-  type KyselyRelCompileStrategy,
-} from "./planning/rel-strategy";
+import { executeScan } from "./execution/scan-execution";
+import { buildKyselyRelBuilderForStrategy } from "./planning/rel-builder";
+import { resolveKyselyRelCompileStrategy, type ScanBinding } from "./planning/rel-strategy";
+import { resolveKyselyDb } from "./backend/runtime-checks";
 import type {
   CreateKyselyProviderOptions,
   KyselyDatabaseLike,
+  KyselyQueryBuilderLike,
   KyselyProviderEntities,
   KyselyProviderEntityConfig,
   ResolvedEntityConfig,
@@ -47,34 +46,40 @@ export function createKyselyProvider<
   entities: KyselyProviderEntities<TContext, TDatabase, TEntities>;
 } {
   const providerName = options.name ?? "kysely";
-  const entityConfigs = resolveEntityConfigs(options);
   const entityOptions = (options.entities ?? {}) as TEntities;
 
-  return createRelationalProviderAdapter<TContext, TEntities, KyselyRelCompileStrategy>({
+  return createSqlRelationalProviderAdapter<
+    TContext,
+    TEntities,
+    ResolvedEntityConfig<TContext>,
+    ScanBinding<TContext>,
+    KyselyDatabaseLike,
+    KyselyQueryBuilderLike
+  >({
     name: providerName,
     entities: entityOptions,
+    resolveRuntime(context) {
+      return resolveKyselyDb(options, context);
+    },
     unsupportedRelCompileMessage: "Unsupported relational fragment for Kysely provider.",
     unsupportedRelReasonMessage: "Rel fragment is not supported for single-query Kysely pushdown.",
-    resolveRelCompileStrategy({ rel }) {
-      return resolveKyselyRelCompileStrategy(rel, entityConfigs);
+    queryBackend: {
+      buildQueryForStrategy({ rel, strategy, resolvedEntities, runtime, context }) {
+        return buildKyselyRelBuilderForStrategy(runtime, resolvedEntities, rel, strategy, context);
+      },
+      executeQuery({ query }) {
+        return query.execute();
+      },
     },
-    buildRelPlanPayload({ rel, strategy }) {
-      return {
-        strategy,
-        rel,
-      } satisfies KyselyRelCompiledPlan;
+    async executeScan({ request, context, resolvedEntities, runtime }) {
+      return executeScan(runtime, resolvedEntities, request, context);
     },
-    async executeCompiledPlan({ plan, context }) {
-      const db = await resolveKyselyDb(options, context);
+    resolveRelCompileStrategy(rel, resolvedEntities) {
+      return resolveKyselyRelCompileStrategy(rel, resolvedEntities);
+    },
+    async lookupMany({ request, context, resolvedEntities, runtime }) {
       return AdapterResult.tryPromise({
-        try: () => executeCompiledPlan(db, entityConfigs, plan, context),
-        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-      });
-    },
-    async lookupMany({ request, context }) {
-      const db = await resolveKyselyDb(options, context);
-      return AdapterResult.tryPromise({
-        try: () => executeLookupMany(db, entityConfigs, request, context),
+        try: () => executeLookupMany(runtime, resolvedEntities, request, context),
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
@@ -82,35 +87,4 @@ export function createKyselyProvider<
     LookupManyCapableProviderAdapter<TContext> & {
       entities: KyselyProviderEntities<TContext, TDatabase, TEntities>;
     };
-}
-
-export async function resolveKyselyDb<TContext>(
-  options: CreateKyselyProviderOptions<TContext>,
-  context: TContext,
-): Promise<KyselyDatabaseLike> {
-  const db = typeof options.db === "function" ? await options.db(context) : options.db;
-  const candidate = db as Partial<KyselyDatabaseLike> | null | undefined;
-  if (!candidate || typeof candidate.selectFrom !== "function") {
-    throw new Error(
-      "Kysely provider runtime binding did not resolve to a valid database instance. Check your context and db callback.",
-    );
-  }
-  return candidate as KyselyDatabaseLike;
-}
-
-function resolveEntityConfigs<TContext>(
-  options: CreateKyselyProviderOptions<TContext>,
-): Record<string, ResolvedEntityConfig<TContext>> {
-  const raw = options.entities ?? {};
-  const out: Record<string, ResolvedEntityConfig<TContext>> = {};
-
-  for (const [entity, config] of Object.entries(raw)) {
-    out[entity] = {
-      entity,
-      table: config.table ?? entity,
-      config,
-    };
-  }
-
-  return out;
 }

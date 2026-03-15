@@ -1,9 +1,11 @@
 import {
+  buildSqlRelationalQueryForStrategy,
   createSqlRelationalProviderAdapter,
   type QueryRow,
   type RelationalProviderEntityConfig,
   type ScanFilterClause,
   type SqlRelationalOrderTerm,
+  type SqlRelationalQueryTranslationBackend,
   type SqlRelationalSelection,
   type TableScanRequest,
 } from "@tupl/provider-kit";
@@ -34,77 +36,96 @@ const entities = {
 } satisfies Record<string, FixtureEntityConfig>;
 
 export function createSqlLikeFixtureProvider() {
+  const planning = {
+    createScanBinding(scan: Extract<any, { kind: "scan" }>, resolvedEntities: Record<string, any>) {
+      const resolved = resolvedEntities[scan.table];
+      if (!resolved) {
+        throw new Error(`Unknown fixture entity: ${scan.table}`);
+      }
+
+      return {
+        alias: scan.alias ?? resolved.table,
+        entity: resolved.entity,
+        table: resolved.table,
+        scan,
+        resolved,
+      };
+    },
+  };
+
+  const queryTranslationBackend: SqlRelationalQueryTranslationBackend<
+    unknown,
+    any,
+    any,
+    unknown,
+    FixtureQuery
+  > = {
+    createRootQuery({ root }) {
+      return {
+        rows: [...root.resolved.config.rows],
+      };
+    },
+    applyRegularJoin() {
+      throw new Error("Fixture SQL-like provider does not model joins.");
+    },
+    applySemiJoin() {
+      throw new Error("Fixture SQL-like provider does not model semi-joins.");
+    },
+    applyWhereClause({ query, clause }) {
+      return applyFilterClause(query, clause);
+    },
+    applySelection({ query, selection }) {
+      return {
+        rows: applySelection(query.rows, selection),
+      };
+    },
+    applyGroupBy({ query }) {
+      return query;
+    },
+    applyOrderBy({ query, orderBy }) {
+      const rows = [...query.rows].sort((left, right) =>
+        compareRows(left, right, orderTermsToScanOrderBy(orderBy)),
+      );
+      return { rows };
+    },
+    applyLimit({ query, limit }) {
+      return { rows: query.rows.slice(0, limit) };
+    },
+    applyOffset({ query, offset }) {
+      return { rows: query.rows.slice(offset) };
+    },
+    applySetOp() {
+      throw new Error("Fixture SQL-like provider does not model set operations.");
+    },
+    buildWithQuery() {
+      throw new Error("Fixture SQL-like provider does not model CTEs.");
+    },
+    async executeQuery({ query }) {
+      return query.rows;
+    },
+  };
+
   return createSqlRelationalProviderAdapter({
     name: "fixture_sql_like",
     entities,
-    resolveEntity({ entity, config }) {
-      return {
-        entity,
-        table: entity,
-        config,
-      };
-    },
-    backend: {
-      planning: {
-        createScanBinding(scan, resolvedEntities) {
-          const resolved = resolvedEntities[scan.table];
-          if (!resolved) {
-            throw new Error(`Unknown fixture entity: ${scan.table}`);
-          }
-
-          return {
-            alias: scan.alias ?? resolved.table,
-            entity: resolved.entity,
-            table: resolved.table,
-            scan,
-            resolved,
-          };
-        },
+    queryBackend: {
+      buildQueryForStrategy({ rel, strategy, resolvedEntities, runtime, context, compileOptions }) {
+        return buildSqlRelationalQueryForStrategy(
+          rel,
+          strategy,
+          resolvedEntities,
+          queryTranslationBackend,
+          runtime,
+          context,
+          {
+            createScanBinding: (scan, resolvedEntities) =>
+              planning.createScanBinding(scan, resolvedEntities),
+          },
+          compileOptions,
+        );
       },
-      query: {
-        createRootQuery({ root }) {
-          return {
-            rows: [...root.resolved.config.rows],
-          };
-        },
-        applyRegularJoin() {
-          throw new Error("Fixture SQL-like provider does not model joins.");
-        },
-        applySemiJoin() {
-          throw new Error("Fixture SQL-like provider does not model semi-joins.");
-        },
-        applyWhereClause({ query, clause }) {
-          return applyFilterClause(query, clause);
-        },
-        applySelection({ query, selection }) {
-          return {
-            rows: applySelection(query.rows, selection),
-          };
-        },
-        applyGroupBy({ query }) {
-          return query;
-        },
-        applyOrderBy({ query, orderBy }) {
-          const rows = [...query.rows].sort((left, right) =>
-            compareRows(left, right, orderTermsToScanOrderBy(orderBy)),
-          );
-          return { rows };
-        },
-        applyLimit({ query, limit }) {
-          return { rows: query.rows.slice(0, limit) };
-        },
-        applyOffset({ query, offset }) {
-          return { rows: query.rows.slice(offset) };
-        },
-        applySetOp() {
-          throw new Error("Fixture SQL-like provider does not model set operations.");
-        },
-        buildWithQuery() {
-          throw new Error("Fixture SQL-like provider does not model CTEs.");
-        },
-        async executeQuery({ query }) {
-          return query.rows;
-        },
+      async executeQuery({ query }) {
+        return query.rows;
       },
     },
     resolveRuntime() {

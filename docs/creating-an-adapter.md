@@ -84,17 +84,17 @@ That helper owns the repeated plumbing:
 
 - entity handle creation and binding
 - ordinary SQL-like subtree strategy selection
-- provider-specific payload construction hooks
-- compiled-plan execution wiring
+- provider-specific compiled-plan wiring
+- runtime binding orchestration
 - optional lookup optimization hooks
 
 Your provider package should keep only backend-specific work:
 
 - entity config details (`table`, `base`, scoping hooks)
 - field-sensitive support checks
-- strategy selection
-- provider-specific payload building
-- compiled-plan execution
+- optional strategy overrides
+- query-builder translation
+- lookup optimization
 
 Sketch:
 
@@ -105,21 +105,35 @@ export function createExampleRelationalProvider(options: CreateExampleProviderOp
   return createSqlRelationalProviderAdapter({
     name: "example-sql",
     entities: options.entities,
-    resolveSqlStrategy({ rel }) {
-      return resolveExampleStrategy(rel, options.entities);
+    resolveRuntime(context) {
+      return resolveExampleRuntime(options, context);
     },
-    buildPlanPayload({ rel, strategy }) {
-      return { strategy, rel };
+    resolveRelCompileStrategy(rel, resolvedEntities) {
+      return resolveExampleStrategy(rel, resolvedEntities);
     },
-    executePlan({ plan, context }) {
+    queryBackend: {
+      buildQueryForStrategy({ rel, strategy, resolvedEntities, runtime, context }) {
+        return buildExampleQuery(rel, strategy, resolvedEntities, runtime, context);
+      },
+      executeQuery({ query, runtime }) {
+        return query.execute(runtime);
+      },
+    },
+    async lookupMany({ request, context, resolvedEntities, runtime }) {
       return AdapterResult.tryPromise({
-        try: () => executeExamplePlan(plan, options, context),
+        try: () => executeExampleLookup(runtime, resolvedEntities, request, context),
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
   });
 }
 ```
+
+Defaults:
+
+- `resolveEntity(...)` is optional; the helper uses `config.table ?? entity`
+- `createScanBinding(...)` is optional for ordinary SQL-like adapters
+- `resolveRelCompileStrategy(...)` is optional when the default relational strategy rules are sufficient
 
 Reach for `createRelationalProviderAdapter(...)` only when the backend does not fit the ordinary SQL-like path cleanly.
 

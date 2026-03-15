@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 
 import { type QueryRow, type TableScanRequest } from "@tupl/provider-kit";
@@ -479,9 +480,10 @@ describe("kysely adapter", () => {
       )
     ).unwrap();
 
-    await expect(
-      Promise.resolve(provider.execute(plan, {})).then((result) => result.unwrap()),
-    ).rejects.toThrow(
+    const result = await provider.execute(plan, {});
+
+    expect(Result.isError(result)).toBe(true);
+    expect(Result.isError(result) ? result.error.message : "").toContain(
       "Kysely provider runtime binding did not resolve to a valid database instance.",
     );
   });
