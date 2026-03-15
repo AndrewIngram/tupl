@@ -12,7 +12,11 @@ import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
 import { finalizeProviders } from "@tupl/test-support/runtime";
 
 function lowerSqlToRel(sql: string, schema: Parameters<typeof lowerSqlToRelResult>[1]) {
-  return lowerSqlToRelResult(sql, schema).unwrap();
+  const result = lowerSqlToRelResult(sql, schema);
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+  return result.value;
 }
 
 function buildLogicalQueryPlan(
@@ -114,6 +118,30 @@ describe("query/planning", () => {
       _tag: "RelLoweringError",
       name: "RelLoweringError",
       message: "Unknown table: missing_table",
+    });
+  });
+
+  it("returns tagged lowering errors for invalid enum literals", () => {
+    const schema = buildEntitySchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          status: { type: "text", enum: ["draft", "paid", "void"] as const },
+        },
+      },
+    });
+
+    const result = lowerSqlToRelResult("SELECT id FROM orders WHERE status = 'unknown'", schema);
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected lowering result to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "RelLoweringError",
+      name: "RelLoweringError",
+      message: "Invalid enum value for orders.status",
     });
   });
 

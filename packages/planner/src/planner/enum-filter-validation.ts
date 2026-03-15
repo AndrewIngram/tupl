@@ -1,3 +1,6 @@
+import { Result, type Result as BetterResult } from "better-result";
+
+import { RelLoweringError } from "@tupl/foundation";
 import type { SchemaDefinition } from "@tupl/schema-model";
 import { resolveColumnDefinition } from "@tupl/schema-model/definition";
 
@@ -10,7 +13,7 @@ export function validateEnumLiteralFilters(
   filters: LiteralFilter[],
   bindings: Binding[],
   schema: SchemaDefinition,
-): void {
+): BetterResult<void, RelLoweringError> {
   const tableByAlias = new Map(bindings.map((binding) => [binding.alias, binding.table]));
 
   for (const filter of filters) {
@@ -29,7 +32,12 @@ export function validateEnumLiteralFilters(
 
     if (filter.clause.op === "eq") {
       if (typeof filter.clause.value === "string" && !resolved.enum.includes(filter.clause.value)) {
-        throw new Error(`Invalid enum value for ${tableName}.${filter.clause.column}`);
+        return Result.err(
+          new RelLoweringError({
+            operation: "validate enum literal filters",
+            message: `Invalid enum value for ${tableName}.${filter.clause.column}`,
+          }),
+        );
       }
       continue;
     }
@@ -40,9 +48,16 @@ export function validateEnumLiteralFilters(
           continue;
         }
         if (typeof value !== "string" || !resolved.enum.includes(value)) {
-          throw new Error(`Invalid enum value for ${tableName}.${filter.clause.column}`);
+          return Result.err(
+            new RelLoweringError({
+              operation: "validate enum literal filters",
+              message: `Invalid enum value for ${tableName}.${filter.clause.column}`,
+            }),
+          );
         }
       }
     }
   }
+
+  return Result.ok(undefined);
 }

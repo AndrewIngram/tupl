@@ -1,84 +1,121 @@
-import type { DataEntityHandle, RelNode } from "@tupl/foundation";
+import { Result, type Result as BetterResult } from "better-result";
+
+import { RelLoweringError, type DataEntityHandle, type RelNode } from "@tupl/foundation";
 
 import type { SchemaDefinition } from "./types";
 
 /**
  * Rel-schema validation owns checking that relational plans only reference schema-backed tables and columns.
  */
-export function validateRelAgainstSchema(node: RelNode, schema: SchemaDefinition): void {
+export function validateRelAgainstSchema(
+  node: RelNode,
+  schema: SchemaDefinition,
+): BetterResult<void, RelLoweringError> {
   const validateScanColumn = (
     tableName: string,
     column: string,
     entity?: DataEntityHandle<string>,
-  ): void => {
+  ): BetterResult<void, RelLoweringError> => {
     if (entity?.columns) {
       const logicalColumn = column.includes(".")
         ? column.slice(column.lastIndexOf(".") + 1)
         : column;
       if (!(logicalColumn in entity.columns)) {
-        throw new Error(`Unknown column in relational plan: ${tableName}.${logicalColumn}`);
+        return Result.err(
+          new RelLoweringError({
+            operation: "validate relational plan against schema",
+            message: `Unknown column in relational plan: ${tableName}.${logicalColumn}`,
+          }),
+        );
       }
-      return;
+      return Result.ok(undefined);
     }
 
     const table = schema.tables[tableName];
     if (!table) {
-      return;
+      return Result.ok(undefined);
     }
     const logicalColumn = column.includes(".") ? column.slice(column.lastIndexOf(".") + 1) : column;
     if (!(logicalColumn in table.columns)) {
-      throw new Error(`Unknown column in relational plan: ${tableName}.${logicalColumn}`);
+      return Result.err(
+        new RelLoweringError({
+          operation: "validate relational plan against schema",
+          message: `Unknown column in relational plan: ${tableName}.${logicalColumn}`,
+        }),
+      );
     }
+    return Result.ok(undefined);
   };
 
-  const visit = (current: RelNode): void => {
+  const visit = (current: RelNode): BetterResult<void, RelLoweringError> => {
     switch (current.kind) {
       case "scan":
         if (!schema.tables[current.table] && !current.entity) {
-          throw new Error(`Unknown table in relational plan: ${current.table}`);
+          return Result.err(
+            new RelLoweringError({
+              operation: "validate relational plan against schema",
+              message: `Unknown table in relational plan: ${current.table}`,
+            }),
+          );
         }
         for (const column of current.select) {
-          validateScanColumn(current.table, column, current.entity);
+          const result = validateScanColumn(current.table, column, current.entity);
+          if (Result.isError(result)) {
+            return result;
+          }
         }
         for (const clause of current.where ?? []) {
-          validateScanColumn(current.table, clause.column, current.entity);
+          const result = validateScanColumn(current.table, clause.column, current.entity);
+          if (Result.isError(result)) {
+            return result;
+          }
         }
         for (const term of current.orderBy ?? []) {
-          validateScanColumn(current.table, term.column, current.entity);
+          const result = validateScanColumn(current.table, term.column, current.entity);
+          if (Result.isError(result)) {
+            return result;
+          }
         }
-        return;
+        return Result.ok(undefined);
       case "values":
       case "cte_ref":
-        return;
+        return Result.ok(undefined);
       case "filter":
       case "project":
       case "aggregate":
       case "window":
       case "sort":
       case "limit_offset":
-        visit(current.input);
-        return;
+        return visit(current.input);
       case "correlate":
-        visit(current.left);
-        visit(current.right);
-        return;
+        return Result.gen(function* () {
+          yield* visit(current.left);
+          yield* visit(current.right);
+          return Result.ok(undefined);
+        });
       case "join":
       case "set_op":
-        visit(current.left);
-        visit(current.right);
-        return;
+        return Result.gen(function* () {
+          yield* visit(current.left);
+          yield* visit(current.right);
+          return Result.ok(undefined);
+        });
       case "repeat_union":
-        visit(current.seed);
-        visit(current.iterative);
-        return;
+        return Result.gen(function* () {
+          yield* visit(current.seed);
+          yield* visit(current.iterative);
+          return Result.ok(undefined);
+        });
       case "with":
-        for (const cte of current.ctes) {
-          visit(cte.query);
-        }
-        visit(current.body);
-        return;
+        return Result.gen(function* () {
+          for (const cte of current.ctes) {
+            yield* visit(cte.query);
+          }
+          yield* visit(current.body);
+          return Result.ok(undefined);
+        });
     }
   };
 
-  visit(node);
+  return visit(node);
 }

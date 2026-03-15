@@ -151,6 +151,37 @@ describe("public result APIs", () => {
     expect(result.error.message).toBe("Unknown table: missing_table");
   });
 
+  it("returns tagged planning errors from queryResult for invalid enum literals", async () => {
+    const schema = buildEntitySchema({
+      orders: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+          status: { type: "text", enum: ["draft", "paid", "void"] as const },
+        },
+      },
+    });
+
+    const executableSchema = createExecutableSchemaFromProviders(schema, {
+      warehouse: createRowsProvider(),
+    });
+
+    const result = await executableSchema.queryResult({
+      context: {},
+      sql: "SELECT id FROM orders WHERE status = 'unknown'",
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected queryResult to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "RelLoweringError",
+    });
+    expect(result.error.message).toBe("Invalid enum value for orders.status");
+  });
+
   it("returns tagged rewrite errors from queryResult for invalid view expansion", async () => {
     const schema = buildSchema((builder) => {
       builder.view("broken_view", ({ scan }) => scan("missing_table"), {

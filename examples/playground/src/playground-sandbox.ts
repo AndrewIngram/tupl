@@ -160,7 +160,10 @@ function unwrapResult<T, E>(result: import("better-result").Result<T, E>) {
 }
 
 function isResultLike<T>(value: unknown): value is betterResultModule.Result<T, unknown> {
-  return typeof value === "object" && value != null && ("value" in value || "error" in value);
+  return (
+    betterResultModule.Result.isOk(value as betterResultModule.Result<T, unknown>) ||
+    betterResultModule.Result.isError(value as betterResultModule.Result<T, unknown>)
+  );
 }
 
 async function runSandboxPhase<T>(phase: string, fn: () => Promise<T>): Promise<T> {

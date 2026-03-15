@@ -14,6 +14,16 @@ These are the current architecture and process questions that remain intentional
 - Current state: `RANGE` and `GROUPS` frame modes are explicitly rejected.
 - Question: implement correct semantics later or continue treating them as out of scope?
 
+### Provider-local barrier traversal consistency
+
+- Current state: some planner/runtime/provider-normalization switches intentionally treat local-only barrier nodes like `correlate` and `repeat_union` as unreachable in provider-owned paths and return early rather than traversing children.
+- Question: keep that as an explicit invariant-only simplification, or normalize these switches to traverse children for consistency and future-proofing even when the current planner should never route them there?
+
+### Planner subquery callback Result bridge
+
+- Current state: structured/simple SELECT lowering now returns typed `Result` values for direct validation failures, but nested subquery lowering still crosses an older callback seam that expects `RelNode | null`, so the structured-select bridge temporarily rethrows `RelLoweringError` across that seam and immediately re-captures it.
+- Question: should expression/subquery lowering gain a fully Result-typed callback path so planner lowering can remove that last throw-based bridge entirely?
+
 ### Mechanical plan-coverage enforcement
 
 - Current state: substantial work is expected to have a checked-in execution plan, but enforcement is social/documented rather than diff-based.

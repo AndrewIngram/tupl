@@ -1,4 +1,11 @@
-import type { RelColumnRef, RelNode, RelProjectExprMapping } from "@tupl/foundation";
+import { Result, type Result as BetterResult } from "better-result";
+
+import {
+  RelLoweringError,
+  type RelColumnRef,
+  type RelNode,
+  type RelProjectExprMapping,
+} from "@tupl/foundation";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
 import {
@@ -66,9 +73,9 @@ export function prepareSimpleSelectLowering(
   schema: SchemaDefinition,
   cteNames: Set<string>,
   tryLowerSelect: (ast: SelectAst) => RelNode | null,
-): PreparedSimpleSelect | null {
+): BetterResult<PreparedSimpleSelect | null, RelLoweringError> {
   if (ast.type !== "select" || ast.with || ast.set_op || ast._next) {
-    return null;
+    return Result.ok(null);
   }
 
   const from = Array.isArray(ast.from) ? ast.from : ast.from ? [ast.from] : [];
@@ -77,14 +84,20 @@ export function prepareSimpleSelectLowering(
       (entry) => typeof (entry as FromEntryAst).table !== "string" || (entry as FromEntryAst).stmt,
     )
   ) {
-    return null;
+    return Result.ok(null);
   }
 
-  const bindings: Binding[] = from.map((entry, index) => {
+  const bindings: Binding[] = [];
+  for (const [index, entry] of from.entries()) {
     const table = (entry as FromEntryAst).table;
     const isCte = typeof table === "string" && cteNames.has(table);
     if (typeof table !== "string" || (!schema.tables[table] && !isCte)) {
-      throw new Error(`Unknown table: ${String(table)}`);
+      return Result.err(
+        new RelLoweringError({
+          operation: "prepare simple select lowering",
+          message: `Unknown table: ${String(table)}`,
+        }),
+      );
     }
 
     const alias =
@@ -92,13 +105,13 @@ export function prepareSimpleSelectLowering(
         ? ((entry as FromEntryAst).as as string)
         : table;
 
-    return {
+    bindings.push({
       table,
       alias,
       index,
       sourceKind: isCte ? "cte" : "table",
-    };
-  });
+    });
+  }
 
   const aliasToBinding = new Map(bindings.map((binding) => [binding.alias, binding]));
   const lowerExprContext: SqlExprLoweringContext = {
@@ -109,14 +122,17 @@ export function prepareSimpleSelectLowering(
 
   const joins = parseJoins(from, bindings, aliasToBinding);
   if (joins == null) {
-    return null;
+    return Result.ok(null);
   }
 
   const whereFilters = parseWhereFilters(ast.where, bindings, aliasToBinding, lowerExprContext);
   if (!whereFilters) {
-    return null;
+    return Result.ok(null);
   }
-  validateEnumLiteralFilters(whereFilters.literals, bindings, schema);
+  const enumFilterValidation = validateEnumLiteralFilters(whereFilters.literals, bindings, schema);
+  if (Result.isError(enumFilterValidation)) {
+    return enumFilterValidation;
+  }
 
   const distinctMode = ast.distinct === "DISTINCT";
   const aggregateMode = Boolean(ast.groupby || hasAggregateProjection(ast.columns) || distinctMode);
@@ -126,14 +142,14 @@ export function prepareSimpleSelectLowering(
     ? null
     : parseProjection(ast.columns, bindings, aliasToBinding, namedWindows, lowerExprContext);
   if (!aggregateMode && projections == null) {
-    return null;
+    return Result.ok(null);
   }
 
   const aggregateProjections = aggregateMode
     ? parseAggregateProjections(ast.columns, bindings, aliasToBinding, lowerExprContext)
     : null;
   if (aggregateMode && aggregateProjections == null) {
-    return null;
+    return Result.ok(null);
   }
 
   const safeAggregateProjections = aggregateMode ? (aggregateProjections ?? []) : [];
@@ -147,11 +163,11 @@ export function prepareSimpleSelectLowering(
       )
     : [];
   if (aggregateMode && aggregateWindowProjections == null) {
-    return null;
+    return Result.ok(null);
   }
   const groupByTerms = aggregateMode ? parseGroupBy(ast.groupby, bindings, aliasToBinding) : [];
   if (aggregateMode && groupByTerms == null) {
-    return null;
+    return Result.ok(null);
   }
 
   const windowFunctions = safeProjections
@@ -168,12 +184,12 @@ export function prepareSimpleSelectLowering(
     const distinctGroupBy: RelColumnRef[] = [];
     for (const projection of safeAggregateProjections) {
       if (projection.kind !== "group" || !projection.source) {
-        return null;
+        return Result.ok(null);
       }
       distinctGroupBy.push(projection.source);
     }
     if (distinctGroupBy.length === 0) {
-      return null;
+      return Result.ok(null);
     }
     effectiveGroupBy = distinctGroupBy;
   }
@@ -182,7 +198,7 @@ export function prepareSimpleSelectLowering(
     aggregateMode &&
     !validateAggregateProjectionGroupBy(safeAggregateProjections, effectiveGroupBy)
   ) {
-    return null;
+    return Result.ok(null);
   }
 
   const aggregateMetrics = safeAggregateProjections
@@ -205,7 +221,7 @@ export function prepareSimpleSelectLowering(
         )
       : null;
   if (ast.having && (!aggregateMode || !havingExpr)) {
-    return null;
+    return Result.ok(null);
   }
   const allAggregateMetrics = [...aggregateMetrics, ...hiddenHavingMetrics];
 
@@ -220,7 +236,7 @@ export function prepareSimpleSelectLowering(
     ),
   );
   if (orderByTerms == null) {
-    return null;
+    return Result.ok(null);
   }
 
   const { orderBy, materializations: orderByMaterializations } = aggregateMode
@@ -234,7 +250,7 @@ export function prepareSimpleSelectLowering(
 
   const { limit, offset } = parseLimitAndOffset(ast.limit);
 
-  return {
+  return Result.ok({
     bindings,
     aggregateMode,
     safeAggregateProjections,
@@ -252,7 +268,7 @@ export function prepareSimpleSelectLowering(
     whereFilters,
     windowFunctions,
     rootBinding,
-  };
+  });
 }
 
 function parseAggregateWindowProjections(
