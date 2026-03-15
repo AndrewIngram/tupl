@@ -32,7 +32,6 @@ import type {
   TableLookupRequest as ProviderTableLookupRequest,
   TableScanRequest as ProviderTableScanRequest,
 } from "@tupl/provider-kit";
-import type { SqlRelationalProviderOptions as ProviderSqlRelationalProviderOptions } from "@tupl/provider-kit/relational-sql";
 
 declare const providerQueryRow: ProviderQueryRow;
 declare const providerRelationalProviderOptions: ProviderRelationalProviderOptions<
@@ -45,20 +44,6 @@ declare const providerRelationalProviderCapabilityContext: ProviderRelationalPro
   Record<string, ProviderRelationalProviderEntityConfig>,
   ProviderRelationalProviderRelCompileStrategy
 >;
-declare const providerSqlRelationalProviderOptions: ProviderSqlRelationalProviderOptions<
-  unknown,
-  Record<string, ProviderRelationalProviderEntityConfig>,
-  { entity: string; table: string; config: unknown },
-  {
-    alias: string;
-    entity: string;
-    table: string;
-    resolved: { entity: string; table: string; config: unknown };
-    scan: Extract<foundation.RelNode, { kind: "scan" }>;
-  },
-  unknown,
-  unknown
->;
 declare const providerScanFilter: ProviderScanFilterClause;
 declare const providerScanOrderBy: ProviderScanOrderBy;
 declare const providerTableScanRequest: ProviderTableScanRequest;
@@ -69,7 +54,6 @@ declare const providerTableAggregateRequest: ProviderTableAggregateRequest;
 void providerQueryRow;
 void providerRelationalProviderOptions;
 void providerRelationalProviderCapabilityContext;
-void providerSqlRelationalProviderOptions;
 void providerScanFilter;
 void providerScanOrderBy;
 void providerTableScanRequest;
@@ -125,6 +109,8 @@ describe("public package imports", () => {
   it("resolves canonical public subpaths directly", () => {
     expect(typeof providerKitShapes.buildScanUnsupportedReport).toBe("function");
     expect(typeof providerKitRelationalSql.UnsupportedSqlRelationalPlanError).toBe("function");
+    expect("createSqlRelationalProviderAdapter" in providerKitRelationalSql).toBe(false);
+    expect("SqlRelationalProviderOptions" in providerKitRelationalSql).toBe(false);
     expect("hasSqlNode" in providerKitShapes).toBe(false);
     expect(typeof runtimeExecutor.executeRelWithProvidersResult).toBe("function");
     expect(typeof runtimeSession.createExecutableSchemaSession).toBe("function");
