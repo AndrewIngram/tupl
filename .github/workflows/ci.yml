@@ -134,10 +134,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules/.vite-ci/vitest
-          key: ${{ runner.os }}-vitest-ci-${{ hashFiles('pnpm-lock.yaml', 'vitest.ci.config.ts', 'vitest.config.ts') }}-${{ github.ref_name }}
+          key: ${{ runner.os }}-vitest-ci-${{ hashFiles('pnpm-lock.yaml', 'vitest.ci.config.ts', 'vitest.config.ts') }}-${{ github.ref_name }}-shard-${{ matrix.shard }}
           restore-keys: |
-            ${{ runner.os }}-vitest-ci-${{ hashFiles('pnpm-lock.yaml', 'vitest.ci.config.ts', 'vitest.config.ts') }}-main
-            ${{ runner.os }}-vitest-ci-${{ hashFiles('pnpm-lock.yaml', 'vitest.ci.config.ts', 'vitest.config.ts') }}-
+            ${{ runner.os }}-vitest-ci-${{ hashFiles('pnpm-lock.yaml', 'vitest.ci.config.ts', 'vitest.config.ts') }}-${{ github.ref_name }}-shard-${{ matrix.shard }}-
+            ${{ runner.os }}-vitest-ci-${{ hashFiles('pnpm-lock.yaml', 'vitest.ci.config.ts', 'vitest.config.ts') }}-main-shard-${{ matrix.shard }}-
+            ${{ runner.os }}-vitest-ci-${{ hashFiles('pnpm-lock.yaml', 'vitest.ci.config.ts', 'vitest.config.ts') }}-${{ github.ref_name }}-
+            ${{ runner.os }}-vitest-ci-${{ hashFiles('pnpm-lock.yaml', 'vitest.ci.config.ts', 'vitest.config.ts') }}-main-
 
       - name: Run CI tests
         run: |
