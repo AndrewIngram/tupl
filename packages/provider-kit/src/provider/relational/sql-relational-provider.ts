@@ -1,6 +1,7 @@
 import {
   isRelProjectColumnMapping,
   TuplExecutionError,
+  TuplProviderBindingError,
   type QueryRow,
   type RelExpr,
   type RelNode,
@@ -377,6 +378,32 @@ type SqlRelationalProviderOptionsWithLookup<
 
 export class UnsupportedSqlRelationalPlanError extends UnsupportedRelationalPlanError {}
 
+function normalizeSqlRelationalExecutionError(error: unknown): Error {
+  if (
+    error instanceof TuplExecutionError ||
+    error instanceof TuplProviderBindingError ||
+    error instanceof UnsupportedSqlRelationalPlanError
+  ) {
+    return error instanceof UnsupportedSqlRelationalPlanError
+      ? new TuplExecutionError({
+          operation: "execute SQL-relational provider plan",
+          message: error.message,
+          cause: error,
+        })
+      : error;
+  }
+
+  if (error instanceof UnsupportedRelationalPlanError) {
+    return new TuplExecutionError({
+      operation: "execute SQL-relational provider plan",
+      message: error.message,
+      cause: error,
+    });
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 function isPromiseLikeValue<T>(value: MaybePromise<T>): value is PromiseLike<T> {
   return (
     (typeof value === "object" || typeof value === "function") &&
@@ -630,7 +657,7 @@ export function createSqlRelationalProviderAdapter<
               });
           }
         },
-        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        catch: normalizeSqlRelationalExecutionError,
       });
     },
   };
@@ -640,15 +667,21 @@ export function createSqlRelationalProviderAdapter<
     return createRelationalProviderAdapter<TContext, TEntities, SqlRelationalCompileStrategy>({
       ...baseOptions,
       lookupMany: async ({ request, context }) => {
-        const runtime = await options.resolveRuntime(context);
-        return lookupMany({
-          context,
-          entities: options.entities,
-          resolvedEntities,
-          name: options.name,
-          request,
-          runtime,
-        });
+        try {
+          const runtime = await options.resolveRuntime(context);
+          return await Promise.resolve(
+            lookupMany({
+              context,
+              entities: options.entities,
+              resolvedEntities,
+              name: options.name,
+              request,
+              runtime,
+            }),
+          );
+        } catch (error) {
+          return AdapterResult.err(normalizeSqlRelationalExecutionError(error));
+        }
       },
     }) as LookupCapableRelationalProviderAdapter<TContext, TEntities>;
   }

@@ -1,6 +1,6 @@
 import { bindProviderEntities } from "../entity-handles";
 import { AdapterResult } from "../operations";
-import type { RelNode } from "@tupl/foundation";
+import { TuplExecutionError, TuplProviderBindingError, type RelNode } from "@tupl/foundation";
 import type { ProviderCompiledPlan, ProviderPlanDescription } from "../contracts";
 import type {
   LookupManyCapableProviderAdapter,
@@ -98,6 +98,29 @@ function describeRelationalCompiledPlan(
   }
 }
 
+function normalizeRelationalProviderError(
+  error: unknown,
+  operation: string,
+): TuplExecutionError | TuplProviderBindingError | Error {
+  if (error instanceof TuplExecutionError || error instanceof TuplProviderBindingError) {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return new TuplExecutionError({
+      operation,
+      message: error.message,
+      cause: error,
+    });
+  }
+
+  return new TuplExecutionError({
+    operation,
+    message: String(error),
+    cause: error,
+  });
+}
+
 export function createRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
@@ -122,52 +145,69 @@ export function createRelationalProviderAdapter<
       return canExecuteRelationalFragment(options, rel, context);
     },
     async compile(rel: RelNode, context: TContext) {
-      const capabilityContext = await resolveRelationalCapabilityContext(options, rel, context);
-      if (!capabilityContext.strategy) {
-        return AdapterResult.err(
-          new Error(
-            options.unsupportedRelCompileMessage ??
-              `Unsupported relational fragment for ${options.name} provider.`,
-          ),
-        );
-      }
+      try {
+        const capabilityContext = await resolveRelationalCapabilityContext(options, rel, context);
+        if (!capabilityContext.strategy) {
+          return AdapterResult.err(
+            new TuplExecutionError({
+              operation: "compile provider fragment",
+              message:
+                options.unsupportedRelCompileMessage ??
+                `Unsupported relational fragment for ${options.name} provider.`,
+            }),
+          );
+        }
 
-      const support = await options.isRelStrategySupported?.(capabilityContext);
-      if (support !== undefined && support !== true) {
-        return AdapterResult.err(
-          new Error(typeof support === "string" ? support : (support.reason ?? "Unsupported.")),
-        );
-      }
+        const support = await options.isRelStrategySupported?.(capabilityContext);
+        if (support !== undefined && support !== true) {
+          return AdapterResult.err(
+            new TuplExecutionError({
+              operation: "compile provider fragment",
+              message: typeof support === "string" ? support : (support.reason ?? "Unsupported."),
+            }),
+          );
+        }
 
-      const strategy = capabilityContext.strategy;
-      const compileArgs = {
-        context,
-        entities: options.entities,
-        rel,
-        name: options.name,
-        strategy,
-      };
-
-      if (options.compileRelFragment) {
-        return options.compileRelFragment(compileArgs);
-      }
-
-      return AdapterResult.ok({
-        provider: options.name,
-        kind: "rel",
-        payload: options.buildRelPlanPayload?.(compileArgs) ?? {
-          strategy,
+        const strategy = capabilityContext.strategy;
+        const compileArgs = {
+          context,
+          entities: options.entities,
           rel,
-        },
-      } satisfies ProviderCompiledPlan);
+          name: options.name,
+          strategy,
+        };
+
+        if (options.compileRelFragment) {
+          return options.compileRelFragment(compileArgs);
+        }
+
+        return AdapterResult.ok({
+          provider: options.name,
+          kind: "rel",
+          payload: options.buildRelPlanPayload?.(compileArgs) ?? {
+            strategy,
+            rel,
+          },
+        } satisfies ProviderCompiledPlan);
+      } catch (error) {
+        return AdapterResult.err(
+          normalizeRelationalProviderError(error, "compile provider fragment"),
+        );
+      }
     },
     async execute(plan: ProviderCompiledPlan, context: TContext) {
-      return options.executeCompiledPlan({
-        context,
-        entities: options.entities,
-        name: options.name,
-        plan,
-      });
+      try {
+        return await options.executeCompiledPlan({
+          context,
+          entities: options.entities,
+          name: options.name,
+          plan,
+        });
+      } catch (error) {
+        return AdapterResult.err(
+          normalizeRelationalProviderError(error, "execute provider compiled plan"),
+        );
+      }
     },
     async describeCompiledPlan(plan: ProviderCompiledPlan, context: TContext) {
       return (
@@ -188,12 +228,18 @@ export function createRelationalProviderAdapter<
     ...(lookupManyHandler
       ? {
           async lookupMany(request: ProviderLookupManyRequest, context: TContext) {
-            return lookupManyHandler({
-              context,
-              entities: options.entities,
-              name: options.name,
-              request,
-            });
+            try {
+              return await lookupManyHandler({
+                context,
+                entities: options.entities,
+                name: options.name,
+                request,
+              });
+            } catch (error) {
+              return AdapterResult.err(
+                normalizeRelationalProviderError(error, "execute provider lookupMany"),
+              );
+            }
           },
         }
       : {}),

@@ -480,6 +480,24 @@ describe("objection adapter", () => {
     expect(Result.isError(result) ? result.error.message : "").toContain(
       "Objection provider runtime binding did not resolve to a valid knex instance.",
     );
+
+    if (!provider.lookupMany) {
+      throw new Error("Expected lookupMany to be implemented.");
+    }
+
+    const lookupResult = await provider.lookupMany(
+      {
+        table: "orders",
+        key: "id",
+        keys: ["o1"],
+        select: ["id"],
+      },
+      {},
+    );
+    expect(Result.isError(lookupResult)).toBe(true);
+    expect(Result.isError(lookupResult) ? lookupResult.error.message : "").toContain(
+      "Objection provider runtime binding did not resolve to a valid knex instance.",
+    );
   });
 
   it("preserves scoped roots for both sides of joined rel fragments", async () => {

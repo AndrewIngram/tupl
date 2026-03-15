@@ -503,6 +503,24 @@ describe("kysely adapter", () => {
     expect(Result.isError(result) ? result.error.message : "").toContain(
       "Kysely provider runtime binding did not resolve to a valid database instance.",
     );
+
+    if (!provider.lookupMany) {
+      throw new Error("Expected lookupMany to be implemented.");
+    }
+
+    const lookupResult = await provider.lookupMany(
+      {
+        table: "orders",
+        key: "id",
+        keys: ["o1"],
+        select: ["id"],
+      },
+      {},
+    );
+    expect(Result.isError(lookupResult)).toBe(true);
+    expect(Result.isError(lookupResult) ? lookupResult.error.message : "").toContain(
+      "Kysely provider runtime binding did not resolve to a valid database instance.",
+    );
   });
 
   it("executes supported rel fragments as a single query", async () => {

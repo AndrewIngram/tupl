@@ -844,6 +844,25 @@ describe("drizzle adapter", () => {
     expect(Result.isError(result) ? result.error.message : "").toContain(
       "Drizzle provider runtime binding did not resolve to a valid database instance.",
     );
+
+    const lookupMany = provider.lookupMany?.bind(provider);
+    if (!lookupMany) {
+      throw new Error("Expected drizzle lookupMany to be defined.");
+    }
+
+    const lookupResult = await lookupMany(
+      {
+        table: "users",
+        key: "id",
+        keys: ["u1"],
+        select: ["id"],
+      },
+      {},
+    );
+    expect(Result.isError(lookupResult)).toBe(true);
+    expect(Result.isError(lookupResult) ? lookupResult.error.message : "").toContain(
+      "Drizzle provider runtime binding did not resolve to a valid database instance.",
+    );
   });
 
   it("throws when columns cannot be derived from table config", async () => {
@@ -858,16 +877,16 @@ describe("drizzle adapter", () => {
       },
     });
 
-    await expect(
-      provider.compile(
-        buildProjectedScanRel({
-          provider: "drizzle",
-          table: "users",
-          select: ["id"],
-        }),
-        {},
-      ),
-    ).rejects.toThrow(
+    const result = await provider.compile(
+      buildProjectedScanRel({
+        provider: "drizzle",
+        table: "users",
+        select: ["id"],
+      }),
+      {},
+    );
+    expect(Result.isError(result)).toBe(true);
+    expect(Result.isError(result) ? result.error.message : "").toContain(
       'Unable to derive columns for table "users". Provide an explicit columns map.',
     );
   });

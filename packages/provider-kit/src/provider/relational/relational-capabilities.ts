@@ -19,6 +19,13 @@ export function canExecuteRelationalFragment<
   return evaluateRelationalCapability(options, rel, context);
 }
 
+function toCapabilityReport(error: unknown): ProviderCapabilityReport {
+  return {
+    supported: false,
+    reason: error instanceof Error ? error.message : String(error),
+  };
+}
+
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return (
     (typeof value === "object" || typeof value === "function") &&
@@ -60,28 +67,34 @@ function evaluateRelationalCapability<
   rel: RelNode,
   context: TContext,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
-  const strategy = options.resolveRelCompileStrategy({
-    context,
-    entities: options.entities,
-    rel,
-  });
-  if (isPromiseLike<TStrategy | null>(strategy)) {
-    return strategy.then((resolvedStrategy) =>
-      evaluateRelationalCapabilityWithContext(options, {
-        context,
-        entities: options.entities,
-        rel,
-        strategy: resolvedStrategy,
-      }),
-    );
-  }
+  try {
+    const strategy = options.resolveRelCompileStrategy({
+      context,
+      entities: options.entities,
+      rel,
+    });
+    if (isPromiseLike<TStrategy | null>(strategy)) {
+      return Promise.resolve(strategy)
+        .then((resolvedStrategy) =>
+          evaluateRelationalCapabilityWithContext(options, {
+            context,
+            entities: options.entities,
+            rel,
+            strategy: resolvedStrategy,
+          }),
+        )
+        .catch(toCapabilityReport);
+    }
 
-  return evaluateRelationalCapabilityWithContext(options, {
-    context,
-    entities: options.entities,
-    rel,
-    strategy,
-  });
+    return evaluateRelationalCapabilityWithContext(options, {
+      context,
+      entities: options.entities,
+      rel,
+      strategy,
+    });
+  } catch (error) {
+    return toCapabilityReport(error);
+  }
 }
 
 function evaluateRelationalCapabilityWithContext<
@@ -106,13 +119,17 @@ function evaluateRelationalCapabilityWithContext<
     };
   }
 
-  const support = options.isRelStrategySupported?.(capabilityContext);
-  if (isPromiseLike<true | string | ProviderCapabilityReport>(support)) {
-    return support.then((resolvedSupport) =>
-      normalizeCapabilitySupport(capabilityContext, resolvedSupport),
-    );
+  try {
+    const support = options.isRelStrategySupported?.(capabilityContext);
+    if (isPromiseLike<true | string | ProviderCapabilityReport>(support)) {
+      return Promise.resolve(support)
+        .then((resolvedSupport) => normalizeCapabilitySupport(capabilityContext, resolvedSupport))
+        .catch(toCapabilityReport);
+    }
+    return normalizeCapabilitySupport(capabilityContext, support);
+  } catch (error) {
+    return toCapabilityReport(error);
   }
-  return normalizeCapabilitySupport(capabilityContext, support);
 }
 
 function normalizeCapabilitySupport<

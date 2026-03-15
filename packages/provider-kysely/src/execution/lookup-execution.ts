@@ -4,7 +4,7 @@ import type {
   ScanFilterClause,
   TableScanRequest,
 } from "@tupl/provider-kit";
-import type { TuplProviderBindingError } from "@tupl/foundation";
+import type { TuplExecutionError, TuplProviderBindingError } from "@tupl/foundation";
 
 import type { KyselyDatabaseLike, ResolvedEntityConfig } from "../types";
 import { executeScanResult } from "./scan-execution";
@@ -20,7 +20,7 @@ export async function executeLookupManyResult<TContext>(
     where?: ScanFilterClause[];
   },
   context: TContext,
-): Promise<ProviderOperationResult<QueryRow[], TuplProviderBindingError>> {
+): Promise<ProviderOperationResult<QueryRow[], TuplProviderBindingError | TuplExecutionError>> {
   const scanRequest: TableScanRequest = {
     table: request.table,
     select: request.select,
