@@ -9,7 +9,9 @@ import type { Binding, SelectProjection, SelectWindowProjection } from "../plann
 import {
   lowerSqlAstToRelExpr,
   parseNamedWindowSpecifications,
+  parseWindowFrameClause,
   parseWindowOver,
+  readWindowFunctionArgs,
   readWindowFunctionName,
   resolveColumnRef,
   supportsRankWindowArgs,
@@ -17,6 +19,7 @@ import {
 } from "../sql-expr-lowering";
 import { nextRelId } from "../physical/planner-ids";
 import { parseAggregateMetric } from "../aggregate-lowering";
+import { parseSupportedCorrelatedScalarAggregateProjectionSubquery } from "../subqueries/analysis";
 import { parseRelColumnRef } from "./select-from-lowering";
 
 /**
@@ -39,6 +42,7 @@ export function parseProjection(
   }
 
   const out: SelectProjection[] = [];
+  const outerAliases = new Set(bindings.map((binding) => binding.alias));
 
   for (const entry of columns) {
     const column = resolveColumnRef(entry.expr, bindings, aliasToBinding);
@@ -59,9 +63,26 @@ export function parseProjection(
       bindings,
       aliasToBinding,
       windowDefinitions,
+      lowerExprContext,
     );
     if (windowProjection) {
       out.push(windowProjection);
+      continue;
+    }
+
+    const correlatedScalarProjection = parseSupportedCorrelatedScalarAggregateProjectionSubquery(
+      entry.expr,
+      outerAliases,
+    );
+    if (correlatedScalarProjection) {
+      out.push({
+        kind: "correlated_scalar",
+        output: typeof entry.as === "string" && entry.as.length > 0 ? entry.as : "expr",
+        projection: {
+          ...correlatedScalarProjection,
+          subquery: correlatedScalarProjection.rewrittenSubquery,
+        },
+      });
       continue;
     }
 
@@ -75,6 +96,36 @@ export function parseProjection(
       expr,
       output: typeof entry.as === "string" && entry.as.length > 0 ? entry.as : "expr",
     });
+  }
+
+  return out;
+}
+
+export function parseWindowProjections(
+  rawColumns: unknown,
+  bindings: Binding[],
+  aliasToBinding: Map<string, Binding>,
+  windowDefinitions: Map<string, WindowSpecificationAst>,
+  lowerExprContext: SqlExprLoweringContext,
+): SelectWindowProjection[] | null {
+  if (rawColumns === "*") {
+    return [];
+  }
+
+  const columns = Array.isArray(rawColumns) ? (rawColumns as SelectColumnAst[]) : [];
+  const out: SelectWindowProjection[] = [];
+
+  for (const entry of columns) {
+    const projection = parseWindowProjection(
+      entry,
+      bindings,
+      aliasToBinding,
+      windowDefinitions,
+      lowerExprContext,
+    );
+    if (projection) {
+      out.push(projection);
+    }
   }
 
   return out;
@@ -129,6 +180,7 @@ function parseWindowProjection(
   bindings: Binding[],
   aliasToBinding: Map<string, Binding>,
   windowDefinitions: Map<string, WindowSpecificationAst>,
+  lowerExprContext: SqlExprLoweringContext,
 ): SelectWindowProjection | null {
   const expr = entry.expr as {
     type?: unknown;
@@ -178,6 +230,11 @@ function parseWindowProjection(
   }
 
   const output = typeof entry.as === "string" && entry.as.length > 0 ? entry.as : name;
+  const args = readWindowFunctionArgs(expr.args);
+  const frame = parseWindowFrameClause(over.window_frame_clause?.raw);
+  if (over.window_frame_clause && !frame) {
+    return null;
+  }
 
   if (name === "dense_rank" || name === "rank" || name === "row_number") {
     if (!supportsRankWindowArgs(expr.args)) {
@@ -192,6 +249,79 @@ function parseWindowProjection(
         as: output,
         partitionBy,
         orderBy,
+        ...(frame ? { frame } : {}),
+      },
+    };
+  }
+
+  if (name === "first_value") {
+    const value = args[0]
+      ? lowerSqlAstToRelExpr(args[0], bindings, aliasToBinding, lowerExprContext)
+      : null;
+    if (!value) {
+      return null;
+    }
+
+    return {
+      kind: "window",
+      output,
+      function: {
+        fn: name,
+        as: output,
+        partitionBy,
+        value,
+        orderBy,
+        ...(frame ? { frame } : {}),
+      },
+    };
+  }
+
+  if (name === "lead" || name === "lag") {
+    const value = args[0]
+      ? lowerSqlAstToRelExpr(args[0], bindings, aliasToBinding, lowerExprContext)
+      : null;
+    if (!value) {
+      return null;
+    }
+
+    const rawOffset = args[1];
+    const offsetExpr =
+      rawOffset != null
+        ? lowerSqlAstToRelExpr(rawOffset, bindings, aliasToBinding, lowerExprContext)
+        : null;
+    const offsetValue =
+      offsetExpr && offsetExpr.kind === "literal" && typeof offsetExpr.value === "number"
+        ? offsetExpr.value
+        : null;
+    if (rawOffset != null) {
+      if (offsetValue == null) {
+        return null;
+      }
+      if (!Number.isInteger(offsetValue) || offsetValue < 0) {
+        return null;
+      }
+    }
+
+    const defaultExpr =
+      args[2] != null
+        ? lowerSqlAstToRelExpr(args[2], bindings, aliasToBinding, lowerExprContext)
+        : null;
+    if (args[2] != null && !defaultExpr) {
+      return null;
+    }
+
+    return {
+      kind: "window",
+      output,
+      function: {
+        fn: name,
+        as: output,
+        partitionBy,
+        value,
+        orderBy,
+        ...(offsetValue != null ? { offset: offsetValue } : {}),
+        ...(defaultExpr ? { defaultExpr } : {}),
+        ...(frame ? { frame } : {}),
       },
     };
   }
@@ -215,6 +345,7 @@ function parseWindowProjection(
       ...(metric.column ? { column: metric.column } : {}),
       ...(metric.distinct ? { distinct: true } : {}),
       orderBy,
+      ...(frame ? { frame } : {}),
     },
   };
 }

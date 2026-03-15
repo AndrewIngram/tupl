@@ -11,9 +11,11 @@ import {
   parseLimitAndOffset,
   parseLiteral,
   parseNamedWindowSpecifications,
+  parseWindowFrameClause,
   parsePositiveOrdinalLiteral,
   parseSubqueryAst,
   parseWindowOver,
+  readWindowFunctionArgs,
   readWindowFunctionName,
   resolveColumnRef,
   supportsRankWindowArgs,
@@ -25,7 +27,7 @@ import {
   lowerColumnRefExpr,
   lowerFunctionExprToRelExpr,
 } from "./expr/expr-function-lowering";
-import { lowerScalarSubqueryExpr } from "./expr/expr-subquery-lowering";
+import { lowerScalarSubqueryExpr } from "./subqueries/expr-subquery-lowering";
 
 export interface SqlExprLoweringContext {
   schema: SchemaDefinition;
@@ -103,9 +105,11 @@ export {
   parseLimitAndOffset,
   parseLiteral,
   parseNamedWindowSpecifications,
+  parseWindowFrameClause,
   parsePositiveOrdinalLiteral,
   parseSubqueryAst,
   parseWindowOver,
+  readWindowFunctionArgs,
   readWindowFunctionName,
   resolveColumnRef,
   supportsRankWindowArgs,

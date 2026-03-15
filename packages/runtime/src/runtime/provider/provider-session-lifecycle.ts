@@ -1,8 +1,7 @@
 import { Result, type Result as BetterResult } from "better-result";
 
-import { countRelNodes, type RelNode, type TuplError } from "@tupl/foundation";
-import type { ProviderFragment } from "@tupl/provider-kit";
-import { expandRelViewsResult, lowerSqlToRelResult } from "@tupl/planner";
+import { type RelNode, type TuplError } from "@tupl/foundation";
+import { buildLogicalQueryPlanResult, type ProviderRelTarget } from "@tupl/planner";
 import { createProviderFragmentSession } from "./provider-fragment-session";
 
 import type { QueryGuardrails, TuplDiagnostic } from "../contracts";
@@ -18,10 +17,7 @@ import {
   resolveSyncProviderCapabilityForRelResult,
 } from "./provider-execution";
 import { enforcePlannerNodeLimitResult, resolveGuardrails } from "../policy";
-import {
-  assertNoSqlNodesWithoutProviderFragmentResult,
-  normalizeRuntimeSchemaResult,
-} from "../query-runner";
+import { normalizeRuntimeSchemaResult } from "../query-runner";
 
 /**
  * Provider session lifecycle owns the stable one-step plan and initial step state for provider-fragment sessions.
@@ -36,7 +32,7 @@ export interface PreparedSession<TContext> {
 
 export function createProviderFragmentPlan(
   providerName: string,
-  fragment: ProviderFragment,
+  fragment: ProviderRelTarget,
   diagnostics: TuplDiagnostic[],
 ): QueryExecutionPlan {
   return {
@@ -54,7 +50,7 @@ export function createProviderFragmentPlan(
           },
         },
         request: {
-          fragment: fragment.kind,
+          relKind: fragment.rel.kind,
         },
         ...(diagnostics.length > 0 ? { diagnostics } : {}),
       },
@@ -94,31 +90,27 @@ export function resolveSessionPreparationResult<TContext>(
 
   const resolvedInput = resolvedInputResult.value;
   const guardrails = resolveGuardrails(input.queryGuardrails);
-  const loweredResult = lowerSqlToRelResult(resolvedInput.sql, resolvedInput.schema);
-  if (Result.isError(loweredResult)) {
-    return loweredResult;
+  const logicalPlanResult = buildLogicalQueryPlanResult(
+    resolvedInput.sql,
+    resolvedInput.schema,
+    resolvedInput.context,
+  );
+  if (Result.isError(logicalPlanResult)) {
+    return logicalPlanResult;
   }
 
-  const plannerNodeCount = countRelNodes(loweredResult.value.rel);
-  const plannerNodeCountResult = enforcePlannerNodeLimitResult(plannerNodeCount, guardrails);
+  const plannerNodeCountResult = enforcePlannerNodeLimitResult(
+    logicalPlanResult.value.plannerNodeCount,
+    guardrails,
+  );
   if (Result.isError(plannerNodeCountResult)) {
     return plannerNodeCountResult;
   }
 
-  const expandedRelResult = expandRelViewsResult(
-    loweredResult.value.rel,
-    resolvedInput.schema,
-    resolvedInput.context,
-  );
-  if (Result.isError(expandedRelResult)) {
-    return expandedRelResult;
-  }
-
-  const expandedRel = expandedRelResult.value;
   const providerSessionResult = tryCreateSyncProviderFragmentSession(
     resolvedInput,
     guardrails,
-    expandedRel,
+    logicalPlanResult.value.rewrittenRel,
   );
   if (Result.isError(providerSessionResult)) {
     return providerSessionResult;
@@ -126,22 +118,17 @@ export function resolveSessionPreparationResult<TContext>(
 
   const capabilityResolutionResult = resolveSyncProviderCapabilityForRelResult(
     resolvedInput,
-    expandedRel,
+    logicalPlanResult.value.rewrittenRel,
   );
   if (Result.isError(capabilityResolutionResult)) {
     return capabilityResolutionResult;
-  }
-
-  const executableRelResult = assertNoSqlNodesWithoutProviderFragmentResult(expandedRel);
-  if (Result.isError(executableRelResult)) {
-    return executableRelResult;
   }
 
   return Result.ok<PreparedSession<TContext>>({
     resolvedInput,
     guardrails,
     providerSession: providerSessionResult.value,
-    executableRel: executableRelResult.value,
+    executableRel: logicalPlanResult.value.rewrittenRel,
     diagnostics: capabilityResolutionResult.value?.diagnostics ?? [],
   });
 }

@@ -17,6 +17,9 @@ export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition)
 
   const visit = (current: RelNode): RelNode => {
     switch (current.kind) {
+      case "values":
+      case "cte_ref":
+        return current;
       case "scan":
         return normalizeScanForProvider(current, schema);
       case "filter":
@@ -53,6 +56,23 @@ export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition)
                 },
           ),
         };
+      case "correlate":
+        return {
+          ...current,
+          left: visit(current.left),
+          right: visit(current.right),
+          correlation: {
+            outer: mapColumnRefForAlias(current.correlation.outer, aliasToSource),
+            inner: mapColumnRefForAlias(current.correlation.inner, aliasToSource),
+          },
+          apply:
+            current.apply.kind === "scalar_filter"
+              ? {
+                  ...current.apply,
+                  outerCompare: mapColumnRefForAlias(current.apply.outerCompare, aliasToSource),
+                }
+              : current.apply,
+        };
       case "join":
         return {
           ...current,
@@ -86,6 +106,15 @@ export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition)
               ...term,
               source: mapColumnRefForAlias(term.source, aliasToSource),
             })),
+            ...("column" in fn && fn.column
+              ? { column: mapColumnRefForAlias(fn.column, aliasToSource) }
+              : {}),
+            ...("value" in fn
+              ? { value: mapRelExprRefsForAliasSource(fn.value, aliasToSource) }
+              : {}),
+            ...("defaultExpr" in fn && fn.defaultExpr
+              ? { defaultExpr: mapRelExprRefsForAliasSource(fn.defaultExpr, aliasToSource) }
+              : {}),
           })),
         };
       case "sort":
@@ -117,7 +146,7 @@ export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition)
           })),
           body: visit(current.body),
         };
-      case "sql":
+      case "repeat_union":
         return current;
     }
   };
@@ -127,8 +156,10 @@ export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition)
 
 function simplifyProviderProjects(node: RelNode): RelNode {
   switch (node.kind) {
+    case "values":
+    case "cte_ref":
+      return node;
     case "scan":
-    case "sql":
       return node;
     case "filter":
       return { ...node, input: simplifyProviderProjects(node.input) };
@@ -144,6 +175,12 @@ function simplifyProviderProjects(node: RelNode): RelNode {
       return {
         ...node,
         input: simplifyProviderProjects(node.input),
+      };
+    case "correlate":
+      return {
+        ...node,
+        left: simplifyProviderProjects(node.left),
+        right: simplifyProviderProjects(node.right),
       };
     case "join":
     case "set_op":
@@ -161,6 +198,8 @@ function simplifyProviderProjects(node: RelNode): RelNode {
         })),
         body: simplifyProviderProjects(node.body),
       };
+    case "repeat_union":
+      return node;
   }
 }
 

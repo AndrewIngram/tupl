@@ -2,7 +2,7 @@ import type { RelExpr } from "@tupl/foundation";
 
 import type { Binding } from "../planner-types";
 import type { SqlExprLoweringContext } from "../sql-expr-lowering";
-import { lowerExistsSubqueryExpr } from "./expr-subquery-lowering";
+import { lowerExistsSubqueryExpr } from "../subqueries/expr-subquery-lowering";
 import { mapBinaryOperatorToRelFunction, parseLiteral, resolveColumnRef } from "../sql-expr-utils";
 
 type LowerExprFn = (

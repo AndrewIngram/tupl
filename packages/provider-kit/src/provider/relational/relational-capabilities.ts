@@ -1,36 +1,22 @@
-import { relContainsSqlNode } from "@tupl/foundation";
-
-import {
-  collectCapabilityAtomsForFragment,
-  inferRouteFamilyForFragment,
-  type ProviderCapabilityReport,
-} from "../capabilities";
-import type { ProviderFragment } from "../contracts";
+import type { RelNode } from "@tupl/foundation";
+import { inferRouteFamilyForRel, type ProviderCapabilityReport } from "../capabilities";
 import type { MaybePromise } from "../operations";
 import type {
+  RelationalProviderAdapterOptions,
   RelationalProviderCapabilityContext,
   RelationalProviderEntityConfig,
-  RelationalProviderOptions,
 } from "./relational-adapter-types";
-import { DEFAULT_RELATIONAL_CAPABILITY_ATOMS } from "./relational-adapter-types";
 
 export function canExecuteRelationalFragment<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy>,
-  fragment: ProviderFragment,
+  options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
+  rel: RelNode,
   context: TContext,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
-  switch (fragment.kind) {
-    case "scan":
-      return Object.hasOwn(options.entities, fragment.table);
-    case "rel":
-      return evaluateRelationalCapability(options, fragment, context);
-    default:
-      return false;
-  }
+  return evaluateRelationalCapability(options, rel, context);
 }
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
@@ -41,39 +27,26 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   );
 }
 
-function getDeclaredAtoms<
-  TContext,
-  TEntities extends Record<string, RelationalProviderEntityConfig>,
-  TStrategy extends string,
->(options: RelationalProviderOptions<TContext, TEntities, TStrategy>) {
-  return options.declaredAtoms ?? DEFAULT_RELATIONAL_CAPABILITY_ATOMS;
-}
-
 export async function resolveRelationalCapabilityContext<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy>,
-  fragment: Extract<ProviderFragment, { kind: "rel" }>,
+  options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
+  rel: RelNode,
   context: TContext,
 ): Promise<RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>> {
-  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
-  const declaredAtoms = getDeclaredAtoms(options);
-  const missingAtoms = requiredAtoms.filter((atom) => !declaredAtoms.includes(atom));
-  const routeFamily = inferRouteFamilyForFragment(fragment);
+  const routeFamily = inferRouteFamilyForRel(rel);
   const strategy = await options.resolveRelCompileStrategy({
     context,
     entities: options.entities,
-    fragment,
+    rel,
   });
   const capabilityContext: RelationalProviderCapabilityContext<TContext, TEntities, TStrategy> = {
     context,
     entities: options.entities,
-    fragment,
+    rel,
     routeFamily,
-    requiredAtoms,
-    missingAtoms,
     strategy,
   };
 
@@ -85,28 +58,23 @@ function evaluateRelationalCapability<
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy>,
-  fragment: Extract<ProviderFragment, { kind: "rel" }>,
+  options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
+  rel: RelNode,
   context: TContext,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
-  const requiredAtoms = collectCapabilityAtomsForFragment(fragment);
-  const declaredAtoms = getDeclaredAtoms(options);
-  const missingAtoms = requiredAtoms.filter((atom) => !declaredAtoms.includes(atom));
-  const routeFamily = inferRouteFamilyForFragment(fragment);
+  const routeFamily = inferRouteFamilyForRel(rel);
   const strategy = options.resolveRelCompileStrategy({
     context,
     entities: options.entities,
-    fragment,
+    rel,
   });
   if (isPromiseLike<TStrategy | null>(strategy)) {
     return strategy.then((resolvedStrategy) =>
       evaluateRelationalCapabilityWithContext(options, {
         context,
         entities: options.entities,
-        fragment,
+        rel,
         routeFamily,
-        requiredAtoms,
-        missingAtoms,
         strategy: resolvedStrategy,
       }),
     );
@@ -115,10 +83,8 @@ function evaluateRelationalCapability<
   return evaluateRelationalCapabilityWithContext(options, {
     context,
     entities: options.entities,
-    fragment,
+    rel,
     routeFamily,
-    requiredAtoms,
-    missingAtoms,
     strategy,
   });
 }
@@ -128,21 +94,21 @@ function evaluateRelationalCapabilityWithContext<
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends string,
 >(
-  options: RelationalProviderOptions<TContext, TEntities, TStrategy>,
+  options: RelationalProviderAdapterOptions<TContext, TEntities, TStrategy>,
   capabilityContext: RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>,
 ): MaybePromise<boolean | ProviderCapabilityReport> {
   if (!capabilityContext.strategy) {
+    const unsupported =
+      options.unsupportedRelReason?.(capabilityContext) ??
+      options.unsupportedRelReasonMessage ??
+      "Rel fragment is not supported for this provider.";
+    if (typeof unsupported !== "string") {
+      return unsupported;
+    }
     return {
       supported: false,
       routeFamily: capabilityContext.routeFamily,
-      requiredAtoms: capabilityContext.requiredAtoms,
-      missingAtoms: capabilityContext.missingAtoms,
-      reason:
-        options.unsupportedRelReason?.(capabilityContext) ??
-        (relContainsSqlNode(capabilityContext.fragment.rel)
-          ? "rel fragment must not contain sql nodes."
-          : (options.unsupportedRelReasonMessage ??
-            "Rel fragment is not supported for this provider.")),
+      reason: unsupported,
     };
   }
 
@@ -170,8 +136,6 @@ function normalizeCapabilitySupport<
     return {
       supported: false,
       routeFamily: capabilityContext.routeFamily,
-      requiredAtoms: capabilityContext.requiredAtoms,
-      missingAtoms: capabilityContext.missingAtoms,
       reason: support,
     };
   }

@@ -1,13 +1,17 @@
 import {
   AdapterResult,
-  createSqlRelationalProviderAdapter,
-  type FragmentProvider,
-  type LookupProvider,
+  createRelationalProviderAdapter,
+  type FragmentProviderAdapter,
 } from "@tupl/provider-kit";
+import type { LookupManyCapableProviderAdapter } from "@tupl/provider-kit/shapes";
 
+import { executeCompiledPlan } from "./execution/plan-execution";
 import { executeLookupMany } from "./execution/lookup-execution";
-import { executeScan } from "./execution/scan-execution";
-import { objectionSqlRelationalBackend } from "./planning/rel-builder";
+import {
+  resolveObjectionRelCompileStrategy,
+  type ObjectionRelCompiledPlan,
+  type ObjectionRelCompileStrategy,
+} from "./planning/rel-strategy";
 import type {
   CreateObjectionProviderOptions,
   KnexLike,
@@ -36,40 +40,45 @@ export function createObjectionProvider<
   >,
 >(
   options: CreateObjectionProviderOptions<TContext, TEntities>,
-): FragmentProvider<TContext> &
-  LookupProvider<TContext> & {
-    entities: ObjectionProviderEntities<TEntities>;
-  } {
+): FragmentProviderAdapter<TContext> & {
+  lookupMany: LookupManyCapableProviderAdapter<TContext>["lookupMany"];
+  entities: ObjectionProviderEntities<TEntities>;
+} {
   const providerName = options.name ?? "objection";
   const entityConfigs = resolveEntityConfigs(options);
   const entityOptions = (options.entities ?? {}) as TEntities;
 
-  return createSqlRelationalProviderAdapter({
+  return createRelationalProviderAdapter<TContext, TEntities, ObjectionRelCompileStrategy>({
     name: providerName,
     entities: entityOptions,
-    resolveEntity({ entity, config }) {
-      return {
-        entity,
-        table: config.table ?? entity,
-        config,
-      };
-    },
-    backend: objectionSqlRelationalBackend,
-    resolveRuntime: (context: TContext) => resolveKnex(options, context),
-    unsupportedRelCompileMessage: "Unsupported SQL-relational fragment for Objection provider.",
+    unsupportedRelCompileMessage: "Unsupported relational fragment for Objection provider.",
     unsupportedRelReasonMessage:
       "Rel fragment is not supported for single-query Objection pushdown.",
-    async executeScan({ runtime, request, context }) {
-      return executeScan(runtime, entityConfigs, request, context);
+    resolveRelCompileStrategy({ rel }) {
+      return resolveObjectionRelCompileStrategy(rel, entityConfigs);
     },
-    async lookupMany({ request, runtime, context }) {
+    buildRelPlanPayload({ rel, strategy }) {
+      return {
+        strategy,
+        rel,
+      } satisfies ObjectionRelCompiledPlan;
+    },
+    async executeCompiledPlan({ plan, context }) {
+      const knex = await resolveKnex(options, context);
       return AdapterResult.tryPromise({
-        try: () => executeLookupMany(runtime, entityConfigs, request, context),
+        try: () => executeCompiledPlan(knex, entityConfigs, plan, context),
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),
       });
     },
-  }) as FragmentProvider<TContext> &
-    LookupProvider<TContext> & {
+    async lookupMany({ request, context }) {
+      const knex = await resolveKnex(options, context);
+      return AdapterResult.tryPromise({
+        try: () => executeLookupMany(knex, entityConfigs, request, context),
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      });
+    },
+  }) as FragmentProviderAdapter<TContext> &
+    LookupManyCapableProviderAdapter<TContext> & {
       entities: ObjectionProviderEntities<TEntities>;
     };
 }

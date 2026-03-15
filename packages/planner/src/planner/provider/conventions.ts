@@ -1,100 +1,31 @@
-import { Result } from "better-result";
 import type { RelJoinNode, RelNode, RelScanNode } from "@tupl/foundation";
-import { supportsLookupMany, type ProviderMap } from "@tupl/provider-kit";
+import type { ProvidersMap } from "@tupl/provider-kit";
+import { Result } from "better-result";
 import {
   getNormalizedTableBinding,
   resolveTableProvider,
   type SchemaDefinition,
 } from "@tupl/schema-model";
+import { resolveScanProviderName, resolveSingleProvider } from "./provider-ownership";
 
 /**
  * Conventions own provider assignment and lookup-join viability analysis for planner nodes.
  */
-export function resolveSingleProvider(
-  node: RelNode,
-  schema: SchemaDefinition,
-  cteNames: Set<string> = new Set<string>(),
-): string | null {
-  const providers = new Set<string>();
+export { resolveSingleProvider } from "./provider-ownership";
 
-  const visit = (current: RelNode, scopedCteNames: Set<string>): boolean => {
-    switch (current.kind) {
-      case "scan": {
-        if (scopedCteNames.has(current.table)) {
-          return true;
-        }
-        if (!schema.tables[current.table] && !current.entity) {
-          return true;
-        }
-        const normalized = getNormalizedTableBinding(schema, current.table);
-        if (normalized?.kind === "view") {
-          return false;
-        }
-        providers.add(current.entity?.provider ?? readResolvedTableProvider(schema, current.table));
-        return true;
-      }
-      case "sql": {
-        for (const table of current.tables) {
-          if (scopedCteNames.has(table) || !schema.tables[table]) {
-            continue;
-          }
-          const normalized = getNormalizedTableBinding(schema, table);
-          if (normalized?.kind === "view") {
-            return false;
-          }
-          providers.add(readResolvedTableProvider(schema, table));
-        }
-        return true;
-      }
-      case "filter":
-      case "project":
-      case "aggregate":
-      case "window":
-      case "sort":
-      case "limit_offset":
-        return visit(current.input, scopedCteNames);
-      case "join":
-      case "set_op":
-        return visit(current.left, scopedCteNames) && visit(current.right, scopedCteNames);
-      case "with": {
-        const nextScopedCteNames = new Set(scopedCteNames);
-        for (const cte of current.ctes) {
-          nextScopedCteNames.add(cte.name);
-        }
-        for (const cte of current.ctes) {
-          if (!visit(cte.query, nextScopedCteNames)) {
-            return false;
-          }
-        }
-        return visit(current.body, nextScopedCteNames);
-      }
-    }
-  };
-
-  if (!visit(node, cteNames) || providers.size !== 1) {
-    return null;
-  }
-  return [...providers][0] ?? null;
-}
-
-export function assignConventions(
-  node: RelNode,
-  schema: SchemaDefinition,
-  cteNames: Set<string> = new Set<string>(),
-): RelNode {
+export function assignConventions(node: RelNode, schema: SchemaDefinition): RelNode {
   switch (node.kind) {
+    case "values":
+    case "cte_ref":
+      return { ...node, convention: "local" };
     case "scan": {
-      if (cteNames.has(node.table) || (!schema.tables[node.table] && !node.entity)) {
+      const providerName = resolveScanProviderName(node, schema);
+      if (!providerName) {
         return { ...node, convention: "local" };
       }
-      const normalized = getNormalizedTableBinding(schema, node.table);
-      if (normalized?.kind === "view") {
-        return { ...node, convention: "local" };
-      }
-      const provider = node.entity?.provider ?? readResolvedTableProvider(schema, node.table);
       return {
         ...node,
-        convention: `provider:${provider}`,
+        convention: `provider:${providerName}`,
       };
     }
     case "filter":
@@ -103,19 +34,29 @@ export function assignConventions(
     case "window":
     case "sort":
     case "limit_offset": {
-      const input = assignConventions(node.input, schema, cteNames);
-      const provider = resolveSingleProvider(input, schema, cteNames);
+      const input = assignConventions(node.input, schema);
+      const provider = resolveSingleProvider(input, schema);
       return {
         ...node,
         input,
         convention: provider ? (`provider:${provider}` as const) : "local",
       };
     }
+    case "correlate": {
+      const left = assignConventions(node.left, schema);
+      const right = assignConventions(node.right, schema);
+      return {
+        ...node,
+        left,
+        right,
+        convention: "local",
+      };
+    }
     case "join":
     case "set_op": {
-      const left = assignConventions(node.left, schema, cteNames);
-      const right = assignConventions(node.right, schema, cteNames);
-      const provider = resolveSingleProvider({ ...node, left, right } as RelNode, schema, cteNames);
+      const left = assignConventions(node.left, schema);
+      const right = assignConventions(node.right, schema);
+      const provider = resolveSingleProvider({ ...node, left, right } as RelNode, schema);
       return {
         ...node,
         left,
@@ -123,28 +64,27 @@ export function assignConventions(
         convention: provider ? (`provider:${provider}` as const) : "local",
       };
     }
+    case "repeat_union": {
+      const seed = assignConventions(node.seed, schema);
+      const iterative = assignConventions(node.iterative, schema);
+      return {
+        ...node,
+        seed,
+        iterative,
+        convention: "local",
+      };
+    }
     case "with": {
-      const nextCteNames = new Set(cteNames);
-      for (const cte of node.ctes) {
-        nextCteNames.add(cte.name);
-      }
       const ctes = node.ctes.map((cte) => ({
         ...cte,
-        query: assignConventions(cte.query, schema, nextCteNames),
+        query: assignConventions(cte.query, schema),
       }));
-      const body = assignConventions(node.body, schema, nextCteNames);
-      const provider = resolveSingleProvider(body, schema, nextCteNames);
+      const body = assignConventions(node.body, schema);
+      const provider = resolveSingleProvider(body, schema);
       return {
         ...node,
         ctes,
         body,
-        convention: provider ? (`provider:${provider}` as const) : "local",
-      };
-    }
-    case "sql": {
-      const provider = resolveSingleProvider(node, schema, cteNames);
-      return {
-        ...node,
         convention: provider ? (`provider:${provider}` as const) : "local",
       };
     }
@@ -154,7 +94,7 @@ export function assignConventions(
 export function resolveLookupJoinCandidate<TContext>(
   join: RelJoinNode,
   schema: SchemaDefinition,
-  providers: ProviderMap<TContext>,
+  _providers: ProvidersMap<TContext>,
 ): {
   leftProvider: string;
   rightProvider: string;
@@ -180,16 +120,20 @@ export function resolveLookupJoinCandidate<TContext>(
     return null;
   }
 
-  const leftProvider =
-    leftScan.entity?.provider ?? readResolvedTableProvider(schema, leftScan.table);
-  const rightProvider =
-    rightScan.entity?.provider ?? readResolvedTableProvider(schema, rightScan.table);
-  if (leftProvider === rightProvider) {
+  const leftProviderName =
+    leftScan.entity?.provider ?? resolveTableProvider(schema, leftScan.table);
+  const rightProviderName =
+    rightScan.entity?.provider ?? resolveTableProvider(schema, rightScan.table);
+  const leftProviderResult =
+    typeof leftProviderName === "string" ? Result.ok(leftProviderName) : leftProviderName;
+  const rightProviderResult =
+    typeof rightProviderName === "string" ? Result.ok(rightProviderName) : rightProviderName;
+  if (Result.isError(leftProviderResult) || Result.isError(rightProviderResult)) {
     return null;
   }
-
-  const rightAdapter = providers[rightProvider];
-  if (!rightAdapter || !supportsLookupMany(rightAdapter)) {
+  const leftProvider = leftProviderResult.value;
+  const rightProvider = rightProviderResult.value;
+  if (leftProvider === rightProvider) {
     return null;
   }
 
@@ -208,6 +152,9 @@ function findFirstScanNode(node: RelNode): RelScanNode | null {
   switch (node.kind) {
     case "scan":
       return node;
+    case "values":
+    case "cte_ref":
+      return null;
     case "filter":
     case "project":
     case "aggregate":
@@ -215,21 +162,14 @@ function findFirstScanNode(node: RelNode): RelScanNode | null {
     case "sort":
     case "limit_offset":
       return findFirstScanNode(node.input);
+    case "correlate":
+      return findFirstScanNode(node.left) ?? findFirstScanNode(node.right);
     case "join":
     case "set_op":
       return findFirstScanNode(node.left) ?? findFirstScanNode(node.right);
+    case "repeat_union":
+      return findFirstScanNode(node.seed) ?? findFirstScanNode(node.iterative);
     case "with":
       return findFirstScanNode(node.body);
-    case "sql":
-      return null;
   }
-}
-
-function readResolvedTableProvider(schema: SchemaDefinition, table: string): string {
-  const result = resolveTableProvider(schema, table);
-  if (Result.isError(result)) {
-    throw result.error;
-  }
-
-  return result.value;
 }

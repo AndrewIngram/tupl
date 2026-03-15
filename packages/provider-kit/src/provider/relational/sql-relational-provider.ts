@@ -6,13 +6,13 @@ import {
 } from "@tupl/foundation";
 
 import type {
-  ProviderCapabilityAtom,
   ProviderCapabilityReport,
   ProviderRouteFamily,
   QueryFallbackPolicy,
 } from "../capabilities";
-import type { ProviderFragment, ProviderLookupManyRequest, TableScanRequest } from "../contracts";
+import type { TableScanRequest } from "../contracts";
 import type { DataEntityColumnMap } from "../entity-handles";
+import type { ProviderLookupManyRequest } from "../shapes/lookup-optimization";
 import {
   AdapterResult,
   type AdapterResult as AdapterResultType,
@@ -35,8 +35,8 @@ import {
   type RelationalWithBodyWrapper,
 } from "../shapes/relational-core";
 import {
-  type RelationalProvider,
-  type RelationalProviderWithLookup,
+  type RelationalProviderAdapter,
+  type LookupCapableRelationalProviderAdapter,
   type RelationalProviderEntityConfig,
 } from "./relational-adapter-types";
 import { createRelationalProviderAdapter } from "./relational-provider";
@@ -248,10 +248,8 @@ export interface SqlRelationalSupportArgs<
   context: TContext;
   entities: TEntities;
   resolvedEntities: Record<string, TResolvedEntity>;
-  fragment: Extract<ProviderFragment, { kind: "rel" }>;
+  rel: RelNode;
   routeFamily: ProviderRouteFamily;
-  requiredAtoms: ProviderCapabilityAtom[];
-  missingAtoms: ProviderCapabilityAtom[];
   strategy: SqlRelationalCompileStrategy | null;
   runtime: TRuntime;
 }
@@ -311,9 +309,7 @@ interface SqlRelationalProviderOptionsBase<
   compileOptions?: {
     requireColumnProjectMappings?: boolean;
   };
-  declaredAtoms?: readonly ProviderCapabilityAtom[];
   fallbackPolicy?: QueryFallbackPolicy;
-  routeFamilies?: readonly ProviderRouteFamily[];
   unsupportedRelReasonMessage?: string;
   unsupportedRelCompileMessage?: string;
   resolveEntityColumns?<TEntityName extends Extract<keyof TEntities, string>>(args: {
@@ -445,7 +441,7 @@ export function createSqlRelationalProviderAdapter<
   > & {
     lookupMany?: undefined;
   },
-): RelationalProvider<TContext, TEntities>;
+): RelationalProviderAdapter<TContext, TEntities>;
 export function createSqlRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
@@ -462,7 +458,7 @@ export function createSqlRelationalProviderAdapter<
     TRuntime,
     TQuery
   >,
-): RelationalProviderWithLookup<TContext, TEntities>;
+): LookupCapableRelationalProviderAdapter<TContext, TEntities>;
 export function createSqlRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
@@ -479,7 +475,9 @@ export function createSqlRelationalProviderAdapter<
     TRuntime,
     TQuery
   >,
-): RelationalProvider<TContext, TEntities> | RelationalProviderWithLookup<TContext, TEntities> {
+):
+  | RelationalProviderAdapter<TContext, TEntities>
+  | LookupCapableRelationalProviderAdapter<TContext, TEntities> {
   const resolveEntity = <TEntityName extends Extract<keyof TEntities, string>>(
     args: SqlRelationalEntityArgs<TEntities, TEntityName>,
   ) => options.resolveEntity(args);
@@ -509,9 +507,7 @@ export function createSqlRelationalProviderAdapter<
   const baseOptions = {
     name: options.name,
     entities: options.entities,
-    ...(options.declaredAtoms ? { declaredAtoms: options.declaredAtoms } : {}),
     ...(options.fallbackPolicy ? { fallbackPolicy: options.fallbackPolicy } : {}),
-    ...(options.routeFamilies ? { routeFamilies: options.routeFamilies } : {}),
     ...(resolveEntityColumns ? { resolveEntityColumns } : {}),
     ...(options.unsupportedRelReasonMessage
       ? { unsupportedRelReasonMessage: options.unsupportedRelReasonMessage }
@@ -519,24 +515,16 @@ export function createSqlRelationalProviderAdapter<
     ...(options.unsupportedRelCompileMessage
       ? { unsupportedRelCompileMessage: options.unsupportedRelCompileMessage }
       : {}),
-    resolveRelCompileStrategy({
-      fragment,
-    }: {
-      context: TContext;
-      entities: TEntities;
-      fragment: Extract<ProviderFragment, { kind: "rel" }>;
-    }) {
-      return compileHelpers.resolveStrategy(fragment.rel);
+    resolveRelCompileStrategy({ rel }: { context: TContext; entities: TEntities; rel: RelNode }) {
+      return compileHelpers.resolveStrategy(rel);
     },
     ...(options.isStrategySupported
       ? {
           isRelStrategySupported(args: {
             context: TContext;
             entities: TEntities;
-            fragment: Extract<ProviderFragment, { kind: "rel" }>;
+            rel: RelNode;
             routeFamily: ProviderRouteFamily;
-            requiredAtoms: ProviderCapabilityAtom[];
-            missingAtoms: ProviderCapabilityAtom[];
             strategy: SqlRelationalCompileStrategy | null;
           }) {
             const runtime = options.resolveRuntime(args.context);
@@ -546,10 +534,8 @@ export function createSqlRelationalProviderAdapter<
                   context: args.context,
                   entities: options.entities,
                   resolvedEntities,
-                  fragment: args.fragment,
+                  rel: args.rel,
                   routeFamily: args.routeFamily,
-                  requiredAtoms: args.requiredAtoms,
-                  missingAtoms: args.missingAtoms,
                   strategy: args.strategy as SqlRelationalCompileStrategy | null,
                   runtime: resolvedRuntime,
                 }),
@@ -560,10 +546,8 @@ export function createSqlRelationalProviderAdapter<
               context: args.context,
               entities: options.entities,
               resolvedEntities,
-              fragment: args.fragment,
+              rel: args.rel,
               routeFamily: args.routeFamily,
-              requiredAtoms: args.requiredAtoms,
-              missingAtoms: args.missingAtoms,
               strategy: args.strategy as SqlRelationalCompileStrategy | null,
               runtime,
             });
@@ -571,18 +555,18 @@ export function createSqlRelationalProviderAdapter<
         }
       : {}),
     buildRelPlanPayload({
-      fragment,
+      rel,
       strategy,
     }: {
       context: TContext;
       entities: TEntities;
-      fragment: Extract<ProviderFragment, { kind: "rel" }>;
+      rel: RelNode;
       name: string;
       strategy: SqlRelationalCompileStrategy;
     }) {
       return {
         strategy,
-        rel: fragment.rel,
+        rel,
       } satisfies SqlRelationalCompiledPlan;
     },
     async executeCompiledPlan({
@@ -599,15 +583,6 @@ export function createSqlRelationalProviderAdapter<
           const runtime = await options.resolveRuntime(context);
 
           switch (plan.kind) {
-            case "scan":
-              return options.executeScan({
-                context,
-                entities: options.entities,
-                resolvedEntities,
-                name: options.name,
-                request: (plan.payload as Extract<ProviderFragment, { kind: "scan" }>).request,
-                runtime,
-              });
             case "rel": {
               const compiled = plan.payload as SqlRelationalCompiledPlan;
               const query = await buildSqlRelationalQueryForStrategyWithHelpers(
@@ -646,12 +621,12 @@ export function createSqlRelationalProviderAdapter<
           runtime,
         });
       },
-    }) as RelationalProviderWithLookup<TContext, TEntities>;
+    }) as LookupCapableRelationalProviderAdapter<TContext, TEntities>;
   }
 
   return createRelationalProviderAdapter<TContext, TEntities, SqlRelationalCompileStrategy>(
     baseOptions,
-  ) as RelationalProvider<TContext, TEntities>;
+  ) as RelationalProviderAdapter<TContext, TEntities>;
 }
 
 export function requireSqlRelationalProjectMapping(
@@ -1386,10 +1361,10 @@ function validateSetOpProjection(wrapper: RelationalSetOpWrapper): void {
 }
 
 function buildWithSelection(body: RelationalWithBodyWrapper): SqlRelationalWithSelection[] {
-  const scanAlias = body.cteScan.alias ?? body.cteScan.table;
+  const scanAlias = body.cteRef.alias ?? body.cteRef.name;
   const windowByAlias = new Map((body.window?.functions ?? []).map((fn) => [fn.as, fn] as const));
   const projection = body.project?.columns ?? [
-    ...body.cteScan.select.map((column) => ({
+    ...body.cteRef.select.map((column: string) => ({
       source: { column },
       output: column,
     })),
@@ -1421,7 +1396,7 @@ function buildWithSelection(body: RelationalWithBodyWrapper): SqlRelationalWithS
 }
 
 function buildWithOrder(body: RelationalWithBodyWrapper): SqlRelationalOrderTerm[] {
-  const scanAlias = body.cteScan.alias ?? body.cteScan.table;
+  const scanAlias = body.cteRef.alias ?? body.cteRef.name;
   const windowAliases = new Set((body.window?.functions ?? []).map((fn) => fn.as));
 
   return (body.sort?.orderBy ?? []).map((term) => {

@@ -6,6 +6,10 @@ import type { PreparedSimpleSelect } from "./select-shape";
 import { appearsInRel, parseRelColumnRef } from "./select-from-lowering";
 import { collectRelExprRefs, isCorrelatedSubquery } from "../sql-expr-lowering";
 import {
+  attachCorrelatedPredicates,
+  attachCorrelatedProjectionSubqueries,
+} from "../subqueries/correlate-lowering";
+import {
   combineAndExprs,
   getPushableWhereAliases,
   literalFilterToRelExpr,
@@ -23,7 +27,9 @@ export function buildSimpleSelectJoinTree(
   // Push only literal predicates that attach cleanly to one scan alias. Everything else stays as
   // a residual rel expression so later provider/runtime layers can make one explicit fallback
   // decision instead of each lowering step inventing its own partial rule.
-  const pushableWhereAliases = getPushableWhereAliases(shape.rootBinding.alias, shape.joins);
+  const pushableWhereAliases = shape.rootBinding
+    ? getPushableWhereAliases(shape.rootBinding.alias, shape.joins)
+    : new Set<string>();
   const pushableLiteralFilters = shape.whereFilters.literals.filter((filter) =>
     pushableWhereAliases.has(filter.alias),
   );
@@ -40,9 +46,17 @@ export function buildSimpleSelectJoinTree(
     pushableLiteralFilters,
     residualExpr ?? null,
   );
-  const scansByAlias = buildScansByAlias(shape, columnsByAlias, pushableLiteralFilters);
+  const scansByAlias = buildLeafRelsByAlias(shape, columnsByAlias, pushableLiteralFilters);
 
-  let current: RelNode = scansByAlias.get(shape.rootBinding.alias)!;
+  let current: RelNode = shape.rootBinding
+    ? scansByAlias.get(shape.rootBinding.alias)!
+    : {
+        id: nextRelId("values"),
+        kind: "values",
+        convention: "local",
+        rows: [[]],
+        output: [],
+      };
 
   for (const join of shape.joins) {
     const right = scansByAlias.get(join.alias);
@@ -89,6 +103,63 @@ export function buildSimpleSelectJoinTree(
       return null;
     }
 
+    const leftKey = {
+      alias: inFilter.alias,
+      column: inFilter.column,
+    };
+    const rightKey = parseRelColumnRef(rightOutput);
+
+    if (inFilter.negated) {
+      const qualifiedRightOutput = `__anti__.${rightOutput}`;
+      const antiRight = {
+        id: nextRelId("project"),
+        kind: "project" as const,
+        convention: "local" as const,
+        input: subqueryRel,
+        columns: [
+          {
+            kind: "column" as const,
+            source: { column: parseRelColumnRef(rightOutput).column },
+            output: qualifiedRightOutput,
+          },
+        ],
+        output: [{ name: qualifiedRightOutput }],
+      };
+      const qualifiedRightKey = parseRelColumnRef(qualifiedRightOutput);
+      const antiJoin = {
+        id: nextRelId("join"),
+        kind: "join" as const,
+        convention: "local" as const,
+        joinType: "left" as const,
+        left: current,
+        right: antiRight,
+        leftKey,
+        rightKey: qualifiedRightKey,
+        output: [...current.output, ...antiRight.output],
+      };
+
+      const filtered = {
+        id: nextRelId("filter"),
+        kind: "filter" as const,
+        convention: "local" as const,
+        input: antiJoin,
+        expr: {
+          kind: "function" as const,
+          name: "is_null",
+          args: [
+            {
+              kind: "column" as const,
+              ref: qualifiedRightKey,
+            },
+          ],
+        },
+        output: antiJoin.output,
+      };
+
+      current = projectToOutputShape(filtered, current.output);
+      continue;
+    }
+
     current = {
       id: nextRelId("join"),
       kind: "join",
@@ -96,14 +167,27 @@ export function buildSimpleSelectJoinTree(
       joinType: "semi",
       left: current,
       right: subqueryRel,
-      leftKey: {
-        alias: inFilter.alias,
-        column: inFilter.column,
-      },
-      rightKey: parseRelColumnRef(rightOutput),
+      leftKey,
+      rightKey,
       output: current.output,
     };
   }
+
+  const correlated = attachCorrelatedPredicates(current, shape.whereFilters, tryLowerSelect);
+  if (!correlated) {
+    return null;
+  }
+  current = correlated;
+
+  const withCorrelatedProjections = attachCorrelatedProjectionSubqueries(
+    current,
+    shape.safeProjections,
+    tryLowerSelect,
+  );
+  if (!withCorrelatedProjections) {
+    return null;
+  }
+  current = withCorrelatedProjections;
 
   if (residualExpr) {
     current = {
@@ -117,6 +201,21 @@ export function buildSimpleSelectJoinTree(
   }
 
   return current;
+}
+
+function projectToOutputShape(rel: RelNode, output: RelNode["output"]): RelNode {
+  return {
+    id: nextRelId("project"),
+    kind: "project",
+    convention: "local",
+    input: rel,
+    columns: output.map((column) => ({
+      kind: "column" as const,
+      source: parseRelColumnRef(column.name),
+      output: column.name,
+    })),
+    output,
+  };
 }
 
 function collectRequiredColumns(
@@ -186,6 +285,12 @@ function collectRequiredColumns(
         }
         continue;
       }
+      if (projection.kind === "correlated_scalar") {
+        columnsByAlias
+          .get(projection.projection.outerKey.alias)
+          ?.add(projection.projection.outerKey.column);
+        continue;
+      }
       for (const partition of projection.function.partitionBy) {
         if (partition.alias) {
           columnsByAlias.get(partition.alias)?.add(partition.column);
@@ -201,6 +306,20 @@ function collectRequiredColumns(
           columnsByAlias.get(orderTerm.source.alias)?.add(orderTerm.source.column);
         }
       }
+      if ("value" in projection.function) {
+        for (const ref of collectRelExprRefs(projection.function.value)) {
+          if (ref.alias) {
+            columnsByAlias.get(ref.alias)?.add(ref.column);
+          }
+        }
+      }
+      if ("defaultExpr" in projection.function && projection.function.defaultExpr) {
+        for (const ref of collectRelExprRefs(projection.function.defaultExpr)) {
+          if (ref.alias) {
+            columnsByAlias.get(ref.alias)?.add(ref.column);
+          }
+        }
+      }
     }
   }
 
@@ -213,6 +332,19 @@ function collectRequiredColumns(
   }
   for (const filter of shape.whereFilters.inSubqueries) {
     columnsByAlias.get(filter.alias)?.add(filter.column);
+  }
+  for (const filter of shape.whereFilters.existsSubqueries) {
+    columnsByAlias.get(filter.inner.alias)?.add(filter.inner.column);
+    columnsByAlias.get(filter.outer.alias)?.add(filter.outer.column);
+  }
+  for (const filter of shape.whereFilters.correlatedInSubqueries) {
+    columnsByAlias.get(filter.inner.alias)?.add(filter.inner.column);
+    columnsByAlias.get(filter.outer.alias)?.add(filter.outer.column);
+  }
+  for (const filter of shape.whereFilters.correlatedScalarAggregates) {
+    columnsByAlias.get(filter.outerCompare.alias)?.add(filter.outerCompare.column);
+    columnsByAlias.get(filter.outerKey.alias)?.add(filter.outerKey.column);
+    columnsByAlias.get(filter.innerKey.alias)?.add(filter.innerKey.column);
   }
   if (residualExpr) {
     for (const ref of collectRelExprRefs(residualExpr)) {
@@ -248,11 +380,11 @@ function collectRequiredColumns(
   return columnsByAlias;
 }
 
-function buildScansByAlias(
+function buildLeafRelsByAlias(
   shape: PreparedSimpleSelect,
   columnsByAlias: Map<string, Set<string>>,
   pushableLiteralFilters: Array<{ alias: string; clause: ScanFilterClause }>,
-): Map<string, Extract<RelNode, { kind: "scan" }>> {
+): Map<string, Extract<RelNode, { kind: "scan" | "cte_ref" }>> {
   const filtersByAlias = new Map<string, ScanFilterClause[]>();
   for (const filter of pushableLiteralFilters) {
     const current = filtersByAlias.get(filter.alias) ?? [];
@@ -260,12 +392,29 @@ function buildScansByAlias(
     filtersByAlias.set(filter.alias, current);
   }
 
-  const scansByAlias = new Map<string, Extract<RelNode, { kind: "scan" }>>();
+  const relsByAlias = new Map<string, Extract<RelNode, { kind: "scan" | "cte_ref" }>>();
   for (const binding of shape.bindings) {
     const select = [...(columnsByAlias.get(binding.alias) ?? new Set<string>())];
     const scanWhere = filtersByAlias.get(binding.alias);
+    const output = select.map((column) => ({
+      name: `${binding.alias}.${column}`,
+    }));
 
-    scansByAlias.set(binding.alias, {
+    if (binding.sourceKind === "cte") {
+      relsByAlias.set(binding.alias, {
+        id: nextRelId("cte_ref"),
+        kind: "cte_ref",
+        convention: "local",
+        name: binding.table,
+        alias: binding.alias,
+        select,
+        ...(scanWhere && scanWhere.length > 0 ? { where: scanWhere } : {}),
+        output,
+      });
+      continue;
+    }
+
+    relsByAlias.set(binding.alias, {
       id: nextRelId("scan"),
       kind: "scan",
       convention: "local",
@@ -273,11 +422,9 @@ function buildScansByAlias(
       alias: binding.alias,
       select,
       ...(scanWhere && scanWhere.length > 0 ? { where: scanWhere } : {}),
-      output: select.map((column) => ({
-        name: `${binding.alias}.${column}`,
-      })),
+      output,
     });
   }
 
-  return scansByAlias;
+  return relsByAlias;
 }

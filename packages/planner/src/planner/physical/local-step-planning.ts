@@ -1,10 +1,9 @@
 import { Result, type Result as BetterResult } from "better-result";
 
-import { TuplPlanningError, type RelNode } from "@tupl/foundation";
-import type { ProviderMap } from "@tupl/provider-kit";
+import { type RelNode, type TuplError } from "@tupl/foundation";
+import type { ProvidersMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
-import { resolveLookupJoinCandidate } from "../provider/conventions";
 import { nextPhysicalStepId } from "../physical/planner-ids";
 import { recordPhysicalStep, type PhysicalPlanningState } from "./physical-plan-state";
 import { tryPlanRemoteFragmentResult } from "./remote-fragment-planning";
@@ -15,19 +14,30 @@ import { tryPlanRemoteFragmentResult } from "./remote-fragment-planning";
 export async function planPhysicalNodeResult<TContext>(
   node: RelNode,
   schema: SchemaDefinition,
-  providers: ProviderMap<TContext>,
+  providers: ProvidersMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
-): Promise<BetterResult<string, TuplPlanningError>> {
+): Promise<BetterResult<string, TuplError>> {
   return Result.gen(async function* () {
-    const remoteStepId = yield* Result.await(
-      tryPlanRemoteFragmentResult(node, schema, providers, context, state),
-    );
+    const remoteStepId = yield* Result.await(tryPlanRemoteFragmentResult(node, state));
     if (remoteStepId) {
       return Result.ok(remoteStepId);
     }
 
     switch (node.kind) {
+      case "values":
+      case "cte_ref":
+        return Result.ok(
+          recordPhysicalStep(state, {
+            id: nextPhysicalStepId("local_project"),
+            kind: "local_project",
+            dependsOn: [],
+            summary:
+              node.kind === "values"
+                ? "Local literal row materialization"
+                : `Local CTE read (${node.name})`,
+          }),
+        );
       case "scan":
         return Result.ok(
           recordPhysicalStep(state, {
@@ -37,6 +47,22 @@ export async function planPhysicalNodeResult<TContext>(
             summary: `Local fallback scan for ${node.table}`,
           }),
         );
+      case "correlate": {
+        const left = yield* Result.await(
+          planPhysicalNodeResult(node.left, schema, providers, context, state),
+        );
+        const right = yield* Result.await(
+          planPhysicalNodeResult(node.right, schema, providers, context, state),
+        );
+        return Result.ok(
+          recordPhysicalStep(state, {
+            id: nextPhysicalStepId("local_filter"),
+            kind: "local_filter",
+            dependsOn: [left, right],
+            summary: "Local correlated subquery rewrite",
+          }),
+        );
+      }
       case "filter":
       case "project":
       case "aggregate":
@@ -96,15 +122,22 @@ export async function planPhysicalNodeResult<TContext>(
           }),
         );
       }
-      case "sql":
+      case "repeat_union": {
+        const seed = yield* Result.await(
+          planPhysicalNodeResult(node.seed, schema, providers, context, state),
+        );
+        const iterative = yield* Result.await(
+          planPhysicalNodeResult(node.iterative, schema, providers, context, state),
+        );
         return Result.ok(
           recordPhysicalStep(state, {
-            id: nextPhysicalStepId("local_project"),
-            kind: "local_project",
-            dependsOn: [],
-            summary: "Local SQL fallback execution",
+            id: nextPhysicalStepId("local_with"),
+            kind: "local_with",
+            dependsOn: [seed, iterative],
+            summary: `Local recursive CTE execution (${node.cteName})`,
           }),
         );
+      }
     }
   });
 }
@@ -112,10 +145,10 @@ export async function planPhysicalNodeResult<TContext>(
 async function planUnaryLocalNodeResult<TContext>(
   node: Extract<RelNode, { kind: "filter" | "project" | "aggregate" | "sort" | "limit_offset" }>,
   schema: SchemaDefinition,
-  providers: ProviderMap<TContext>,
+  providers: ProvidersMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
-): Promise<BetterResult<string, TuplPlanningError>> {
+): Promise<BetterResult<string, TuplError>> {
   return Result.gen(async function* () {
     const input = yield* Result.await(
       planPhysicalNodeResult(node.input, schema, providers, context, state),
@@ -145,33 +178,11 @@ async function planUnaryLocalNodeResult<TContext>(
 async function planJoinNodeResult<TContext>(
   node: Extract<RelNode, { kind: "join" }>,
   schema: SchemaDefinition,
-  providers: ProviderMap<TContext>,
+  providers: ProvidersMap<TContext>,
   context: TContext,
   state: PhysicalPlanningState,
-): Promise<BetterResult<string, TuplPlanningError>> {
+): Promise<BetterResult<string, TuplError>> {
   return Result.gen(async function* () {
-    const lookup = resolveLookupJoinCandidate(node, schema, providers);
-    if (lookup) {
-      const left = yield* Result.await(
-        planPhysicalNodeResult(node.left, schema, providers, context, state),
-      );
-      return Result.ok(
-        recordPhysicalStep(state, {
-          id: nextPhysicalStepId("lookup_join"),
-          kind: "lookup_join",
-          dependsOn: [left],
-          summary: `Lookup join ${lookup.leftScan.table}.${lookup.leftKey} -> ${lookup.rightScan.table}.${lookup.rightKey}`,
-          leftProvider: lookup.leftProvider,
-          rightProvider: lookup.rightProvider,
-          leftTable: lookup.leftScan.table,
-          rightTable: lookup.rightScan.table,
-          leftKey: lookup.leftKey,
-          rightKey: lookup.rightKey,
-          joinType: lookup.joinType,
-        }),
-      );
-    }
-
     const left = yield* Result.await(
       planPhysicalNodeResult(node.left, schema, providers, context, state),
     );

@@ -61,7 +61,10 @@ export function parseJoins(
 export function appearsInRel(node: RelNode, alias: string): boolean {
   switch (node.kind) {
     case "scan":
+    case "cte_ref":
       return node.alias === alias;
+    case "values":
+      return false;
     case "filter":
     case "project":
     case "aggregate":
@@ -69,13 +72,15 @@ export function appearsInRel(node: RelNode, alias: string): boolean {
     case "sort":
     case "limit_offset":
       return appearsInRel(node.input, alias);
+    case "correlate":
+      return appearsInRel(node.left, alias) || appearsInRel(node.right, alias);
     case "join":
     case "set_op":
       return appearsInRel(node.left, alias) || appearsInRel(node.right, alias);
+    case "repeat_union":
+      return appearsInRel(node.seed, alias) || appearsInRel(node.iterative, alias);
     case "with":
       return appearsInRel(node.body, alias);
-    case "sql":
-      return false;
   }
 }
 

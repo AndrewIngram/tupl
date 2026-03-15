@@ -1,14 +1,30 @@
-import type { SelectAst, WindowSpecificationAst } from "./sqlite-parser/ast";
+import { Result } from "better-result";
+
+import type { CteAst, SelectAst } from "./sqlite-parser/ast";
+import { toUnsupportedQueryShapeError } from "./planner-errors";
 import { isCorrelatedSubquery, parseSubqueryAst } from "./sql-expr-lowering";
+import {
+  parseSupportedCorrelatedExistsSubquery,
+  parseSupportedCorrelatedInSubquery,
+  parseSupportedCorrelatedScalarAggregateProjectionSubquery,
+  parseSupportedCorrelatedScalarAggregateSubquery,
+} from "./subqueries/analysis";
+import {
+  parseNamedWindowSpecifications,
+  parseWindowFrameClause,
+  parseWindowOver,
+} from "./windows/window-specifications";
 
 /**
  * Query-shape validation owns the unsupported SQL checks that run before relational lowering.
  */
-export function assertNoUnsupportedQueryShapes(ast: SelectAst): void {
+export function validateQueryShapeResult(ast: SelectAst) {
   const reason = findUnsupportedQueryShape(ast, new Set<string>());
   if (reason) {
-    throw new Error(reason);
+    return Result.err(toUnsupportedQueryShapeError(reason));
   }
+
+  return Result.ok(ast);
 }
 
 function findUnsupportedQueryShape(ast: SelectAst, cteNames: Set<string>): string | null {
@@ -18,37 +34,36 @@ function findUnsupportedQueryShape(ast: SelectAst, cteNames: Set<string>): strin
   }
 
   const withClauses = Array.isArray(ast.with) ? ast.with : [];
-  if (withClauses.some((clause) => clause.recursive)) {
-    return "Recursive CTEs are not yet supported.";
-  }
 
   const scopedCteNames = new Set(cteNames);
   for (const clause of withClauses) {
-    const rawName = clause.name;
-    const cteName =
-      typeof rawName === "string"
-        ? rawName
-        : rawName && typeof rawName === "object" && typeof rawName.value === "string"
-          ? rawName.value
-          : null;
+    const nested = clause.stmt?.ast;
+    if (nested) {
+      const visibleCteNames = new Set(scopedCteNames);
+      const cteName = getCteName(clause);
+      if (cteName && clause.recursive) {
+        visibleCteNames.add(cteName);
+      }
+      const reason = findUnsupportedQueryShape(nested, visibleCteNames);
+      if (reason) {
+        return reason;
+      }
+    }
+    const cteName = getCteName(clause);
     if (cteName) {
       scopedCteNames.add(cteName);
     }
   }
 
-  for (const clause of withClauses) {
-    const nested = clause.stmt?.ast;
+  const from = Array.isArray(ast.from) ? ast.from : ast.from ? [ast.from] : [];
+  for (const entry of from) {
+    const nested = entry.stmt?.ast;
     if (nested) {
       const reason = findUnsupportedQueryShape(nested, scopedCteNames);
       if (reason) {
         return reason;
       }
     }
-  }
-
-  const from = Array.isArray(ast.from) ? ast.from : ast.from ? [ast.from] : [];
-  if (from.some((entry) => !!entry.stmt)) {
-    return "Unsupported FROM clause entry.";
   }
 
   const outerAliases = new Set<string>(
@@ -82,26 +97,20 @@ function findUnsupportedQueryShape(ast: SelectAst, cteNames: Set<string>): strin
 }
 
 function findUnsupportedWindowShape(ast: SelectAst): string | null {
-  const hasWindow = hasWindowExpression(ast.columns);
-  if (hasWindow && (ast.groupby || ast.having)) {
-    return "Window functions cannot be mixed with GROUP BY/HAVING.";
-  }
-
-  if (ast.window && ast.window.length > 0) {
-    return "Named WINDOW clauses are not yet supported.";
-  }
-
-  return findUnsupportedWindowShapeInValue(ast.columns);
+  return findUnsupportedWindowShapeInValue(ast.columns, parseNamedWindowSpecifications(ast.window));
 }
 
-function findUnsupportedWindowShapeInValue(value: unknown): string | null {
+function findUnsupportedWindowShapeInValue(
+  value: unknown,
+  windowDefinitions: ReturnType<typeof parseNamedWindowSpecifications>,
+): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const reason = findUnsupportedWindowShapeInValue(item);
+      const reason = findUnsupportedWindowShapeInValue(item, windowDefinitions);
       if (reason) {
         return reason;
       }
@@ -112,14 +121,14 @@ function findUnsupportedWindowShapeInValue(value: unknown): string | null {
   const record = value as Record<string, unknown>;
   const exprType = record.type;
   if (exprType === "function" || exprType === "aggr_func") {
-    const overReason = validateSupportedWindowOver(record);
+    const overReason = validateSupportedWindowOver(record, windowDefinitions);
     if (overReason) {
       return overReason;
     }
   }
 
   for (const nested of Object.values(record)) {
-    const reason = findUnsupportedWindowShapeInValue(nested);
+    const reason = findUnsupportedWindowShapeInValue(nested, windowDefinitions);
     if (reason) {
       return reason;
     }
@@ -128,7 +137,10 @@ function findUnsupportedWindowShapeInValue(value: unknown): string | null {
   return null;
 }
 
-function validateSupportedWindowOver(expr: Record<string, unknown>): string | null {
+function validateSupportedWindowOver(
+  expr: Record<string, unknown>,
+  windowDefinitions: ReturnType<typeof parseNamedWindowSpecifications>,
+): string | null {
   if (!expr.over || typeof expr.over !== "object") {
     return null;
   }
@@ -148,6 +160,9 @@ function validateSupportedWindowOver(expr: Record<string, unknown>): string | nu
     normalized !== "row_number" &&
     normalized !== "rank" &&
     normalized !== "dense_rank" &&
+    normalized !== "lead" &&
+    normalized !== "lag" &&
+    normalized !== "first_value" &&
     normalized !== "count" &&
     normalized !== "sum" &&
     normalized !== "avg" &&
@@ -157,36 +172,22 @@ function validateSupportedWindowOver(expr: Record<string, unknown>): string | nu
     return `Unsupported window function: ${rawName.toUpperCase()}`;
   }
 
-  const rawSpec = (expr.over as { as_window_specification?: unknown }).as_window_specification;
-  if (typeof rawSpec === "string") {
-    return "Named WINDOW clauses are not yet supported.";
-  }
-  if (!rawSpec || typeof rawSpec !== "object") {
-    return null;
-  }
-
-  const spec = (rawSpec as { window_specification?: unknown }).window_specification;
-  if (!spec || typeof spec !== "object") {
-    return null;
-  }
-
-  if ((spec as WindowSpecificationAst).window_frame_clause) {
-    return "Explicit window frame clauses are not yet supported.";
+  const spec = parseWindowOver(expr.over, windowDefinitions);
+  const frame = parseWindowFrameClause(spec?.window_frame_clause?.raw);
+  if (frame && frame.mode !== "rows") {
+    return `Unsupported window frame mode: ${frame.mode.toUpperCase()}`;
   }
 
   return null;
 }
 
-function hasWindowExpression(rawColumns: unknown): boolean {
-  if (rawColumns === "*") {
-    return false;
-  }
-
-  const columns = Array.isArray(rawColumns) ? rawColumns : [];
-  return columns.some((entry) => {
-    const expr = (entry as { expr?: { over?: unknown } }).expr;
-    return !!expr?.over;
-  });
+function getCteName(clause: CteAst): string | null {
+  const rawName = clause.name;
+  return typeof rawName === "string"
+    ? rawName
+    : rawName && typeof rawName === "object" && typeof rawName.value === "string"
+      ? rawName.value
+      : null;
 }
 
 function findUnsupportedSubqueryShape(
@@ -194,6 +195,32 @@ function findUnsupportedSubqueryShape(
   outerAliases: Set<string>,
   cteNames: Set<string>,
 ): string | null {
+  const correlatedExists = parseSupportedCorrelatedExistsSubquery(value, outerAliases);
+  if (correlatedExists) {
+    return findUnsupportedQueryShape(correlatedExists.rewrittenSubquery, cteNames);
+  }
+
+  const correlatedIn = parseSupportedCorrelatedInSubquery(value, outerAliases);
+  if (correlatedIn) {
+    return findUnsupportedQueryShape(correlatedIn.rewrittenSubquery, cteNames);
+  }
+
+  const correlatedScalarAggregate = parseSupportedCorrelatedScalarAggregateSubquery(
+    value,
+    outerAliases,
+  );
+  if (correlatedScalarAggregate) {
+    return findUnsupportedQueryShape(correlatedScalarAggregate.rewrittenSubquery, cteNames);
+  }
+
+  const correlatedScalarProjection = parseSupportedCorrelatedScalarAggregateProjectionSubquery(
+    value,
+    outerAliases,
+  );
+  if (correlatedScalarProjection) {
+    return findUnsupportedQueryShape(correlatedScalarProjection.rewrittenSubquery, cteNames);
+  }
+
   const subquery = parseSubqueryAst(value);
   if (subquery) {
     if (isCorrelatedSubquery(subquery, outerAliases)) {

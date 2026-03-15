@@ -48,7 +48,7 @@ declare const providerSqlRelationalProviderOptions: ProviderSqlRelationalProvide
     entity: string;
     table: string;
     resolved: { entity: string; table: string; config: unknown };
-    scan: Extract<providerKit.ProviderFragment, { kind: "scan" }>;
+    scan: Extract<foundation.RelNode, { kind: "scan" }>;
   },
   unknown,
   unknown
@@ -124,9 +124,11 @@ describe("public package imports", () => {
   });
 
   it("keeps the planner root surface stable", () => {
-    expect(typeof planner.lowerSqlToRel).toBe("function");
-    expect(typeof planner.expandRelViews).toBe("function");
-    expect(typeof planner.planPhysicalQuery).toBe("function");
+    expect(typeof planner.lowerSqlToRelResult).toBe("function");
+    expect(typeof planner.expandRelViewsResult).toBe("function");
+    expect(typeof planner.planPhysicalQueryResult).toBe("function");
+    expect(typeof planner.buildLogicalQueryPlanResult).toBe("function");
+    expect(typeof planner.buildPhysicalQueryPlanResult).toBe("function");
   });
 
   it("resolves the Drizzle provider package", () => {

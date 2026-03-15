@@ -1,14 +1,16 @@
+import type { RelNode } from "@tupl/foundation";
 import type { DataEntityColumnMap, DataEntityHandle, DataEntityShape } from "../entity-handles";
 import type {
-  FragmentProvider,
-  LookupProvider,
+  FragmentProviderAdapter,
   ProviderCompiledPlan,
-  ProviderFragment,
-  ProviderLookupManyRequest,
+  ProviderPlanDescription,
   QueryRow,
 } from "../contracts";
 import type {
-  ProviderCapabilityAtom,
+  LookupManyCapableProviderAdapter,
+  ProviderLookupManyRequest,
+} from "../shapes/lookup-optimization";
+import type {
   ProviderCapabilityReport,
   ProviderRouteFamily,
   QueryFallbackPolicy,
@@ -33,21 +35,9 @@ export interface RelationalProviderCapabilityContext<
 > {
   context: TContext;
   entities: TEntities;
-  fragment: Extract<ProviderFragment, { kind: "rel" }>;
+  rel: RelNode;
   routeFamily: ProviderRouteFamily;
-  requiredAtoms: ProviderCapabilityAtom[];
-  missingAtoms: ProviderCapabilityAtom[];
   strategy: TStrategy | null;
-}
-
-export interface RelationalProviderCompileScanArgs<
-  TContext,
-  TEntities extends Record<string, RelationalProviderEntityConfig>,
-> {
-  context: TContext;
-  entities: TEntities;
-  fragment: Extract<ProviderFragment, { kind: "scan" }>;
-  name: string;
 }
 
 export interface RelationalProviderCompileRelArgs<
@@ -57,12 +47,22 @@ export interface RelationalProviderCompileRelArgs<
 > {
   context: TContext;
   entities: TEntities;
-  fragment: Extract<ProviderFragment, { kind: "rel" }>;
+  rel: RelNode;
   name: string;
   strategy: TStrategy;
 }
 
 export interface RelationalProviderExecuteArgs<
+  TContext,
+  TEntities extends Record<string, RelationalProviderEntityConfig>,
+> {
+  context: TContext;
+  entities: TEntities;
+  plan: ProviderCompiledPlan;
+  name: string;
+}
+
+export interface RelationalProviderDescribeArgs<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
 > {
@@ -91,72 +91,65 @@ export interface RelationalProviderEntityColumnsArgs<
   name: string;
 }
 
-export const DEFAULT_RELATIONAL_CAPABILITY_ATOMS = [
-  "scan.project",
-  "scan.filter.basic",
-  "scan.filter.set_membership",
-  "scan.sort",
-  "scan.limit_offset",
-  "aggregate.group_by",
-  "join.inner",
-  "join.left",
-  "join.right_full",
-  "set_op.union_all",
-  "set_op.union_distinct",
-  "set_op.intersect",
-  "set_op.except",
-  "cte.non_recursive",
-  "window.rank_basic",
-] as const satisfies readonly ProviderCapabilityAtom[];
+export interface RelationalProviderSupportArgs<
+  TContext,
+  TEntities extends Record<string, RelationalProviderEntityConfig>,
+  TStrategy extends RelationalProviderRelCompileStrategy,
+> extends RelationalProviderCapabilityContext<TContext, TEntities, TStrategy> {}
 
-interface RelationalProviderOptionsBase<
+interface RelationalProviderAdapterOptionsBase<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends RelationalProviderRelCompileStrategy,
 > {
   name: string;
-  declaredAtoms?: readonly ProviderCapabilityAtom[];
   entities: TEntities;
   fallbackPolicy?: QueryFallbackPolicy;
-  routeFamilies?: readonly ProviderRouteFamily[];
   resolveEntityColumns?<TEntityName extends Extract<keyof TEntities, string>>(
     args: RelationalProviderEntityColumnsArgs<TEntities, TEntityName>,
   ): DataEntityColumnMap<string> | undefined;
   resolveRelCompileStrategy(args: {
     context: TContext;
     entities: TEntities;
-    fragment: Extract<ProviderFragment, { kind: "rel" }>;
+    rel: RelNode;
   }): MaybePromise<TStrategy | null>;
   unsupportedRelReason?(
     args: RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>,
-  ): string;
+  ): string | ProviderCapabilityReport;
   unsupportedRelReasonMessage?: string;
   unsupportedRelCompileMessage?: string;
   isRelStrategySupported?(
-    args: RelationalProviderCapabilityContext<TContext, TEntities, TStrategy>,
+    args: RelationalProviderSupportArgs<TContext, TEntities, TStrategy>,
   ): MaybePromise<true | string | ProviderCapabilityReport>;
-  compileScanFragment?(
-    args: RelationalProviderCompileScanArgs<TContext, TEntities>,
-  ): MaybePromise<AdapterResult<ProviderCompiledPlan>>;
   compileRelFragment?(
     args: RelationalProviderCompileRelArgs<TContext, TEntities, TStrategy>,
   ): MaybePromise<AdapterResult<ProviderCompiledPlan>>;
   buildRelPlanPayload?(
     args: RelationalProviderCompileRelArgs<TContext, TEntities, TStrategy>,
   ): unknown;
+  describeCompiledPlan?(
+    args: RelationalProviderDescribeArgs<TContext, TEntities>,
+  ): MaybePromise<ProviderPlanDescription>;
   executeCompiledPlan(
     args: RelationalProviderExecuteArgs<TContext, TEntities>,
   ): MaybePromise<AdapterResult<QueryRow[]>>;
 }
 
-export interface RelationalProviderOptions<
+export interface RelationalProviderAdapterOptions<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
   TStrategy extends RelationalProviderRelCompileStrategy,
-> extends RelationalProviderOptionsBase<TContext, TEntities, TStrategy> {
-  lookupMany?: (
+> extends RelationalProviderAdapterOptionsBase<TContext, TEntities, TStrategy> {}
+
+export interface RelationalLookupProviderAdapterOptions<
+  TContext,
+  TEntities extends Record<string, RelationalProviderEntityConfig>,
+  TStrategy extends RelationalProviderRelCompileStrategy,
+> extends RelationalProviderAdapterOptionsBase<TContext, TEntities, TStrategy> {
+  lookupMany?(
+    this: void,
     args: RelationalProviderLookupArgs<TContext, TEntities>,
-  ) => MaybePromise<AdapterResult<QueryRow[]>>;
+  ): MaybePromise<AdapterResult<QueryRow[]>>;
 }
 
 export type RelationalProviderHandles<
@@ -165,17 +158,14 @@ export type RelationalProviderHandles<
   [K in keyof TEntities]: DataEntityHandle<string>;
 };
 
-export type RelationalProvider<
+export type RelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
-> = FragmentProvider<TContext> & {
+> = FragmentProviderAdapter<TContext> & {
   entities: RelationalProviderHandles<TEntities>;
 };
 
-export type RelationalProviderWithLookup<
+export type LookupCapableRelationalProviderAdapter<
   TContext,
   TEntities extends Record<string, RelationalProviderEntityConfig>,
-> = FragmentProvider<TContext> &
-  LookupProvider<TContext> & {
-    entities: RelationalProviderHandles<TEntities>;
-  };
+> = RelationalProviderAdapter<TContext, TEntities> & LookupManyCapableProviderAdapter<TContext>;

@@ -30,6 +30,9 @@ export function collectAliasToSourceMappings(
         mappings.set(alias, getNormalizedColumnSourceMap(binding));
         return;
       }
+      case "values":
+      case "cte_ref":
+        return;
       case "filter":
       case "project":
       case "aggregate":
@@ -38,18 +41,24 @@ export function collectAliasToSourceMappings(
       case "limit_offset":
         visit(current.input);
         return;
+      case "correlate":
+        visit(current.left);
+        visit(current.right);
+        return;
       case "join":
       case "set_op":
         visit(current.left);
         visit(current.right);
+        return;
+      case "repeat_union":
+        visit(current.seed);
+        visit(current.iterative);
         return;
       case "with":
         for (const cte of current.ctes) {
           visit(cte.query);
         }
         visit(current.body);
-        return;
-      case "sql":
         return;
     }
   };

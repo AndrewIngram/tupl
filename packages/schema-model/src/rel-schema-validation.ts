@@ -1,129 +1,84 @@
-import { Result, type Result as BetterResult } from "better-result";
-import type { DataEntityHandle, RelNode, TuplSchemaNormalizationError } from "@tupl/foundation";
+import type { DataEntityHandle, RelNode } from "@tupl/foundation";
 
-import { createSchemaNormalizationError } from "./schema-errors";
 import type { SchemaDefinition } from "./types";
 
 /**
  * Rel-schema validation owns checking that relational plans only reference schema-backed tables and columns.
  */
-export function validateRelAgainstSchema(
-  node: RelNode,
-  schema: SchemaDefinition,
-): BetterResult<void, TuplSchemaNormalizationError> {
+export function validateRelAgainstSchema(node: RelNode, schema: SchemaDefinition): void {
   const validateScanColumn = (
     tableName: string,
     column: string,
     entity?: DataEntityHandle<string>,
-  ): BetterResult<void, TuplSchemaNormalizationError> => {
-    const logicalColumn = column.includes(".") ? column.slice(column.lastIndexOf(".") + 1) : column;
-
+  ): void => {
     if (entity?.columns) {
+      const logicalColumn = column.includes(".")
+        ? column.slice(column.lastIndexOf(".") + 1)
+        : column;
       if (!(logicalColumn in entity.columns)) {
-        return Result.err(
-          createSchemaNormalizationError({
-            operation: "validate relational plan against schema",
-            message: `Unknown column in relational plan: ${tableName}.${logicalColumn}`,
-            table: tableName,
-            column: logicalColumn,
-          }),
-        );
+        throw new Error(`Unknown column in relational plan: ${tableName}.${logicalColumn}`);
       }
-
-      return Result.ok(undefined);
+      return;
     }
 
     const table = schema.tables[tableName];
     if (!table) {
-      return Result.ok(undefined);
+      return;
     }
-
+    const logicalColumn = column.includes(".") ? column.slice(column.lastIndexOf(".") + 1) : column;
     if (!(logicalColumn in table.columns)) {
-      return Result.err(
-        createSchemaNormalizationError({
-          operation: "validate relational plan against schema",
-          message: `Unknown column in relational plan: ${tableName}.${logicalColumn}`,
-          table: tableName,
-          column: logicalColumn,
-        }),
-      );
+      throw new Error(`Unknown column in relational plan: ${tableName}.${logicalColumn}`);
     }
-
-    return Result.ok(undefined);
   };
 
-  const visit = (
-    current: RelNode,
-    cteNames: Set<string>,
-  ): BetterResult<void, TuplSchemaNormalizationError> => {
+  const visit = (current: RelNode): void => {
     switch (current.kind) {
       case "scan":
-        if (!cteNames.has(current.table) && !schema.tables[current.table] && !current.entity) {
-          return Result.err(
-            createSchemaNormalizationError({
-              operation: "validate relational plan against schema",
-              message: `Unknown table in relational plan: ${current.table}`,
-              table: current.table,
-            }),
-          );
+        if (!schema.tables[current.table] && !current.entity) {
+          throw new Error(`Unknown table in relational plan: ${current.table}`);
         }
-        if (!cteNames.has(current.table) && (schema.tables[current.table] || current.entity)) {
-          return Result.gen(function* () {
-            for (const column of current.select) {
-              yield* validateScanColumn(current.table, column, current.entity);
-            }
-            for (const clause of current.where ?? []) {
-              yield* validateScanColumn(current.table, clause.column, current.entity);
-            }
-            for (const term of current.orderBy ?? []) {
-              yield* validateScanColumn(current.table, term.column, current.entity);
-            }
-            return Result.ok(undefined);
-          });
+        for (const column of current.select) {
+          validateScanColumn(current.table, column, current.entity);
         }
-        return Result.ok(undefined);
-      case "sql":
-        for (const table of current.tables) {
-          if (!cteNames.has(table) && !schema.tables[table]) {
-            return Result.err(
-              createSchemaNormalizationError({
-                operation: "validate relational plan against schema",
-                message: `Unknown table in relational plan: ${table}`,
-                table,
-              }),
-            );
-          }
+        for (const clause of current.where ?? []) {
+          validateScanColumn(current.table, clause.column, current.entity);
         }
-        return Result.ok(undefined);
+        for (const term of current.orderBy ?? []) {
+          validateScanColumn(current.table, term.column, current.entity);
+        }
+        return;
+      case "values":
+      case "cte_ref":
+        return;
       case "filter":
       case "project":
       case "aggregate":
       case "window":
       case "sort":
       case "limit_offset":
-        return visit(current.input, cteNames);
+        visit(current.input);
+        return;
+      case "correlate":
+        visit(current.left);
+        visit(current.right);
+        return;
       case "join":
       case "set_op":
-        return Result.gen(function* () {
-          yield* visit(current.left, cteNames);
-          yield* visit(current.right, cteNames);
-          return Result.ok(undefined);
-        });
-      case "with": {
-        const nextCteNames = new Set(cteNames);
+        visit(current.left);
+        visit(current.right);
+        return;
+      case "repeat_union":
+        visit(current.seed);
+        visit(current.iterative);
+        return;
+      case "with":
         for (const cte of current.ctes) {
-          nextCteNames.add(cte.name);
+          visit(cte.query);
         }
-        return Result.gen(function* () {
-          for (const cte of current.ctes) {
-            yield* visit(cte.query, nextCteNames);
-          }
-          yield* visit(current.body, nextCteNames);
-          return Result.ok(undefined);
-        });
-      }
+        visit(current.body);
+        return;
     }
   };
 
-  return visit(node, new Set<string>());
+  visit(node);
 }

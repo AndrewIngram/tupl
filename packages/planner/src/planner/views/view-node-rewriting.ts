@@ -13,7 +13,7 @@ import {
  * View node rewriting owns alias-aware recursive rewriting of non-scan relational nodes.
  */
 export function rewriteExpandedViewNode<TContext>(
-  node: Exclude<RelNode, { kind: "scan" | "sql" }>,
+  node: Exclude<RelNode, { kind: "scan" | "values" | "cte_ref" }>,
   schema: SchemaDefinition,
   context: TContext | undefined,
   expandRelViewsInternal: (
@@ -99,6 +99,13 @@ export function rewriteExpandedViewNode<TContext>(
               ...term,
               source: resolveMappedColumnRef(term.source, input.aliases),
             })),
+            ...("column" in fn && fn.column
+              ? { column: resolveMappedColumnRef(fn.column, input.aliases) }
+              : {}),
+            ...("value" in fn ? { value: mapRelExprRefs(fn.value, input.aliases) } : {}),
+            ...("defaultExpr" in fn && fn.defaultExpr
+              ? { defaultExpr: mapRelExprRefs(fn.defaultExpr, input.aliases) }
+              : {}),
           })),
         },
         aliases: input.aliases,
@@ -128,6 +135,30 @@ export function rewriteExpandedViewNode<TContext>(
         aliases: input.aliases,
       };
     }
+    case "correlate": {
+      const left = expandRelViewsInternal(node.left, schema, context);
+      const right = expandRelViewsInternal(node.right, schema, context);
+      const aliases = mergeAliasMaps(left.aliases, right.aliases);
+      return {
+        node: {
+          ...node,
+          left: left.node,
+          right: right.node,
+          correlation: {
+            outer: resolveMappedColumnRef(node.correlation.outer, aliases),
+            inner: resolveMappedColumnRef(node.correlation.inner, aliases),
+          },
+          apply:
+            node.apply.kind === "scalar_filter"
+              ? {
+                  ...node.apply,
+                  outerCompare: resolveMappedColumnRef(node.apply.outerCompare, aliases),
+                }
+              : node.apply,
+        },
+        aliases,
+      };
+    }
     case "join": {
       const left = expandRelViewsInternal(node.left, schema, context);
       const right = expandRelViewsInternal(node.right, schema, context);
@@ -153,6 +184,18 @@ export function rewriteExpandedViewNode<TContext>(
           right: right.node,
         },
         aliases: mergeAliasMaps(left.aliases, right.aliases),
+      };
+    }
+    case "repeat_union": {
+      const seed = expandRelViewsInternal(node.seed, schema, context);
+      const iterative = expandRelViewsInternal(node.iterative, schema, context);
+      return {
+        node: {
+          ...node,
+          seed: seed.node,
+          iterative: iterative.node,
+        },
+        aliases: mergeAliasMaps(seed.aliases, iterative.aliases),
       };
     }
     case "with": {

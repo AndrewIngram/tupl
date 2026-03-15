@@ -1,10 +1,17 @@
 import type { RelColumnRef, RelExpr, RelNode } from "@tupl/foundation";
 import type { ScanFilterClause } from "@tupl/foundation";
+import type {
+  CorrelatedExistsFilter,
+  CorrelatedInSubqueryFilter,
+  CorrelatedScalarAggregateProjection,
+  CorrelatedScalarAggregateFilter,
+} from "./subqueries/correlated-predicate-types";
 
 export interface Binding {
   table: string;
   alias: string;
   index: number;
+  sourceKind: "table" | "cte";
 }
 
 export interface ParsedJoin {
@@ -35,10 +42,17 @@ export interface SelectExprProjection {
   source?: RelColumnRef;
 }
 
+export interface SelectCorrelatedScalarProjection {
+  kind: "correlated_scalar";
+  output: string;
+  projection: CorrelatedScalarAggregateProjection;
+}
+
 export type SelectProjection =
   | SelectColumnProjection
   | SelectWindowProjection
-  | SelectExprProjection;
+  | SelectExprProjection
+  | SelectCorrelatedScalarProjection;
 
 export interface ResolvedOrderTerm {
   source: {
@@ -111,6 +125,7 @@ export interface LiteralFilter {
 }
 
 export interface InSubqueryFilter {
+  negated?: boolean;
   alias: string;
   column: string;
   subquery: import("./sqlite-parser/ast").SelectAst;
@@ -119,6 +134,9 @@ export interface InSubqueryFilter {
 export interface ParsedWhereFilters {
   literals: LiteralFilter[];
   inSubqueries: InSubqueryFilter[];
+  existsSubqueries: CorrelatedExistsFilter[];
+  correlatedInSubqueries: CorrelatedInSubqueryFilter[];
+  correlatedScalarAggregates: CorrelatedScalarAggregateFilter[];
   residualExpr?: RelExpr;
 }
 
