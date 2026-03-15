@@ -173,6 +173,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare Vitest reports directory
+        run: |
+          rm -rf .vitest-reports
+          mkdir -p .vitest-reports
+
       - name: Download fast Vitest blob report
         uses: actions/download-artifact@v4
         with:
