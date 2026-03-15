@@ -2,7 +2,6 @@ import { Result } from "better-result";
 
 import { type RelNode } from "@tupl/foundation";
 import { type SchemaDefinition } from "@tupl/schema-model";
-import { toProviderFragmentBuildError } from "./planner-errors";
 import { resolveSingleProvider } from "./provider/conventions";
 import { normalizeRelForProvider } from "./provider/provider-rel-normalization";
 import { expandRelViewsResult } from "./view-expansion";
@@ -36,19 +35,15 @@ export function buildProviderFragmentForNodeResult(
   schema: SchemaDefinition,
   provider: string,
 ) {
-  return Result.try({
-    try: () => buildProviderFragmentForNode(node, schema, provider),
-    catch: (error) => toProviderFragmentBuildError(error, "build provider fragment"),
-  });
+  return buildProviderFragmentForNode(node, schema, provider);
 }
 
-function buildProviderFragmentForNode(
-  node: RelNode,
-  schema: SchemaDefinition,
-  provider: string,
-): ProviderRelTarget {
-  return {
-    provider,
-    rel: normalizeRelForProvider(node, schema),
-  };
+function buildProviderFragmentForNode(node: RelNode, schema: SchemaDefinition, provider: string) {
+  return Result.gen(function* () {
+    const rel = yield* normalizeRelForProvider(node, schema);
+    return Result.ok({
+      provider,
+      rel,
+    });
+  });
 }

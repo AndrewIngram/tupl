@@ -175,10 +175,16 @@ export function prepareSimpleSelectLowering(
     .map((projection) => projection.function)
     .concat((aggregateWindowProjections ?? []).map((projection) => projection.function));
 
-  const aggregateGroupByResolution = aggregateMode
+  const aggregateGroupByResolutionResult = aggregateMode
     ? resolveAggregateGroupBy(groupByTerms ?? [], safeAggregateProjections)
-    : { groupBy: [], materializations: [] };
-  let effectiveGroupBy = aggregateGroupByResolution.groupBy;
+    : Result.ok({
+        groupBy: [] as RelColumnRef[],
+        materializations: [] as RelProjectExprMapping[],
+      });
+  if (Result.isError(aggregateGroupByResolutionResult)) {
+    return aggregateGroupByResolutionResult;
+  }
+  let effectiveGroupBy = aggregateGroupByResolutionResult.value.groupBy;
 
   if (distinctMode && effectiveGroupBy.length === 0) {
     const distinctGroupBy: RelColumnRef[] = [];
@@ -239,12 +245,19 @@ export function prepareSimpleSelectLowering(
     return Result.ok(null);
   }
 
-  const { orderBy, materializations: orderByMaterializations } = aggregateMode
-    ? {
-        orderBy: resolveAggregateOrderBy(orderByTerms, safeAggregateProjections),
-        materializations: [] as RelProjectExprMapping[],
-      }
+  const orderResolution = aggregateMode
+    ? Result.gen(function* () {
+        const orderBy = yield* resolveAggregateOrderBy(orderByTerms, safeAggregateProjections);
+        return Result.ok({
+          orderBy,
+          materializations: [] as RelProjectExprMapping[],
+        });
+      })
     : resolveNonAggregateOrderBy(orderByTerms, safeProjections, toParsedOrderSource);
+  if (Result.isError(orderResolution)) {
+    return orderResolution;
+  }
+  const { orderBy, materializations: orderByMaterializations } = orderResolution.value;
 
   const rootBinding = bindings[0] ?? null;
 
@@ -256,7 +269,7 @@ export function prepareSimpleSelectLowering(
     safeAggregateProjections,
     safeProjections,
     aggregateWindowProjections: aggregateWindowProjections ?? [],
-    aggregateGroupByResolution,
+    aggregateGroupByResolution: aggregateGroupByResolutionResult.value,
     effectiveGroupBy,
     allAggregateMetrics,
     havingExpr,

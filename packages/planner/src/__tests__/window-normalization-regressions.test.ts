@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import type { RelNode } from "@tupl/foundation";
 import { createDataEntityHandle } from "@tupl/provider-kit";
 import { describe, expect, it } from "vitest";
@@ -80,12 +81,16 @@ describe("window normalization regressions", () => {
     });
 
     const normalized = normalizeRelForProvider(buildWindowNode("o"), schema);
-    expect(normalized.kind).toBe("window");
-    if (normalized.kind !== "window") {
+    expect(Result.isOk(normalized)).toBe(true);
+    if (Result.isError(normalized)) {
+      throw normalized.error;
+    }
+    expect(normalized.value.kind).toBe("window");
+    if (normalized.value.kind !== "window") {
       throw new Error("Expected normalized window node.");
     }
 
-    expect(normalized.functions).toMatchObject([
+    expect(normalized.value.functions).toMatchObject([
       {
         fn: "sum",
         column: { alias: "o", column: "total_cents" },
@@ -119,7 +124,7 @@ describe("window normalization regressions", () => {
           throw new Error("Expected scan leaf during view rewrite test.");
         }
 
-        return {
+        return Result.ok({
           node,
           aliases: new Map([
             [
@@ -132,16 +137,20 @@ describe("window normalization regressions", () => {
               },
             ],
           ]),
-        };
+        });
       },
     );
 
-    expect(rewritten.node.kind).toBe("window");
-    if (rewritten.node.kind !== "window") {
+    expect(Result.isOk(rewritten)).toBe(true);
+    if (Result.isError(rewritten)) {
+      throw rewritten.error;
+    }
+    expect(rewritten.value.node.kind).toBe("window");
+    if (rewritten.value.node.kind !== "window") {
       throw new Error("Expected rewritten window node.");
     }
 
-    expect(rewritten.node.functions).toMatchObject([
+    expect(rewritten.value.node.functions).toMatchObject([
       {
         fn: "sum",
         column: { alias: "o", column: "total_cents" },

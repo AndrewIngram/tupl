@@ -3,8 +3,7 @@ import type { SchemaDefinition } from "@tupl/schema-model";
 
 import { Result } from "better-result";
 
-import { toRelRewriteError } from "./planner-errors";
-import type { ViewExpansionResult } from "./views/view-expansion-types";
+import type { ViewExpansionResultValue } from "./views/view-expansion-types";
 import { rewriteExpandedViewNode } from "./views/view-node-rewriting";
 import { expandViewScanNode } from "./views/view-scan-expansion";
 
@@ -16,9 +15,9 @@ export function expandRelViewsResult<TContext>(
   schema: SchemaDefinition,
   context?: TContext,
 ) {
-  return Result.try({
-    try: () => expandRelViewsInternal(rel, schema, context).node,
-    catch: (error) => toRelRewriteError(error, "expand relational views"),
+  return Result.gen(function* () {
+    const expanded = yield* expandRelViewsInternal(rel, schema, context);
+    return Result.ok(expanded.node);
   });
 }
 
@@ -26,16 +25,16 @@ function expandRelViewsInternal<TContext>(
   node: RelNode,
   schema: SchemaDefinition,
   context?: TContext,
-): ViewExpansionResult {
+): ViewExpansionResultValue {
   switch (node.kind) {
     case "scan":
       return expandViewScanNode(node, schema, context, expandRelViewsInternal);
     case "values":
     case "cte_ref":
-      return {
+      return Result.ok({
         node,
         aliases: new Map(),
-      };
+      });
     default:
       return rewriteExpandedViewNode(node, schema, context, expandRelViewsInternal);
   }

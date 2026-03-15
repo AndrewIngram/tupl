@@ -205,7 +205,7 @@ describe("public result APIs", () => {
 
     expect(result.error).toMatchObject({
       _tag: "RelRewriteError",
-      operation: "expand relational views",
+      operation: "compile planner view rel",
       message: "Unknown table in view rel scan: missing_table",
     });
   });

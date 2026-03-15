@@ -1,4 +1,6 @@
-import type { RelColumnRef, RelProjectExprMapping } from "@tupl/foundation";
+import { Result, type Result as BetterResult } from "better-result";
+
+import { RelLoweringError, type RelColumnRef, type RelProjectExprMapping } from "@tupl/foundation";
 
 import type {
   ParsedAggregateGroupProjection,
@@ -36,10 +38,13 @@ export function validateAggregateProjectionGroupBy(
 export function resolveAggregateGroupBy(
   groupByTerms: ParsedGroupByTerm[],
   projections: ParsedAggregateProjection[],
-): {
-  groupBy: RelColumnRef[];
-  materializations: RelProjectExprMapping[];
-} {
+): BetterResult<
+  {
+    groupBy: RelColumnRef[];
+    materializations: RelProjectExprMapping[];
+  },
+  RelLoweringError
+> {
   const groupBy: RelColumnRef[] = [];
   const materializations: RelProjectExprMapping[] = [];
 
@@ -51,10 +56,20 @@ export function resolveAggregateGroupBy(
 
     const projection = projections[term.position - 1];
     if (!projection) {
-      throw new Error(`GROUP BY ordinal ${term.position} is out of range.`);
+      return Result.err(
+        new RelLoweringError({
+          operation: "resolve aggregate GROUP BY",
+          message: `GROUP BY ordinal ${term.position} is out of range.`,
+        }),
+      );
     }
     if (projection.kind === "metric") {
-      throw new Error(`GROUP BY ordinal ${term.position} cannot reference an aggregate output.`);
+      return Result.err(
+        new RelLoweringError({
+          operation: "resolve aggregate GROUP BY",
+          message: `GROUP BY ordinal ${term.position} cannot reference an aggregate output.`,
+        }),
+      );
     }
 
     const materialization = materializeAggregateGroupProjection(projection, "group_by");
@@ -62,13 +77,18 @@ export function resolveAggregateGroupBy(
       materializations.push(materialization);
     }
     if (!projection.source) {
-      throw new Error(`GROUP BY ordinal ${term.position} could not be resolved.`);
+      return Result.err(
+        new RelLoweringError({
+          operation: "resolve aggregate GROUP BY",
+          message: `GROUP BY ordinal ${term.position} could not be resolved.`,
+        }),
+      );
     }
 
     groupBy.push(projection.source);
   }
 
-  return { groupBy, materializations };
+  return Result.ok({ groupBy, materializations });
 }
 
 function materializeAggregateGroupProjection(

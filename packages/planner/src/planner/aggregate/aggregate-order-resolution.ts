@@ -1,4 +1,6 @@
-import type { RelColumnRef, RelProjectExprMapping } from "@tupl/foundation";
+import { Result, type Result as BetterResult } from "better-result";
+
+import { RelLoweringError, type RelColumnRef, type RelProjectExprMapping } from "@tupl/foundation";
 import type { OrderByTermAst } from "../sqlite-parser/ast";
 
 import type {
@@ -74,10 +76,13 @@ export function resolveNonAggregateOrderBy(
     ref: RelColumnRef | null | undefined,
     fallbackColumn: string,
   ) => ResolvedOrderTerm["source"],
-): {
-  orderBy: ResolvedOrderTerm[];
-  materializations: RelProjectExprMapping[];
-} {
+): BetterResult<
+  {
+    orderBy: ResolvedOrderTerm[];
+    materializations: RelProjectExprMapping[];
+  },
+  RelLoweringError
+> {
   const projectionsByOutput = new Map(
     projections.map((projection) => [projection.output, projection] as const),
   );
@@ -87,15 +92,15 @@ export function resolveNonAggregateOrderBy(
   const resolveProjectionSource = (
     projection: SelectProjection,
     ordinal?: number,
-  ): ResolvedOrderTerm["source"] => {
+  ): BetterResult<ResolvedOrderTerm["source"], RelLoweringError> => {
     if (projection.kind === "column") {
-      return toParsedOrderSource(projection.source, projection.output);
+      return Result.ok(toParsedOrderSource(projection.source, projection.output));
     }
     if (projection.kind === "window") {
-      return { column: projection.function.as };
+      return Result.ok({ column: projection.function.as });
     }
     if (projection.kind === "correlated_scalar") {
-      return { column: projection.output };
+      return Result.ok({ column: projection.output });
     }
 
     const materialization = materializeSelectExprProjection(projection, "order_by");
@@ -103,13 +108,17 @@ export function resolveNonAggregateOrderBy(
       materializations.push(materialization);
     }
     if (!projection.source) {
-      throw new Error(
-        ordinal != null
-          ? `ORDER BY ordinal ${ordinal} could not be resolved.`
-          : `ORDER BY expression "${projection.output}" could not be resolved.`,
+      return Result.err(
+        new RelLoweringError({
+          operation: "resolve non-aggregate ORDER BY",
+          message:
+            ordinal != null
+              ? `ORDER BY ordinal ${ordinal} could not be resolved.`
+              : `ORDER BY expression "${projection.output}" could not be resolved.`,
+        }),
       );
     }
-    return { column: projection.source.column };
+    return Result.ok({ column: projection.source.column });
   };
 
   for (const term of orderByTerms) {
@@ -127,27 +136,41 @@ export function resolveNonAggregateOrderBy(
         : projectionsByOutput.get(term.output);
     if (!projection) {
       if (term.kind === "ordinal") {
-        throw new Error(`ORDER BY ordinal ${term.position} is out of range.`);
+        return Result.err(
+          new RelLoweringError({
+            operation: "resolve non-aggregate ORDER BY",
+            message: `ORDER BY ordinal ${term.position} is out of range.`,
+          }),
+        );
       }
-      throw new Error(`Unknown ORDER BY output "${term.output}".`);
+      return Result.err(
+        new RelLoweringError({
+          operation: "resolve non-aggregate ORDER BY",
+          message: `Unknown ORDER BY output "${term.output}".`,
+        }),
+      );
     }
 
+    const source = resolveProjectionSource(
+      projection,
+      term.kind === "ordinal" ? term.position : undefined,
+    );
+    if (Result.isError(source)) {
+      return source;
+    }
     orderBy.push({
-      source: resolveProjectionSource(
-        projection,
-        term.kind === "ordinal" ? term.position : undefined,
-      ),
+      source: source.value,
       direction: term.direction,
     });
   }
 
-  return { orderBy, materializations };
+  return Result.ok({ orderBy, materializations });
 }
 
 export function resolveAggregateOrderBy(
   orderByTerms: ParsedOrderByTerm[],
   projections: ParsedAggregateProjection[],
-): ResolvedOrderTerm[] {
+): BetterResult<ResolvedOrderTerm[], RelLoweringError> {
   const projectionsByOutput = new Map(
     projections.map((projection) => [projection.output, projection] as const),
   );
@@ -166,27 +189,33 @@ export function resolveAggregateOrderBy(
   const resolveProjectionSource = (
     projection: ParsedAggregateProjection,
     ordinal?: number,
-  ): ResolvedOrderTerm["source"] => {
+  ): BetterResult<ResolvedOrderTerm["source"], RelLoweringError> => {
     if (projection.kind === "metric") {
-      return { column: projection.metric.as };
+      return Result.ok({ column: projection.metric.as });
     }
     if (!projection.source) {
-      throw new Error(
-        ordinal != null
-          ? `ORDER BY ordinal ${ordinal} could not be resolved.`
-          : `ORDER BY expression "${projection.output}" could not be resolved.`,
+      return Result.err(
+        new RelLoweringError({
+          operation: "resolve aggregate ORDER BY",
+          message:
+            ordinal != null
+              ? `ORDER BY ordinal ${ordinal} could not be resolved.`
+              : `ORDER BY expression "${projection.output}" could not be resolved.`,
+        }),
       );
     }
-    return { column: projection.source.column };
+    return Result.ok({ column: projection.source.column });
   };
 
-  return orderByTerms.map((term) => {
+  const resolvedTerms: ResolvedOrderTerm[] = [];
+  for (const term of orderByTerms) {
     if (term.kind === "ref") {
       const key = `${term.source.alias ?? ""}.${term.source.column}`;
-      return {
+      resolvedTerms.push({
         source: { column: groupOutputsBySource.get(key) ?? term.source.column },
         direction: term.direction,
-      };
+      });
+      continue;
     }
 
     const projection =
@@ -195,19 +224,35 @@ export function resolveAggregateOrderBy(
         : projectionsByOutput.get(term.output);
     if (!projection) {
       if (term.kind === "ordinal") {
-        throw new Error(`ORDER BY ordinal ${term.position} is out of range.`);
+        return Result.err(
+          new RelLoweringError({
+            operation: "resolve aggregate ORDER BY",
+            message: `ORDER BY ordinal ${term.position} is out of range.`,
+          }),
+        );
       }
-      throw new Error(`Unknown ORDER BY output "${term.output}".`);
+      return Result.err(
+        new RelLoweringError({
+          operation: "resolve aggregate ORDER BY",
+          message: `Unknown ORDER BY output "${term.output}".`,
+        }),
+      );
     }
 
-    return {
-      source: resolveProjectionSource(
-        projection,
-        term.kind === "ordinal" ? term.position : undefined,
-      ),
+    const source = resolveProjectionSource(
+      projection,
+      term.kind === "ordinal" ? term.position : undefined,
+    );
+    if (Result.isError(source)) {
+      return source;
+    }
+    resolvedTerms.push({
+      source: source.value,
       direction: term.direction,
-    };
-  });
+    });
+  }
+
+  return Result.ok(resolvedTerms);
 }
 
 function materializeSelectExprProjection(

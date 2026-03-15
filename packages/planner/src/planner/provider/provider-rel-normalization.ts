@@ -1,4 +1,11 @@
-import { isRelProjectColumnMapping, type RelNode, type RelProjectNode } from "@tupl/foundation";
+import { Result, type Result as BetterResult } from "better-result";
+
+import {
+  ProviderFragmentBuildError,
+  isRelProjectColumnMapping,
+  type RelNode,
+  type RelProjectNode,
+} from "@tupl/foundation";
 import type { SchemaDefinition } from "@tupl/schema-model";
 
 import {
@@ -12,146 +19,189 @@ import { normalizeScanForProvider } from "./provider-scan-normalization";
 /**
  * Provider rel normalization owns full rel-tree rewriting into provider-facing column/source space.
  */
-export function normalizeRelForProvider(node: RelNode, schema: SchemaDefinition): RelNode {
+export function normalizeRelForProvider(
+  node: RelNode,
+  schema: SchemaDefinition,
+): BetterResult<RelNode, ProviderFragmentBuildError> {
   const aliasToSource = collectAliasToSourceMappings(node, schema);
 
-  const visit = (current: RelNode): RelNode => {
+  const visit = (current: RelNode): BetterResult<RelNode, ProviderFragmentBuildError> => {
     switch (current.kind) {
       case "values":
       case "cte_ref":
-        return current;
+        return Result.ok(current);
       case "scan":
         return normalizeScanForProvider(current, schema);
       case "filter":
-        return {
-          ...current,
-          input: visit(current.input),
-          ...(current.where
-            ? {
-                where: current.where.map((clause) => ({
-                  ...clause,
-                  column: mapColumnNameForAlias(clause.column, aliasToSource),
-                })),
-              }
-            : {}),
-          ...(current.expr
-            ? {
-                expr: mapRelExprRefsForAliasSource(current.expr, aliasToSource),
-              }
-            : {}),
-        };
-      case "project":
-        return {
-          ...current,
-          input: visit(current.input),
-          columns: current.columns.map((column) =>
-            isRelProjectColumnMapping(column)
+        return Result.gen(function* () {
+          const input = yield* visit(current.input);
+          return Result.ok({
+            ...current,
+            input,
+            ...(current.where
               ? {
-                  ...column,
-                  source: mapColumnRefForAlias(column.source, aliasToSource),
+                  where: current.where.map((clause) => ({
+                    ...clause,
+                    column: mapColumnNameForAlias(clause.column, aliasToSource),
+                  })),
                 }
-              : {
-                  ...column,
-                  expr: mapRelExprRefsForAliasSource(column.expr, aliasToSource),
-                },
-          ),
-        };
-      case "correlate":
-        return {
-          ...current,
-          left: visit(current.left),
-          right: visit(current.right),
-          correlation: {
-            outer: mapColumnRefForAlias(current.correlation.outer, aliasToSource),
-            inner: mapColumnRefForAlias(current.correlation.inner, aliasToSource),
-          },
-          apply:
-            current.apply.kind === "scalar_filter"
-              ? {
-                  ...current.apply,
-                  outerCompare: mapColumnRefForAlias(current.apply.outerCompare, aliasToSource),
-                }
-              : current.apply,
-        };
-      case "join":
-        return {
-          ...current,
-          left: visit(current.left),
-          right: visit(current.right),
-          leftKey: mapColumnRefForAlias(current.leftKey, aliasToSource),
-          rightKey: mapColumnRefForAlias(current.rightKey, aliasToSource),
-        };
-      case "aggregate":
-        return {
-          ...current,
-          input: visit(current.input),
-          groupBy: current.groupBy.map((column) => mapColumnRefForAlias(column, aliasToSource)),
-          metrics: current.metrics.map((metric) => ({
-            ...metric,
-            ...(metric.column
-              ? { column: mapColumnRefForAlias(metric.column, aliasToSource) }
               : {}),
-          })),
-        };
-      case "window":
-        return {
-          ...current,
-          input: visit(current.input),
-          functions: current.functions.map((fn) => ({
-            ...fn,
-            partitionBy: fn.partitionBy.map((column) =>
-              mapColumnRefForAlias(column, aliasToSource),
+            ...(current.expr
+              ? {
+                  expr: mapRelExprRefsForAliasSource(current.expr, aliasToSource),
+                }
+              : {}),
+          });
+        });
+      case "project":
+        return Result.gen(function* () {
+          const input = yield* visit(current.input);
+          return Result.ok({
+            ...current,
+            input,
+            columns: current.columns.map((column) =>
+              isRelProjectColumnMapping(column)
+                ? {
+                    ...column,
+                    source: mapColumnRefForAlias(column.source, aliasToSource),
+                  }
+                : {
+                    ...column,
+                    expr: mapRelExprRefsForAliasSource(column.expr, aliasToSource),
+                  },
             ),
-            orderBy: fn.orderBy.map((term) => ({
+          });
+        });
+      case "correlate":
+        return Result.gen(function* () {
+          const left = yield* visit(current.left);
+          const right = yield* visit(current.right);
+          return Result.ok({
+            ...current,
+            left,
+            right,
+            correlation: {
+              outer: mapColumnRefForAlias(current.correlation.outer, aliasToSource),
+              inner: mapColumnRefForAlias(current.correlation.inner, aliasToSource),
+            },
+            apply:
+              current.apply.kind === "scalar_filter"
+                ? {
+                    ...current.apply,
+                    outerCompare: mapColumnRefForAlias(current.apply.outerCompare, aliasToSource),
+                  }
+                : current.apply,
+          });
+        });
+      case "join":
+        return Result.gen(function* () {
+          const left = yield* visit(current.left);
+          const right = yield* visit(current.right);
+          return Result.ok({
+            ...current,
+            left,
+            right,
+            leftKey: mapColumnRefForAlias(current.leftKey, aliasToSource),
+            rightKey: mapColumnRefForAlias(current.rightKey, aliasToSource),
+          });
+        });
+      case "aggregate":
+        return Result.gen(function* () {
+          const input = yield* visit(current.input);
+          return Result.ok({
+            ...current,
+            input,
+            groupBy: current.groupBy.map((column) => mapColumnRefForAlias(column, aliasToSource)),
+            metrics: current.metrics.map((metric) => ({
+              ...metric,
+              ...(metric.column
+                ? { column: mapColumnRefForAlias(metric.column, aliasToSource) }
+                : {}),
+            })),
+          });
+        });
+      case "window":
+        return Result.gen(function* () {
+          const input = yield* visit(current.input);
+          return Result.ok({
+            ...current,
+            input,
+            functions: current.functions.map((fn) => ({
+              ...fn,
+              partitionBy: fn.partitionBy.map((column) =>
+                mapColumnRefForAlias(column, aliasToSource),
+              ),
+              orderBy: fn.orderBy.map((term) => ({
+                ...term,
+                source: mapColumnRefForAlias(term.source, aliasToSource),
+              })),
+              ...("column" in fn && fn.column
+                ? { column: mapColumnRefForAlias(fn.column, aliasToSource) }
+                : {}),
+              ...("value" in fn
+                ? { value: mapRelExprRefsForAliasSource(fn.value, aliasToSource) }
+                : {}),
+              ...("defaultExpr" in fn && fn.defaultExpr
+                ? { defaultExpr: mapRelExprRefsForAliasSource(fn.defaultExpr, aliasToSource) }
+                : {}),
+            })),
+          });
+        });
+      case "sort":
+        return Result.gen(function* () {
+          const input = yield* visit(current.input);
+          return Result.ok({
+            ...current,
+            input,
+            orderBy: current.orderBy.map((term) => ({
               ...term,
               source: mapColumnRefForAlias(term.source, aliasToSource),
             })),
-            ...("column" in fn && fn.column
-              ? { column: mapColumnRefForAlias(fn.column, aliasToSource) }
-              : {}),
-            ...("value" in fn
-              ? { value: mapRelExprRefsForAliasSource(fn.value, aliasToSource) }
-              : {}),
-            ...("defaultExpr" in fn && fn.defaultExpr
-              ? { defaultExpr: mapRelExprRefsForAliasSource(fn.defaultExpr, aliasToSource) }
-              : {}),
-          })),
-        };
-      case "sort":
-        return {
-          ...current,
-          input: visit(current.input),
-          orderBy: current.orderBy.map((term) => ({
-            ...term,
-            source: mapColumnRefForAlias(term.source, aliasToSource),
-          })),
-        };
+          });
+        });
       case "limit_offset":
-        return {
-          ...current,
-          input: visit(current.input),
-        };
+        return Result.gen(function* () {
+          const input = yield* visit(current.input);
+          return Result.ok({
+            ...current,
+            input,
+          });
+        });
       case "set_op":
-        return {
-          ...current,
-          left: visit(current.left),
-          right: visit(current.right),
-        };
+        return Result.gen(function* () {
+          const left = yield* visit(current.left);
+          const right = yield* visit(current.right);
+          return Result.ok({
+            ...current,
+            left,
+            right,
+          });
+        });
       case "with":
-        return {
-          ...current,
-          ctes: current.ctes.map((cte) => ({
-            ...cte,
-            query: visit(cte.query),
-          })),
-          body: visit(current.body),
-        };
+        return Result.gen(function* () {
+          const ctes = [];
+          for (const cte of current.ctes) {
+            ctes.push({
+              ...cte,
+              query: yield* visit(cte.query),
+            });
+          }
+          const body = yield* visit(current.body);
+          return Result.ok({
+            ...current,
+            ctes,
+            body,
+          });
+        });
       case "repeat_union":
-        return current;
+        return Result.ok(current);
     }
   };
 
-  return simplifyProviderProjects(visit(node));
+  return Result.gen(function* () {
+    const visited = yield* visit(node);
+    return Result.ok(simplifyProviderProjects(visited));
+  });
 }
 
 function simplifyProviderProjects(node: RelNode): RelNode {
