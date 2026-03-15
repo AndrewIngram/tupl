@@ -57,7 +57,7 @@ export interface ProviderAdapterBase<TContext = unknown> {
   fallbackPolicy?: QueryFallbackPolicy;
   /**
    * `canExecute` answers whether the provider can run a provider-normalized rel subtree remotely.
-   * Returning a report is preferred when the adapter can explain unsupported atoms or cost.
+   * Returning a report is preferred when the adapter can explain unsupported shape or cost.
    */
   canExecute(rel: RelNode, context: TContext): MaybePromise<boolean | ProviderCapabilityReport>;
   /** `estimate` is optional advisory metadata used when choosing remote vs local execution. */
