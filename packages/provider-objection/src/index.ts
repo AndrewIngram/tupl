@@ -6,7 +6,6 @@ import type { LookupManyCapableProviderAdapter } from "@tupl/provider-kit/shapes
 
 import { executeLookupManyResult } from "./execution/lookup-execution";
 import { objectionQueryTranslationBackend } from "./planning/rel-builder";
-import { type ScanBinding } from "./planning/rel-strategy";
 import { resolveKnex } from "./backend/runtime-checks";
 import type {
   CreateObjectionProviderOptions,
@@ -15,6 +14,7 @@ import type {
   ObjectionProviderEntities,
   ObjectionProviderEntityConfig,
   ResolvedEntityConfig,
+  ScanBinding,
 } from "./types";
 
 export type {

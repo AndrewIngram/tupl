@@ -1,8 +1,9 @@
 import type { RelNode } from "@tupl/foundation";
-import type {
+import {
   SqlRelationalOrderTerm,
   SqlRelationalQueryTranslationBackend,
   SqlRelationalSelection,
+  UnsupportedSqlRelationalPlanError,
 } from "@tupl/provider-kit/relational-sql";
 
 import {
@@ -11,8 +12,12 @@ import {
   resolveQualifiedColumnRef,
   toRef,
 } from "../backend/query-helpers";
-import type { KyselyDatabaseLike, KyselyQueryBuilderLike, ResolvedEntityConfig } from "../types";
-import { type ScanBinding, UnsupportedSingleQueryPlanError } from "./rel-strategy";
+import type {
+  KyselyDatabaseLike,
+  KyselyQueryBuilderLike,
+  ResolvedEntityConfig,
+  ScanBinding,
+} from "../types";
 
 type SelectionEntry = {
   output: string;
@@ -48,7 +53,7 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
 
     const fn = (query as unknown as Record<string, unknown>)[joinMethod];
     if (typeof fn !== "function") {
-      throw new UnsupportedSingleQueryPlanError(
+      throw new UnsupportedSqlRelationalPlanError(
         `Kysely query builder does not support ${joinMethod} in this dialect.`,
       );
     }
@@ -109,7 +114,7 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
 
     const applySetOp = (left as unknown as Record<string, unknown>)[methodName];
     if (typeof applySetOp !== "function") {
-      throw new UnsupportedSingleQueryPlanError(
+      throw new UnsupportedSqlRelationalPlanError(
         `Kysely query builder does not support ${methodName} for single-query pushdown.`,
       );
     }
@@ -118,7 +123,7 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
   },
   buildWithQuery({ body, ctes, projection, orderBy, runtime }) {
     if (typeof runtime.with !== "function") {
-      throw new UnsupportedSingleQueryPlanError(
+      throw new UnsupportedSqlRelationalPlanError(
         "Kysely database instance does not support CTE builders required for WITH pushdown.",
       );
     }
@@ -212,7 +217,7 @@ function buildSelectionEntries<TContext>(
             buildMetricExpression(eb, entry.metric, aliases).as(entry.output),
         };
       case "expr":
-        throw new UnsupportedSingleQueryPlanError(
+        throw new UnsupportedSqlRelationalPlanError(
           "Computed projections are not supported in Kysely single-query pushdown.",
         );
     }
@@ -229,7 +234,7 @@ function buildMetricExpression<TContext>(
   }
 
   if (!metric.column) {
-    throw new UnsupportedSingleQueryPlanError(`Aggregate ${metric.fn} requires a column.`);
+    throw new UnsupportedSqlRelationalPlanError(`Aggregate ${metric.fn} requires a column.`);
   }
 
   const ref = resolveQualifiedColumnRef(aliases, {
@@ -238,14 +243,14 @@ function buildMetricExpression<TContext>(
 
   const fn = (eb as { fn?: Record<string, (value: unknown) => any> }).fn;
   if (!fn) {
-    throw new UnsupportedSingleQueryPlanError(
+    throw new UnsupportedSqlRelationalPlanError(
       "Kysely expression builder does not expose fn helpers.",
     );
   }
 
   const fnImpl = fn[metric.fn];
   if (typeof fnImpl !== "function") {
-    throw new UnsupportedSingleQueryPlanError(`Unsupported aggregate function: ${metric.fn}.`);
+    throw new UnsupportedSqlRelationalPlanError(`Unsupported aggregate function: ${metric.fn}.`);
   }
 
   let expression = fnImpl(eb.ref(ref));
@@ -315,7 +320,7 @@ function resolveWithBodyColumnRef(
 ): string {
   const refAlias = ref.alias ?? ref.table;
   if (refAlias && refAlias !== scanAlias) {
-    throw new UnsupportedSingleQueryPlanError(
+    throw new UnsupportedSqlRelationalPlanError(
       `WITH body column "${refAlias}.${ref.column}" must reference alias "${scanAlias}".`,
     );
   }

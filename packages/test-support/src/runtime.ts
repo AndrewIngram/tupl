@@ -37,15 +37,15 @@ import {
   type QueryRow,
   type ScanFilterClause,
   type ScanOrderBy,
-  type SchemaColumnLensDefinition,
   type SchemaDefinition,
   type TableAggregateMetric,
   type TableAggregateRequest,
   type TableColumnDefinition,
   type TableLookupRequest,
-  type TableMethodsMap,
   type TableScanRequest,
 } from "@tupl/schema-model";
+import type { SchemaColumnLensDefinition } from "@tupl/schema-model/dsl";
+import type { TablePlanningMethodsMap } from "@tupl/schema-model/table-planning";
 import { isNormalizedSourceColumnBinding } from "@tupl/schema-model/mapping";
 import type { NormalizedColumnBinding, TableName } from "@tupl/schema-model/normalized";
 import { getNormalizedTableBinding } from "@tupl/schema-model/normalization";
@@ -398,7 +398,7 @@ export function createExecutableSchemaFromProviders<TContext, TSchema extends Sc
 
 export function createMethodsProvider<TContext>(
   schema: SchemaDefinition,
-  methods: TableMethodsMap<TContext>,
+  methods: TablePlanningMethodsMap<TContext>,
   providerName = "memory",
 ): ProviderAdapter<TContext> & LookupManyCapableProviderAdapter<TContext> {
   const adapter: ProviderAdapter<TContext> & LookupManyCapableProviderAdapter<TContext> = {
@@ -493,7 +493,7 @@ export function createMethodsProvider<TContext>(
 
 export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDefinition>(
   schema: TSchema,
-  methods: TableMethodsMap<TContext>,
+  methods: TablePlanningMethodsMap<TContext>,
   providerName = "memory",
 ) {
   const provider = createMethodsProvider(schema, methods, providerName);
@@ -616,7 +616,7 @@ function extractAggregateMethodsInput(node: RelNode): {
 }
 
 async function executePlannedScan<TContext>(
-  method: NonNullable<TableMethodsMap<TContext>[string]>,
+  method: NonNullable<TablePlanningMethodsMap<TContext>[string]>,
   request: TableScanRequest,
   context: TContext,
 ): Promise<QueryRow[]> {
@@ -648,7 +648,7 @@ async function executePlannedScan<TContext>(
 }
 
 async function executePlannedLookup<TContext>(
-  method: TableMethodsMap<TContext>[string],
+  method: TablePlanningMethodsMap<TContext>[string],
   request: TableLookupRequest,
   context: TContext,
 ): Promise<QueryRow[]> {
@@ -854,7 +854,7 @@ function splitLookupRequest(
 }
 
 async function executePlannedAggregate<TContext>(
-  method: NonNullable<TableMethodsMap<TContext>[string]>,
+  method: NonNullable<TablePlanningMethodsMap<TContext>[string]>,
   request: TableAggregateRequest,
   context: TContext,
 ): Promise<QueryRow[]> {
@@ -892,7 +892,7 @@ async function executePlannedAggregate<TContext>(
 
 export function queryWithMethods<TContext>(input: {
   schema: SchemaDefinition;
-  methods: TableMethodsMap<TContext>;
+  methods: TablePlanningMethodsMap<TContext>;
   context: TContext;
   sql: string;
   queryGuardrails?: Partial<QueryGuardrails>;
@@ -1029,7 +1029,7 @@ function collectAggregateScanColumns(request: TableAggregateRequest): string[] {
 
 export function createMethodsSession<TContext>(input: {
   schema: SchemaDefinition;
-  methods: TableMethodsMap<TContext>;
+  methods: TablePlanningMethodsMap<TContext>;
   context: TContext;
   sql: string;
   queryGuardrails?: Partial<QueryGuardrails>;

@@ -6,9 +6,16 @@
 export {
   UnsupportedSqlRelationalPlanError,
   type SqlRelationalOrderTerm,
+  type SqlRelationalCompileStrategy,
   type SqlRelationalQueryTranslationBackend,
   type SqlRelationalResolvedEntity,
   type SqlRelationalScanBinding,
   type SqlRelationalSelection,
   type SqlRelationalWithSelection,
 } from "./provider/relational/sql-relational/types";
+export {
+  buildSqlRelationalSingleQueryPlan,
+  createSqlRelationalScanBinding,
+  resolveSqlRelationalCompileStrategy,
+} from "./provider/relational/sql-relational/planning";
+export { executeLookupManyViaScanResult } from "./provider/relational/sql-relational/lookup-execution";

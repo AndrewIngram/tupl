@@ -1,7 +1,8 @@
 import { Result, type Result as BetterResult } from "better-result";
 
 import { RelRewriteError, type RelColumnRef, type RelNode } from "@tupl/foundation";
-import type { SchemaDefinition, SchemaViewRelNode } from "@tupl/schema-model";
+import type { SchemaDefinition } from "@tupl/schema-model";
+import type { SchemaViewRelNode } from "@tupl/schema-model/dsl";
 import { createTableDefinitionFromEntity } from "@tupl/schema-model/normalization";
 
 /**

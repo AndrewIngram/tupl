@@ -1,7 +1,7 @@
 /**
  * Schema model root owns the logical schema contract: DSL entrypoints, schema/query types,
- * timestamps, and DDL helpers. Normalization, mapping, definition, enum-link resolution, and
- * validation live behind explicit subpaths.
+ * timestamps, and DDL helpers. DSL-token detail, planning hooks, normalization, mapping,
+ * definition, enum-link resolution, and validation live behind explicit subpaths.
  */
 export { asIso8601Timestamp, type Iso8601TimestampString, type TimestampValue } from "./timestamps";
 export type {
@@ -21,22 +21,10 @@ export type {
   ScanFilterOperator,
   ScanOrderBy,
   SchemaBuilder,
-  SchemaCalculatedColumnDefinition,
-  SchemaColRefToken,
-  SchemaColumnLensDefinition,
   SchemaDataEntityHandle,
   SchemaDefinition,
-  SchemaDslTableToken,
-  SchemaTypedColumnDefinition,
   SchemaValueCoercion,
   SchemaValueCoercionName,
-  SchemaViewAggregateMetric,
-  SchemaViewAggregateNode,
-  SchemaViewEqExpr,
-  SchemaViewJoinNode,
-  SchemaViewRelNode,
-  SchemaViewRelNodeInput,
-  SchemaViewScanNode,
   SqlScalarType,
   SqlTypeValue,
   TableAggregateMetric,

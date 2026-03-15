@@ -6,7 +6,6 @@ import type { LookupManyCapableProviderAdapter } from "@tupl/provider-kit/shapes
 
 import { executeLookupManyResult } from "./execution/lookup-execution";
 import { kyselyQueryTranslationBackend } from "./planning/rel-builder";
-import { type ScanBinding } from "./planning/rel-strategy";
 import { resolveKyselyDb } from "./backend/runtime-checks";
 import type {
   CreateKyselyProviderOptions,
@@ -15,6 +14,7 @@ import type {
   KyselyProviderEntities,
   KyselyProviderEntityConfig,
   ResolvedEntityConfig,
+  ScanBinding,
 } from "./types";
 
 export type {

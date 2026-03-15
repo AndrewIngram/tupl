@@ -7,8 +7,7 @@ import {
 } from "@tupl/provider-kit";
 
 import { applyWhereClause, createBaseQuery, executeQuery } from "../backend/query-helpers";
-import type { ResolvedEntityConfig } from "../types";
-import type { ScanBinding } from "../planning/rel-strategy";
+import type { ResolvedEntityConfig, ScanBinding } from "../types";
 
 function normalizeObjectionScanError(
   error: unknown,

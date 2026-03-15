@@ -18,9 +18,11 @@ import * as schemaModel from "@tupl/schema-model";
 import * as schemaModelDefinition from "@tupl/schema-model/definition";
 import * as schemaModelEnums from "@tupl/schema-model/enums";
 import * as schemaModelMapping from "@tupl/schema-model/mapping";
+import * as schemaModelDsl from "@tupl/schema-model/dsl";
 import * as schemaModelNormalized from "@tupl/schema-model/normalized";
 import * as schemaModelNormalization from "@tupl/schema-model/normalization";
 import * as schemaModelPlanning from "@tupl/schema-model/planning";
+import * as schemaModelTablePlanning from "@tupl/schema-model/table-planning";
 import type {
   QueryRow as ProviderQueryRow,
   RelationalProviderOptions as ProviderRelationalProviderOptions,
@@ -36,6 +38,8 @@ import type {
 } from "@tupl/provider-kit";
 import type { NormalizedColumnBinding as SchemaModelNormalizedColumnBinding } from "@tupl/schema-model/normalized";
 import type { PlannedScanRequest as SchemaModelPlannedScanRequest } from "@tupl/schema-model/planning";
+import type { SchemaViewRelNode as SchemaModelDslSchemaViewRelNode } from "@tupl/schema-model/dsl";
+import type { TablePlanningMethods as SchemaModelTablePlanningMethods } from "@tupl/schema-model/table-planning";
 
 declare const providerQueryRow: ProviderQueryRow;
 declare const providerRelationalProviderOptions: ProviderRelationalProviderOptions<
@@ -66,9 +70,13 @@ void providerTableAggregateMetric;
 void providerTableAggregateRequest;
 declare const schemaModelNormalizedColumnBinding: SchemaModelNormalizedColumnBinding;
 declare const schemaModelPlannedScanRequest: SchemaModelPlannedScanRequest;
+declare const schemaModelDslSchemaViewRelNode: SchemaModelDslSchemaViewRelNode;
+declare const schemaModelTablePlanningMethods: SchemaModelTablePlanningMethods;
 
 void schemaModelNormalizedColumnBinding;
 void schemaModelPlannedScanRequest;
+void schemaModelDslSchemaViewRelNode;
+void schemaModelTablePlanningMethods;
 
 describe("public package imports", () => {
   it("exposes the canonical schema surface", () => {
@@ -105,12 +113,15 @@ describe("public package imports", () => {
     expect("NormalizedColumnBinding" in schemaModel).toBe(false);
     expect("NormalizedTableBinding" in schemaModel).toBe(false);
     expect("TableName" in schemaModel).toBe(false);
+    expect("TablePlanningMethods" in schemaModel).toBe(false);
+    expect("TablePlanningMethodsMap" in schemaModel).toBe(false);
     expect("PlannedScanRequest" in schemaModel).toBe(false);
     expect("PlannedLookupRequest" in schemaModel).toBe(false);
     expect("PlannedAggregateRequest" in schemaModel).toBe(false);
     expect("ScanPlanDecision" in schemaModel).toBe(false);
     expect("LookupPlanDecision" in schemaModel).toBe(false);
     expect("AggregatePlanDecision" in schemaModel).toBe(false);
+    expect("SchemaViewRelNode" in schemaModel).toBe(false);
     expect("mapProviderRowsToLogical" in schemaModel).toBe(false);
     expect("resolveSchemaLinkedEnums" in schemaModel).toBe(false);
     expect("resolveTableColumnDefinition" in schemaModel).toBe(false);
@@ -134,12 +145,18 @@ describe("public package imports", () => {
     expect(typeof runtimeSession.createExecutableSchemaSession).toBe("function");
     expect(typeof providerKitTesting.createProviderConformanceCases).toBe("function");
     expect(typeof schemaModelNormalization.getNormalizedTableBinding).toBe("function");
+    expect("createSchemaBuilder" in schemaModelDsl).toBe(false);
+    expect("TableMethods" in schemaModelDsl).toBe(false);
+    expect("getNormalizedTableBinding" in schemaModelDsl).toBe(false);
     expect("createSchemaBuilder" in schemaModelNormalized).toBe(false);
     expect("PlannedScanRequest" in schemaModelNormalized).toBe(false);
     expect("QueryRow" in schemaModelNormalized).toBe(false);
     expect("createSchemaBuilder" in schemaModelPlanning).toBe(false);
     expect("NormalizedColumnBinding" in schemaModelPlanning).toBe(false);
     expect("QueryRow" in schemaModelPlanning).toBe(false);
+    expect("createSchemaBuilder" in schemaModelTablePlanning).toBe(false);
+    expect("TableMethods" in schemaModelTablePlanning).toBe(false);
+    expect("getNormalizedTableBinding" in schemaModelTablePlanning).toBe(false);
     expect(typeof schemaModelMapping.mapProviderRowsToLogical).toBe("function");
     expect(typeof schemaModelEnums.resolveSchemaLinkedEnums).toBe("function");
     expect(typeof schemaModelDefinition.resolveTableColumnDefinition).toBe("function");

@@ -5,9 +5,8 @@ import {
   type QueryRow,
   type TableScanRequest,
 } from "@tupl/provider-kit";
-import type { KyselyDatabaseLike, ResolvedEntityConfig } from "../types";
+import type { KyselyDatabaseLike, ResolvedEntityConfig, ScanBinding } from "../types";
 import { applyBase, applyWhereClause } from "../backend/query-helpers";
-import type { ScanBinding } from "../planning/rel-strategy";
 
 function normalizeKyselyScanError(
   error: unknown,

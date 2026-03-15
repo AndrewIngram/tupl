@@ -1,8 +1,9 @@
 import type { RelNode } from "@tupl/foundation";
-import type {
+import {
   SqlRelationalOrderTerm,
   SqlRelationalQueryTranslationBackend,
   SqlRelationalSelection,
+  UnsupportedSqlRelationalPlanError,
 } from "@tupl/provider-kit/relational-sql";
 
 import {
@@ -14,8 +15,7 @@ import {
   toRef,
   executeQuery,
 } from "../backend/query-helpers";
-import type { KnexLike, KnexLikeQueryBuilder, ResolvedEntityConfig } from "../types";
-import { type ScanBinding, UnsupportedSingleQueryPlanError } from "./rel-strategy";
+import type { KnexLike, KnexLikeQueryBuilder, ResolvedEntityConfig, ScanBinding } from "../types";
 
 /**
  * Objection/Knex query translation owns only Knex-specific query-builder primitives.
@@ -43,7 +43,7 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
 
     const fn = (query as unknown as Record<string, unknown>)[joinMethod];
     if (typeof fn !== "function") {
-      throw new UnsupportedSingleQueryPlanError(
+      throw new UnsupportedSqlRelationalPlanError(
         `Knex query builder does not support ${joinMethod} in this dialect.`,
       );
     }
@@ -101,7 +101,7 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
 
     const applySetOp = (left as unknown as Record<string, unknown>)[methodName];
     if (typeof applySetOp !== "function") {
-      throw new UnsupportedSingleQueryPlanError(
+      throw new UnsupportedSqlRelationalPlanError(
         `Knex query builder does not support ${methodName} for single-query pushdown.`,
       );
     }
@@ -114,7 +114,7 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
     for (const cte of ctes) {
       const withFn = (query as { with?: unknown }).with;
       if (typeof withFn !== "function") {
-        throw new UnsupportedSingleQueryPlanError(
+        throw new UnsupportedSqlRelationalPlanError(
           "Knex query builder does not support CTE builders required for WITH pushdown.",
         );
       }
@@ -211,7 +211,7 @@ function applySelection<TContext>(
         applyMetricSelection(query, aliases, entry.metric, entry.output);
         break;
       case "expr":
-        throw new UnsupportedSingleQueryPlanError(
+        throw new UnsupportedSqlRelationalPlanError(
           "Computed projections are not supported in Objection single-query pushdown.",
         );
     }
@@ -230,7 +230,7 @@ function applyMetricSelection<TContext>(
   }
 
   if (!metric.column) {
-    throw new UnsupportedSingleQueryPlanError(`Aggregate ${metric.fn} requires a column.`);
+    throw new UnsupportedSqlRelationalPlanError(`Aggregate ${metric.fn} requires a column.`);
   }
 
   const source = resolveQualifiedColumnRef(aliases, {
@@ -243,13 +243,13 @@ function applyMetricSelection<TContext>(
   }
 
   if (metric.fn === "sum" && metric.distinct) {
-    throw new UnsupportedSingleQueryPlanError(
+    throw new UnsupportedSqlRelationalPlanError(
       "Knex sum(distinct ...) is not supported in this adapter yet.",
     );
   }
 
   if (metric.fn === "avg" && metric.distinct) {
-    throw new UnsupportedSingleQueryPlanError(
+    throw new UnsupportedSqlRelationalPlanError(
       "Knex avg(distinct ...) is not supported in this adapter yet.",
     );
   }

@@ -1,9 +1,5 @@
-import type {
-  ProviderOperationResult,
-  QueryRow,
-  ScanFilterClause,
-  TableScanRequest,
-} from "@tupl/provider-kit";
+import type { ProviderOperationResult, QueryRow, ScanFilterClause } from "@tupl/provider-kit";
+import { executeLookupManyViaScanResult } from "@tupl/provider-kit/relational-sql";
 import type { TuplExecutionError, TuplProviderBindingError } from "@tupl/foundation";
 
 import type { KnexLike, ResolvedEntityConfig } from "../types";
@@ -21,18 +17,5 @@ export async function executeLookupManyResult<TContext>(
   },
   context: TContext,
 ): Promise<ProviderOperationResult<QueryRow[], TuplProviderBindingError | TuplExecutionError>> {
-  const scanRequest: TableScanRequest = {
-    table: request.table,
-    select: request.select,
-    where: [
-      ...(request.where ?? []),
-      {
-        op: "in",
-        column: request.key,
-        values: request.keys,
-      } as ScanFilterClause,
-    ],
-  };
-
-  return executeScanResult(knex, entityConfigs, scanRequest, context);
+  return executeLookupManyViaScanResult(knex, entityConfigs, request, context, executeScanResult);
 }
