@@ -17,7 +17,6 @@ import {
   resolveSyncProviderCapabilityForRelResult,
 } from "./provider-execution";
 import { enforcePlannerNodeLimitResult, resolveGuardrails } from "../policy";
-import { normalizeRuntimeSchemaResult } from "../query-runner";
 
 /**
  * Provider session lifecycle owns the stable one-step plan and initial step state for provider-fragment sessions.
@@ -83,16 +82,11 @@ export function createInitialProviderFragmentState(
 export function resolveSessionPreparationResult<TContext>(
   input: QuerySessionInput<TContext>,
 ): BetterResult<PreparedSession<TContext>, TuplError> {
-  const resolvedInputResult = normalizeRuntimeSchemaResult(input);
-  if (Result.isError(resolvedInputResult)) {
-    return resolvedInputResult;
-  }
-
-  const resolvedInput = resolvedInputResult.value;
+  const resolvedInput = input;
   const guardrails = resolveGuardrails(input.queryGuardrails);
   const logicalPlanResult = buildLogicalQueryPlanResult(
     resolvedInput.sql,
-    resolvedInput.schema,
+    resolvedInput.preparedSchema.schema,
     resolvedInput.context,
   );
   if (Result.isError(logicalPlanResult)) {

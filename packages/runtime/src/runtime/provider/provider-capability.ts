@@ -41,7 +41,11 @@ function resolveCapabilityTargetResult<TContext>(
   },
   TuplError
 > {
-  const fragmentResult = buildProviderFragmentForRelResult(rel, input.schema, input.context);
+  const fragmentResult = buildProviderFragmentForRelResult(
+    rel,
+    input.preparedSchema.schema,
+    input.context,
+  );
   if (Result.isError(fragmentResult)) {
     return fragmentResult;
   }
@@ -56,7 +60,7 @@ function resolveCapabilityTargetResult<TContext>(
 
   return Result.ok({
     fragment,
-    provider: input.providers[fragment.provider] ?? null,
+    provider: input.preparedSchema.providers[fragment.provider] ?? null,
   });
 }
 

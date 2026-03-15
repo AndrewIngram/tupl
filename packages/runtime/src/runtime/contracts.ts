@@ -54,12 +54,24 @@ export const DEFAULT_QUERY_FALLBACK_POLICY: Required<QueryFallbackPolicy> = {
 };
 
 /**
- * Query input is the fully bound runtime request shape used by top-level query helpers.
- * It requires an already finalized schema plus the concrete provider map that owns execution.
+ * Prepared runtime schemas are the honest runtime boundary. They bind a finalized logical schema
+ * to the validated provider map that will execute it, so query/explain code does not perform
+ * last-mile schema preparation on each request.
  */
-export interface QueryInput<TContext> {
-  schema: SchemaDefinition;
+export interface PreparedRuntimeSchema<
+  TContext,
+  TSchema extends SchemaDefinition = SchemaDefinition,
+> {
+  schema: TSchema;
   providers: ProvidersMap<TContext>;
+}
+
+/**
+ * Query input is the fully prepared runtime request shape used by top-level query helpers.
+ * Callers must provide a prepared runtime schema artifact rather than a raw schema/provider pair.
+ */
+export interface QueryInput<TContext, TSchema extends SchemaDefinition = SchemaDefinition> {
+  preparedSchema: PreparedRuntimeSchema<TContext, TSchema>;
   context: TContext;
   sql: string;
   queryGuardrails?: Partial<QueryGuardrails>;

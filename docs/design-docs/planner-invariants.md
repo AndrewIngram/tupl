@@ -21,6 +21,8 @@ These invariants should hold unless a deliberate architecture change updates thi
 - The executor consumes rewritten rel, not raw lowered rel.
 - Planner rewrite work does not happen again inside the executor.
 - View expansion and decorrelation belong to planner rewrite stages.
+- Runtime query/explain entrypoints consume prepared runtime schema artifacts, not raw schema plus
+  provider maps that still need final normalization.
 - `explain()` has explicit basic and enriched provider-description modes; only enriched mode may
   compile provider fragments.
 

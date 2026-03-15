@@ -27,7 +27,7 @@ export async function describeExplainProviderPlansResult<TContext>(
         continue;
       }
 
-      const adapter = input.providers[fragment.provider];
+      const adapter = input.preparedSchema.providers[fragment.provider];
       if (!adapter) {
         return Result.err(
           new TuplRuntimeError({
@@ -39,7 +39,7 @@ export async function describeExplainProviderPlansResult<TContext>(
 
       const providerFragment = yield* buildProviderFragmentForRelResult(
         fragment.rel,
-        input.schema,
+        input.preparedSchema.schema,
         input.context,
       );
       if (!providerFragment) {

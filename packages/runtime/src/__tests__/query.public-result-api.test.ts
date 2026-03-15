@@ -2,7 +2,7 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vitest";
 import type { RelNode } from "@tupl/foundation";
 
-import { createExecutableSchema } from "@tupl/runtime";
+import { createExecutableSchema, prepareRuntimeSchemaResult } from "@tupl/runtime";
 import { createExecutableSchemaSession } from "@tupl/runtime/session";
 import type { QueryRow, SchemaDefinition } from "@tupl/schema-model";
 import { createDataEntityHandle, type ProviderAdapter } from "@tupl/provider-kit";
@@ -360,6 +360,32 @@ describe("public result APIs", () => {
       _tag: "TuplRuntimeError",
       message:
         "Table users must be declared from a provider-owned entity via table(name, provider.entities.someTable, config).",
+    });
+  });
+
+  it("returns tagged provider binding errors during runtime schema preparation", () => {
+    const schema = buildEntitySchema({
+      users: {
+        provider: "warehouse",
+        columns: {
+          id: "text",
+        },
+      },
+    });
+
+    const result = prepareRuntimeSchemaResult({
+      schema,
+      providers: {},
+    });
+
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected prepareRuntimeSchemaResult to fail.");
+    }
+
+    expect(result.error).toMatchObject({
+      _tag: "TuplProviderBindingError",
+      message: "Table users is bound to provider warehouse, but no such provider is registered.",
     });
   });
 });

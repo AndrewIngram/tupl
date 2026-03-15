@@ -39,22 +39,23 @@ export function resolveSyncLookupJoinCandidate<TContext>(
     return null;
   }
   if (
-    (!input.schema.tables[leftScan.table] && !leftScan.entity) ||
-    (!input.schema.tables[rightScan.table] && !rightScan.entity)
+    (!input.preparedSchema.schema.tables[leftScan.table] && !leftScan.entity) ||
+    (!input.preparedSchema.schema.tables[rightScan.table] && !rightScan.entity)
   ) {
     return null;
   }
 
-  const leftBinding = getNormalizedTableBinding(input.schema, leftScan.table);
-  const rightBinding = getNormalizedTableBinding(input.schema, rightScan.table);
+  const leftBinding = getNormalizedTableBinding(input.preparedSchema.schema, leftScan.table);
+  const rightBinding = getNormalizedTableBinding(input.preparedSchema.schema, rightScan.table);
   if (leftBinding?.kind === "view" || rightBinding?.kind === "view") {
     return null;
   }
 
   const leftProviderName =
-    leftScan.entity?.provider ?? resolveTableProvider(input.schema, leftScan.table);
+    leftScan.entity?.provider ?? resolveTableProvider(input.preparedSchema.schema, leftScan.table);
   const rightProviderName =
-    rightScan.entity?.provider ?? resolveTableProvider(input.schema, rightScan.table);
+    rightScan.entity?.provider ??
+    resolveTableProvider(input.preparedSchema.schema, rightScan.table);
   const leftProviderResult =
     typeof leftProviderName === "string" ? Result.ok(leftProviderName) : leftProviderName;
   const rightProviderResult =
@@ -65,8 +66,13 @@ export function resolveSyncLookupJoinCandidate<TContext>(
   const leftProvider = leftProviderResult.value;
   const rightProvider = rightProviderResult.value;
 
-  const rightAdapter = input.providers[rightProvider];
-  if (!rightAdapter || !supportsLookupMany(rightAdapter)) {
+  const rightAdapter = input.preparedSchema.providers[rightProvider];
+  if (!rightAdapter) {
+    return null;
+  }
+
+  const rightLookupAdapter = rightAdapter;
+  if (!supportsLookupMany(rightLookupAdapter)) {
     return null;
   }
 

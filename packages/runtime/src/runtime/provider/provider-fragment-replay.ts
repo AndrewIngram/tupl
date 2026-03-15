@@ -66,7 +66,7 @@ export async function runProviderFragmentOnceResult<TContext>(input: {
 
   let rows: QueryRow[] = executeRowsResult.value;
   const mappedRowsResult = tryQueryStep("map provider rows to logical rel output rows", () =>
-    mapProviderRowsToRelOutput(rows, input.rel, input.sessionInput.schema),
+    mapProviderRowsToRelOutput(rows, input.rel, input.sessionInput.preparedSchema.schema),
   );
   if (Result.isError(mappedRowsResult)) {
     return Result.err({

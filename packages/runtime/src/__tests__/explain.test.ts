@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { createExecutableSchemaFromProviders } from "@tupl/test-support/runtime";
 import { buildEntitySchema } from "@tupl/test-support/schema";
+import { prepareRuntimeSchemaResult } from "../runtime/executable-schema";
 import { explainInternalResult } from "../runtime/query-runner";
 
 describe("runtime/explain", () => {
@@ -133,29 +134,35 @@ describe("runtime/explain", () => {
       },
     });
     let compileCalls = 0;
+    const preparedSchemaResult = prepareRuntimeSchemaResult({
+      schema,
+      providers: {
+        warehouse: {
+          name: "warehouse",
+          canExecute() {
+            return true;
+          },
+          async compile() {
+            compileCalls += 1;
+            return Result.ok({
+              provider: "warehouse",
+              kind: "rel",
+              payload: {},
+            });
+          },
+          async execute() {
+            return Result.ok([]);
+          },
+        },
+      },
+    });
+    if (Result.isError(preparedSchemaResult)) {
+      throw new Error("Expected runtime schema preparation to succeed.");
+    }
 
     const result = await explainInternalResult(
       {
-        schema,
-        providers: {
-          warehouse: {
-            name: "warehouse",
-            canExecute() {
-              return true;
-            },
-            async compile() {
-              compileCalls += 1;
-              return Result.ok({
-                provider: "warehouse",
-                kind: "rel",
-                payload: {},
-              });
-            },
-            async execute() {
-              return Result.ok([]);
-            },
-          },
-        },
+        preparedSchema: preparedSchemaResult.value,
         context: {},
         sql: "SELECT id FROM orders",
       },
@@ -188,8 +195,7 @@ describe("runtime/explain", () => {
         },
       },
     });
-
-    const result = await explainInternalResult({
+    const preparedSchemaResult = prepareRuntimeSchemaResult({
       schema,
       providers: {
         warehouse: {
@@ -205,6 +211,13 @@ describe("runtime/explain", () => {
           },
         },
       },
+    });
+    if (Result.isError(preparedSchemaResult)) {
+      throw new Error("Expected runtime schema preparation to succeed.");
+    }
+
+    const result = await explainInternalResult({
+      preparedSchema: preparedSchemaResult.value,
       context: {},
       sql: "SELECT id FROM orders",
     });

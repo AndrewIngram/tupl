@@ -2,6 +2,12 @@
 
 `tupl` uses a staged, rel-first pipeline.
 
+Schema finalization is outside the query planner/runtime loop:
+
+- schema build/finalization happens before execution
+- linked enums are materialized before runtime query/explain entry
+- provider bindings are validated when the prepared runtime schema artifact is created
+
 ## Canonical stages
 
 1. Parse SQL.
