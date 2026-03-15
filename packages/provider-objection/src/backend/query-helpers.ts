@@ -1,8 +1,4 @@
-import {
-  UnsupportedSqlRelationalPlanError,
-  type QueryRow,
-  type ScanFilterClause,
-} from "@tupl/provider-kit";
+import { type QueryRow, type ScanFilterClause } from "@tupl/provider-kit";
 import { resolveColumnFromFilterColumn, resolveColumnRef } from "@tupl/provider-kit/shapes";
 import type { RelNode } from "@tupl/foundation";
 
@@ -12,9 +8,7 @@ import type {
   ObjectionProviderEntityConfig,
   ResolvedEntityConfig,
 } from "../types";
-import type { ScanBinding } from "../planning/rel-strategy";
-
-class UnsupportedSingleQueryPlanError extends UnsupportedSqlRelationalPlanError {}
+import { UnsupportedSingleQueryPlanError, type ScanBinding } from "../planning/rel-strategy";
 
 export function toRef(
   alias: string | undefined,

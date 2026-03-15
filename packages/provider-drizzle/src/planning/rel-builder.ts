@@ -812,7 +812,9 @@ function toSqlCondition<TColumn extends string>(
 ): SQL {
   const source = columns[clause.column as TColumn];
   if (!source) {
-    throw new Error(`Unsupported filter column "${clause.column}" for table "${tableName}".`);
+    throw new UnsupportedSingleQueryPlanError(
+      `Unsupported filter column "${clause.column}" for table "${tableName}".`,
+    );
   }
   return toSqlConditionFromSource(clause, source);
 }

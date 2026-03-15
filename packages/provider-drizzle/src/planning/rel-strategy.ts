@@ -1,7 +1,9 @@
 import { isRelProjectColumnMapping, type RelExpr, type RelNode } from "@tupl/foundation";
-import type { SqlRelationalScanBinding } from "@tupl/provider-kit";
 import {
-  UnsupportedRelationalPlanError,
+  UnsupportedSqlRelationalPlanError,
+  type SqlRelationalScanBinding,
+} from "@tupl/provider-kit";
+import {
   canCompileBasicRel,
   canCompileSetOpRel,
   canCompileWithRel,
@@ -26,7 +28,7 @@ export interface DrizzleRelCompiledPlan {
 
 export type DrizzleRelCompileStrategy = "basic" | "set_op" | "with";
 
-export class UnsupportedSingleQueryPlanError extends UnsupportedRelationalPlanError {}
+export class UnsupportedSingleQueryPlanError extends UnsupportedSqlRelationalPlanError {}
 
 export interface ScanBinding<TContext>
   extends RelationalScanBindingBase, SqlRelationalScanBinding<ResolvedEntityConfig<TContext>> {

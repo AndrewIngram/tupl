@@ -1,4 +1,5 @@
 import { isRelProjectColumnMapping, type RelNode } from "@tupl/foundation";
+import { UnsupportedSqlRelationalPlanError } from "@tupl/provider-kit";
 import {
   buildSingleQueryPlan as buildRelationalSingleQueryPlan,
   canCompileBasicRel,
@@ -12,12 +13,7 @@ import {
 
 import type { ResolvedEntityConfig } from "../types";
 
-export class UnsupportedSingleQueryPlanError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "UnsupportedSingleQueryPlanError";
-  }
-}
+export class UnsupportedSingleQueryPlanError extends UnsupportedSqlRelationalPlanError {}
 
 export type ObjectionRelCompileStrategy = "basic" | "set_op" | "with";
 
