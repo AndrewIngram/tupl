@@ -4,6 +4,42 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@types/node':
+      specifier: ^24.3.0
+      version: 24.10.13
+    '@typescript/native-preview':
+      specifier: latest
+      version: 7.0.0-dev.20260315.1
+    better-result:
+      specifier: ^2.7.0
+      version: 2.7.0
+    better-sqlite3:
+      specifier: ^12.6.2
+      version: 12.6.2
+    drizzle-orm:
+      specifier: ^0.45.1
+      version: 0.45.1
+    jsdom:
+      specifier: ^27.0.0
+      version: 27.4.0
+    knex:
+      specifier: ^3.1.0
+      version: 3.1.0
+    kysely:
+      specifier: ^0.28.11
+      version: 0.28.11
+    objection:
+      specifier: ^3.1.5
+      version: 3.1.5
+    typescript:
+      specifier: ^5.9.2
+      version: 5.9.3
+    vite-plus:
+      specifier: latest
+      version: 0.1.11
+
 importers:
 
   .:
@@ -12,28 +48,28 @@ importers:
         specifier: ^7.6.13
         version: 7.6.13
       '@types/node':
-        specifier: ^24.3.0
+        specifier: 'catalog:'
         version: 24.10.13
       '@typescript/native-preview':
-        specifier: latest
+        specifier: 'catalog:'
         version: 7.0.0-dev.20260315.1
       better-result:
-        specifier: ^2.7.0
+        specifier: 'catalog:'
         version: 2.7.0
       better-sqlite3:
-        specifier: ^12.6.2
+        specifier: 'catalog:'
         version: 12.6.2
       typescript:
-        specifier: ^5.9.2
+        specifier: 'catalog:'
         version: 5.9.3
       vite-plus:
-        specifier: latest
+        specifier: 'catalog:'
         version: 0.1.11(@types/node@24.10.13)(esbuild@0.27.3)(jiti@2.6.1)(jsdom@27.4.0)(typescript@5.9.3)(vite@8.0.0(@types/node@24.10.13)(esbuild@0.27.3)(jiti@2.6.1))
 
   examples/_shared:
     dependencies:
       better-sqlite3:
-        specifier: ^12.6.2
+        specifier: 'catalog:'
         version: 12.6.2
 
   examples/basic:
@@ -60,10 +96,10 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       better-sqlite3:
-        specifier: ^12.6.2
+        specifier: 'catalog:'
         version: 12.6.2
       drizzle-orm:
-        specifier: latest
+        specifier: 'catalog:'
         version: 0.45.1(@electric-sql/pglite@0.2.17)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.6.2)(knex@3.1.0(better-sqlite3@12.6.2))(kysely@0.28.11)
 
   examples/kysely:
@@ -78,10 +114,10 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       better-sqlite3:
-        specifier: ^12.6.2
+        specifier: 'catalog:'
         version: 12.6.2
       kysely:
-        specifier: ^0.28.8
+        specifier: 'catalog:'
         version: 0.28.11
 
   examples/objection:
@@ -96,13 +132,13 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
       better-sqlite3:
-        specifier: ^12.6.2
+        specifier: 'catalog:'
         version: 12.6.2
       knex:
-        specifier: ^3.1.0
+        specifier: 'catalog:'
         version: 3.1.0(better-sqlite3@12.6.2)
       objection:
-        specifier: ^3.1.5
+        specifier: 'catalog:'
         version: 3.1.5(knex@3.1.0(better-sqlite3@12.6.2))
 
   examples/playground:
@@ -156,7 +192,7 @@ importers:
         specifier: ^12.9.0
         version: 12.10.1(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       better-result:
-        specifier: ^2.7.0
+        specifier: 'catalog:'
         version: 2.7.0
       class-variance-authority:
         specifier: ^0.7.1
@@ -168,7 +204,7 @@ importers:
         specifier: ^0.8.5
         version: 0.8.5
       drizzle-orm:
-        specifier: latest
+        specifier: 'catalog:'
         version: 0.45.1(@electric-sql/pglite@0.2.17)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.6.2)(knex@3.1.0(better-sqlite3@12.6.2))(kysely@0.28.11)
       ioredis-mock:
         specifier: latest
@@ -195,7 +231,7 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.19)
       typescript:
-        specifier: ^5.9.2
+        specifier: 'catalog:'
         version: 5.9.3
       zod:
         specifier: ^3.25.76
@@ -217,7 +253,7 @@ importers:
         specifier: ^10.4.21
         version: 10.4.27(postcss@8.5.6)
       jsdom:
-        specifier: ^27.0.0
+        specifier: 'catalog:'
         version: 27.4.0
       postcss:
         specifier: ^8.5.6
@@ -243,7 +279,7 @@ importers:
         specifier: workspace:*
         version: link:../schema-model
       better-result:
-        specifier: ^2.7.0
+        specifier: 'catalog:'
         version: 2.7.0
 
   packages/provider-drizzle:
@@ -259,7 +295,7 @@ importers:
         version: link:../schema
     devDependencies:
       drizzle-orm:
-        specifier: ^0.45.1
+        specifier: 'catalog:'
         version: 0.45.1(@electric-sql/pglite@0.2.17)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.6.2)(knex@3.1.0(better-sqlite3@12.6.2))(kysely@0.28.11)
 
   packages/provider-ioredis:
@@ -283,7 +319,7 @@ importers:
         specifier: workspace:*
         version: link:../foundation
       better-result:
-        specifier: ^2.7.0
+        specifier: 'catalog:'
         version: 2.7.0
 
   packages/provider-kysely:
@@ -299,7 +335,7 @@ importers:
         version: link:../schema
     devDependencies:
       kysely:
-        specifier: ^0.28.11
+        specifier: 'catalog:'
         version: 0.28.11
 
   packages/provider-objection:
@@ -315,10 +351,10 @@ importers:
         version: link:../schema
     devDependencies:
       knex:
-        specifier: ^3.1.0
+        specifier: 'catalog:'
         version: 3.1.0(better-sqlite3@12.6.2)
       objection:
-        specifier: ^3.1.5
+        specifier: 'catalog:'
         version: 3.1.5(knex@3.1.0(better-sqlite3@12.6.2))
 
   packages/runtime:
@@ -336,7 +372,7 @@ importers:
         specifier: workspace:*
         version: link:../schema-model
       better-result:
-        specifier: ^2.7.0
+        specifier: 'catalog:'
         version: 2.7.0
 
   packages/schema:
@@ -357,7 +393,7 @@ importers:
         specifier: workspace:*
         version: link:../provider-kit
       better-result:
-        specifier: ^2.7.0
+        specifier: 'catalog:'
         version: 2.7.0
 
   packages/test-support:
@@ -375,31 +411,31 @@ importers:
         specifier: workspace:*
         version: link:../schema-model
       better-result:
-        specifier: ^2.7.0
+        specifier: 'catalog:'
         version: 2.7.0
       better-sqlite3:
-        specifier: ^12.6.2
+        specifier: 'catalog:'
         version: 12.6.2
       vite-plus:
-        specifier: latest
+        specifier: 'catalog:'
         version: 0.1.11(@types/node@24.10.13)(esbuild@0.27.3)(jiti@2.6.1)(jsdom@27.4.0)(typescript@5.9.3)(vite@8.0.0(@types/node@24.10.13)(esbuild@0.27.3)(jiti@2.6.1))
 
   test:
     devDependencies:
       '@types/node':
-        specifier: ^24.3.0
+        specifier: 'catalog:'
         version: 24.10.13
       '@typescript/native-preview':
-        specifier: latest
+        specifier: 'catalog:'
         version: 7.0.0-dev.20260315.1
       jsdom:
-        specifier: ^27.0.0
+        specifier: 'catalog:'
         version: 27.4.0
       typescript:
-        specifier: ^5.9.2
+        specifier: 'catalog:'
         version: 5.9.3
       vite-plus:
-        specifier: latest
+        specifier: 'catalog:'
         version: 0.1.11(@types/node@24.10.13)(esbuild@0.27.3)(jiti@2.6.1)(jsdom@27.4.0)(typescript@5.9.3)(vite@8.0.0(@types/node@24.10.13)(esbuild@0.27.3)(jiti@2.6.1))
 
 packages:
