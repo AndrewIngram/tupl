@@ -16,14 +16,16 @@
   "types": "./dist/index.d.mts",
   "exports": {
     ".": {
+      "source": "./src/index.ts",
       "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     }
   },
   "scripts": {
-    "build": "tsdown src/index.ts --tsconfig tsconfig.build.json --format esm,cjs --sourcemap --clean --dts --unbundle",
+    "build": "vp pack",
     "prepublishOnly": "pnpm run build",
+    "test": "vp test run",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -32,7 +34,7 @@
     "@tupl/schema": "workspace:*"
   },
   "devDependencies": {
-    "drizzle-orm": "^0.45.1"
+    "drizzle-orm": "catalog:"
   },
   "peerDependencies": {
     "drizzle-orm": ">=0.28.3"

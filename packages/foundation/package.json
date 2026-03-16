@@ -21,7 +21,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown src/index.ts --format esm,cjs --sourcemap --clean --dts --tsconfig tsconfig.json",
+    "build": "vp pack",
+    "test": "vp test run",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   }
 }
