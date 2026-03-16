@@ -32,7 +32,7 @@
     "@tupl/schema": "workspace:*"
   },
   "devDependencies": {
-    "kysely": "^0.28.11"
+    "kysely": "catalog:"
   },
   "peerDependencies": {
     "kysely": ">=0.26"

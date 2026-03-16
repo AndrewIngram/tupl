@@ -11,10 +11,10 @@
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@types/node": "^24.3.0",
-    "@typescript/native-preview": "latest",
-    "jsdom": "^27.0.0",
-    "typescript": "^5.9.2",
-    "vite-plus": "latest"
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "jsdom": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

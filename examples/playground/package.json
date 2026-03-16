@@ -28,11 +28,11 @@
     "@tupl/runtime": "workspace:*",
     "@tupl/schema": "workspace:*",
     "@xyflow/react": "^12.9.0",
-    "better-result": "^2.7.0",
+    "better-result": "catalog:",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dagre": "^0.8.5",
-    "drizzle-orm": "latest",
+    "drizzle-orm": "catalog:",
     "ioredis-mock": "latest",
     "lucide-react": "^0.545.0",
     "monaco-editor": "^0.52.2",
@@ -41,7 +41,7 @@
     "react-dom": "^19.1.1",
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5.9.2",
+    "typescript": "catalog:",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -50,7 +50,7 @@
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "6.0.1",
     "autoprefixer": "^10.4.21",
-    "jsdom": "^27.0.0",
+    "jsdom": "catalog:",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "vite": "8.0.0"
