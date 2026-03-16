@@ -6,16 +6,13 @@ import {
   createProviderConformanceCases,
   type ProviderConformanceCase,
 } from "@tupl/provider-kit/testing";
-import {
-  createDrizzleProvider,
-  type DrizzleQueryExecutor,
-} from "../../../packages/provider-drizzle/src";
-import { createKyselyProvider } from "../../../packages/provider-kysely/src";
+import { createDrizzleProvider, type DrizzleQueryExecutor } from "@tupl/provider-drizzle";
+import { createKyselyProvider } from "@tupl/provider-kysely";
 import {
   createObjectionProvider,
   type KnexLike,
   type KnexLikeQueryBuilder,
-} from "../../../packages/provider-objection/src";
+} from "@tupl/provider-objection";
 
 function buildRel(): RelNode {
   return {

@@ -8,8 +8,8 @@ import { createExecutableSchema, createSchemaBuilder } from "@tupl/schema";
 import {
   createSqlLikeConformanceOptions,
   createSqlLikeFixtureProvider,
-} from "../../provider-fixtures/sql-like";
-import { createUnusualScanLookupFixtureProvider } from "../../provider-fixtures/unusual-scan-lookup";
+} from "../support/provider-fixtures/sql-like";
+import { createUnusualScanLookupFixtureProvider } from "../support/provider-fixtures/unusual-scan-lookup";
 
 function unwrapResult<T>(result: Result<T, Error>): T {
   if (Result.isError(result)) {

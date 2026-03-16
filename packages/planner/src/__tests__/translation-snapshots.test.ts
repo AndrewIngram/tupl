@@ -9,8 +9,8 @@ import {
   normalizeRelForSnapshot,
   planPhysicalQueryResult,
 } from "@tupl/planner";
-import { buildEntitySchema } from "@tupl/test-support/schema";
-import { finalizeProviders } from "@tupl/test-support/runtime";
+import { buildEntitySchema } from "./support/schema";
+import { finalizeProviders } from "./support/runtime";
 
 function lowerSqlToRel(sql: string, schema: Parameters<typeof lowerSqlToRelResult>[1]) {
   return lowerSqlToRelResult(sql, schema).unwrap();

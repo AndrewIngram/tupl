@@ -24,6 +24,7 @@
   },
   "scripts": {
     "build": "vp pack",
+    "test": "vp test run",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {

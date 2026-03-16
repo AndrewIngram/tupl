@@ -8,8 +8,8 @@ import {
   lowerSqlToRelResult,
   planPhysicalQueryResult,
 } from "@tupl/planner";
-import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
-import { finalizeProviders } from "@tupl/test-support/runtime";
+import { buildSchema, buildEntitySchema } from "./support/schema";
+import { finalizeProviders } from "./support/runtime";
 
 function lowerSqlToRel(sql: string, schema: Parameters<typeof lowerSqlToRelResult>[1]) {
   const result = lowerSqlToRelResult(sql, schema);

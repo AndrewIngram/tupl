@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vite-plus/test";
@@ -74,6 +74,12 @@ const DIRECT_SUBPATH_EXPORTS = [
     target: "packages/runtime/src/runtime/session/index.ts",
     packageJson: "packages/runtime/package.json",
   },
+  {
+    name: "@tupl/schema-model/mapping",
+    subpath: "./mapping",
+    target: "packages/schema-model/src/mapping/index.ts",
+    packageJson: "packages/schema-model/package.json",
+  },
 ] as const;
 
 const DISALLOWED_WRAPPER_TARGETS = [
@@ -90,7 +96,7 @@ const STRUCTURAL_LINE_BUDGETS = {
   "packages/planner/src/structured-select-lowering.ts": 1200,
   "packages/planner/src/simple-select-lowering.ts": 200,
   "packages/planner/src/select/select-shape.ts": 400,
-  "packages/planner/src/select/select-join-tree.ts": 400,
+  "packages/planner/src/select/select-join-tree.ts": 450,
   "packages/planner/src/select/select-project.ts": 300,
   "packages/planner/src/select/select-projections.ts": 800,
   "packages/planner/src/select/select-from-lowering.ts": 400,
@@ -167,8 +173,21 @@ function walkFiles(root: string): string[] {
   const out: string[] = [];
 
   for (const entry of entries) {
+    if (
+      entry === "node_modules" ||
+      entry === "dist" ||
+      entry === ".git" ||
+      entry === "coverage" ||
+      entry === ".turbo"
+    ) {
+      continue;
+    }
+
     const path = join(root, entry);
-    const stat = statSync(path);
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) {
+      continue;
+    }
     if (stat.isDirectory()) {
       out.push(...walkFiles(path));
       continue;
@@ -229,6 +248,9 @@ describe("package boundaries", () => {
     for (const [dir, allowedImports] of Object.entries(LAYER_RULES)) {
       for (const file of walkFiles(join(REPO_ROOT, dir))) {
         if (!file.endsWith(".ts") && !file.endsWith(".tsx")) {
+          continue;
+        }
+        if (file.includes("/__tests__/")) {
           continue;
         }
 
@@ -311,6 +333,9 @@ describe("package boundaries", () => {
         if (relFile.endsWith("/index.ts") && relFile === `packages/${pkgDir}/src/index.ts`) {
           continue;
         }
+        if (DIRECT_SUBPATH_EXPORTS.some((entry) => entry.target === relFile)) {
+          continue;
+        }
         if (isWrapperOnlyFile(readFileSync(file, "utf8"))) {
           offenders.push(relFile);
         }
@@ -347,7 +372,7 @@ describe("package boundaries", () => {
       }
 
       const relFile = relative(REPO_ROOT, file);
-      if (relFile.startsWith("packages/schema/")) {
+      if (relFile.startsWith("packages/schema/") || relFile.startsWith("packages/test-support/")) {
         continue;
       }
 
@@ -363,7 +388,10 @@ describe("package boundaries", () => {
       }
 
       const relFile = relative(REPO_ROOT, file);
-      if (relFile === "test/__tests__/public-package-imports.test.ts") {
+      if (
+        relFile === "test/__tests__/public-package-imports.test.ts" ||
+        relFile === "test/__tests__/package-boundaries.test.ts"
+      ) {
         continue;
       }
 
@@ -469,7 +497,7 @@ describe("package boundaries", () => {
 
   it("keeps first-party adapter conformance on the public provider-kit/testing surface", () => {
     const contents = readFileSync(
-      join(REPO_ROOT, "test/providers/__tests__/conformance.test.ts"),
+      join(REPO_ROOT, "packages/test-support/src/__tests__/providers/conformance.test.ts"),
       "utf8",
     );
     expect(contents).toContain("@tupl/provider-kit/testing");

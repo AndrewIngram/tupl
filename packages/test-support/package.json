@@ -15,6 +15,7 @@
     "./fixtures": "./src/fixtures.ts"
   },
   "scripts": {
+    "test": "vp test run",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -25,5 +26,11 @@
     "better-result": "catalog:",
     "better-sqlite3": "catalog:",
     "vite-plus": "catalog:"
+  },
+  "devDependencies": {
+    "@tupl/provider-drizzle": "workspace:*",
+    "@tupl/provider-kysely": "workspace:*",
+    "@tupl/provider-objection": "workspace:*",
+    "@tupl/schema": "workspace:*"
   }
 }

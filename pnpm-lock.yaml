@@ -434,6 +434,19 @@ importers:
       vite-plus:
         specifier: 'catalog:'
         version: 0.1.11(@types/node@24.10.13)(esbuild@0.27.3)(jiti@2.6.1)(jsdom@27.4.0)(typescript@5.9.3)(vite@8.0.0(@types/node@24.10.13)(esbuild@0.27.3)(jiti@2.6.1))
+    devDependencies:
+      '@tupl/provider-drizzle':
+        specifier: workspace:*
+        version: link:../provider-drizzle
+      '@tupl/provider-kysely':
+        specifier: workspace:*
+        version: link:../provider-kysely
+      '@tupl/provider-objection':
+        specifier: workspace:*
+        version: link:../provider-objection
+      '@tupl/schema':
+        specifier: workspace:*
+        version: link:../schema
 
   test:
     devDependencies:

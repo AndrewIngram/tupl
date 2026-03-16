@@ -1,21 +1,18 @@
 import { defineConfig } from "vite-plus";
 
+import { localPackageAliases } from "../scripts/vite/localPackageAliases.ts";
+
 export default defineConfig({
   ...(process.env.VITEST && process.env.CI
     ? { cacheDir: "../node_modules/.vite-ci/workspace-tests" }
     : {}),
   resolve: {
+    alias: localPackageAliases,
     conditions: ["source", "module", "import", "default"],
   },
   test: {
-    include: ["**/__tests__/**/*.test.ts"],
-    exclude: [
-      "**/node_modules/**",
-      "**/dist/**",
-      "**/.{idea,git,cache,output,temp}/**",
-      "__tests__/package-boundaries.test.ts",
-      "__tests__/public-package-imports.test.ts",
-    ],
+    include: ["**/__tests__/**/*.test.{ts,tsx}"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.{idea,git,cache,output,temp}/**"],
     coverage: {
       provider: "v8" as const,
       reporter: ["text", "html", "lcov", "json-summary"],

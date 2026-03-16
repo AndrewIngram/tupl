@@ -1,17 +1,19 @@
 import { defineConfig } from "vite-plus";
 
+import { localPackageAliases } from "./scripts/vite/localPackageAliases.ts";
+
 export default defineConfig({
   ...(process.env.VITEST && process.env.CI ? { cacheDir: "node_modules/.vite-ci/vitest" } : {}),
   resolve: {
+    alias: localPackageAliases,
     conditions: ["source", "module", "import", "default"],
   },
   test: {
-    include: ["**/__tests__/**/*.test.ts"],
+    include: ["**/__tests__/**/*.test.{ts,tsx}"],
     exclude: [
       "**/node_modules/**",
       "**/dist/**",
       "**/.{idea,git,cache,output,temp}/**",
-      "test/**",
       "packages/runtime/src/__tests__/compliance/standards-gaps.todo.test.ts",
     ],
     coverage: {

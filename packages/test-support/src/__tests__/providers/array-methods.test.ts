@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
-import { queryWithMethods } from "@tupl/test-support/runtime";
+import { defineTableMethods, type QueryRow } from "@tupl/schema-model";
+
 import {
   aggregateArrayRows,
   createArrayTableMethods,
   lookupArrayRows,
   scanArrayRows,
-} from "@tupl/test-support/methods";
-
-import { defineTableMethods, type QueryRow } from "@tupl/schema-model";
-import { buildEntitySchema } from "@tupl/test-support/schema";
+} from "../../methods";
+import { queryWithMethods } from "../../runtime";
+import { buildEntitySchema } from "../../schema";
 
 describe("array methods", () => {
   const orders: QueryRow[] = [

@@ -3,7 +3,7 @@ import type { RelNode } from "@tupl/foundation";
 import { createDataEntityHandle } from "@tupl/provider-kit";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildEntitySchema, buildSchema } from "@tupl/test-support/schema";
+import { buildEntitySchema, buildSchema } from "./support/schema";
 
 import { normalizeRelForProvider } from "../provider/provider-rel-normalization";
 import { normalizeRelForSnapshot } from "../translation-normalization";

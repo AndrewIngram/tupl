@@ -28,6 +28,7 @@
   "scripts": {
     "build": "vp pack",
     "prepublishOnly": "pnpm run build",
+    "test": "vp test run",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {

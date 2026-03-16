@@ -15,7 +15,7 @@ import {
   finalizeSchemaDefinition,
   getNormalizedTableBinding,
 } from "@tupl/schema-model/normalization";
-import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
+import { buildSchema, buildEntitySchema } from "./support/schema";
 
 function unwrapResult<T, E>(result: Result<T, E>): T {
   if (Result.isError(result)) {
