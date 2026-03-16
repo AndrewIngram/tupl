@@ -1,6 +1,6 @@
 import { defineConfig } from "vite-plus";
 
-import { localPackageAliases } from "../scripts/vite/localPackageAliases.ts";
+import { localPackageAliases } from "../scripts/vite/localPackageAliases.js";
 
 export default defineConfig({
   ...(process.env.VITEST && process.env.CI
