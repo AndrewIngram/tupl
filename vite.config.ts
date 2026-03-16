@@ -1,19 +1,18 @@
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  ...(process.env.VITEST && process.env.CI ? { cacheDir: "node_modules/.vite-ci/vitest" } : {}),
   resolve: {
-    tsconfigPaths: true,
+    conditions: ["source", "module", "import", "default"],
   },
   test: {
-    include: [
-      "test/providers/__tests__/**/*.test.ts",
-      "packages/*/src/**/__tests__/**/*.test.ts",
-      "examples/playground/__tests__/**/*.test.ts",
-    ],
+    include: ["**/__tests__/**/*.test.ts"],
     exclude: [
       "**/node_modules/**",
       "**/dist/**",
       "**/.{idea,git,cache,output,temp}/**",
+      "test/__tests__/package-boundaries.test.ts",
+      "test/__tests__/public-package-imports.test.ts",
       "packages/runtime/src/__tests__/compliance/standards-gaps.todo.test.ts",
     ],
     coverage: {
