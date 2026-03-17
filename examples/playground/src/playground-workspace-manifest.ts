@@ -116,12 +116,6 @@ const IOREDIS_SOURCE_IMPORTS = import.meta.glob("../../../packages/provider-iore
   query: "?raw",
 }) as Record<string, string>;
 
-const DRIZZLE_DECLARATION_IMPORTS = import.meta.glob("../node_modules/drizzle-orm/**/*.d.ts", {
-  eager: true,
-  import: "default",
-  query: "?raw",
-}) as Record<string, string>;
-
 const PGLITE_DECLARATION_IMPORTS = import.meta.glob(
   "../node_modules/@electric-sql/pglite/**/*.d.ts",
   {
@@ -192,11 +186,106 @@ const IOREDIS_SOURCE_FILES = mapVirtualFiles(
   `${PLAYGROUND_NODE_MODULES_ROOT_PATH}/@tupl/provider-ioredis`,
 );
 
-const DRIZZLE_DECLARATION_FILES = mapVirtualFiles(
-  DRIZZLE_DECLARATION_IMPORTS,
-  "/node_modules/drizzle-orm/",
-  `${PLAYGROUND_NODE_MODULES_ROOT_PATH}/drizzle-orm`,
-);
+const DRIZZLE_DECLARATION_FILES: Record<string, string> = {
+  [`${PLAYGROUND_NODE_MODULES_ROOT_PATH}/drizzle-orm/index.d.ts`]: `
+export interface SQL<T = unknown> {
+  readonly __sqlBrand?: T;
+}
+
+export interface AnyColumn<
+  TData = unknown,
+  TNotNull extends boolean = boolean,
+  TColumnType extends string = string,
+  TDataType extends string = string,
+> {
+  _: {
+    data: TData;
+    notNull: TNotNull;
+    columnType: TColumnType;
+    dataType: TDataType;
+  };
+}
+
+export interface Table<TColumns extends Record<string, AnyColumn> = Record<string, AnyColumn>> {
+  _: {
+    columns: TColumns;
+  };
+}
+
+export type InferSelectModel<TTable extends Table> = {
+  [K in keyof TTable["_"]["columns"]]: TTable["_"]["columns"][K] extends AnyColumn<
+    infer TData,
+    infer TNotNull
+  >
+    ? TNotNull extends true
+      ? TData
+      : TData | null
+    : unknown;
+};
+
+export declare function sql(
+  strings: TemplateStringsArray,
+  ...params: unknown[]
+): SQL;
+
+export declare function and(...conditions: Array<SQL | undefined>): SQL | undefined;
+export declare function asc(column: unknown): SQL;
+export declare function desc(column: unknown): SQL;
+export declare function eq(left: unknown, right: unknown): SQL;
+export declare function gt(left: unknown, right: unknown): SQL;
+export declare function gte(left: unknown, right: unknown): SQL;
+export declare function inArray(left: unknown, right: unknown[]): SQL;
+export declare function isNotNull(value: unknown): SQL;
+export declare function isNull(value: unknown): SQL;
+export declare function lt(left: unknown, right: unknown): SQL;
+export declare function lte(left: unknown, right: unknown): SQL;
+export declare function ne(left: unknown, right: unknown): SQL;
+`.trim(),
+  [`${PLAYGROUND_NODE_MODULES_ROOT_PATH}/drizzle-orm/pg-core/index.d.ts`]: `
+import type { AnyColumn, SQL, Table } from "../index";
+
+export interface PgColumnBuilder<
+  TData = unknown,
+  TNotNull extends boolean = false,
+  TColumnType extends string = string,
+  TDataType extends string = string,
+> extends AnyColumn<TData, TNotNull, TColumnType, TDataType> {
+  notNull(): PgColumnBuilder<TData, true, TColumnType, TDataType>;
+  primaryKey(): PgColumnBuilder<TData, true, TColumnType, TDataType>;
+  references(reference: () => AnyColumn): PgColumnBuilder<TData, TNotNull, TColumnType, TDataType>;
+}
+
+export type PgTableWithColumns<TColumns extends Record<string, AnyColumn>> = Table<TColumns> & TColumns;
+
+export declare function boolean(name: string): PgColumnBuilder<boolean, false, "PgBoolean", "boolean">;
+export declare function integer(name: string): PgColumnBuilder<number, false, "PgInteger", "number">;
+export declare function text(name: string): PgColumnBuilder<string, false, "PgText", "string">;
+export declare function timestamp(
+  name: string,
+  options?: { mode?: "string" | "date" },
+): PgColumnBuilder<string | Date, false, "PgTimestamp", "date">;
+
+export declare function pgTable<TColumns extends Record<string, AnyColumn>>(
+  name: string,
+  columns: TColumns,
+): PgTableWithColumns<TColumns>;
+
+export type PgColumn = AnyColumn;
+export type ExtraConfigColumn = AnyColumn;
+export interface PgSequenceOptions {
+  readonly name?: string;
+}
+
+export { SQL };
+`.trim(),
+  [`${PLAYGROUND_NODE_MODULES_ROOT_PATH}/drizzle-orm/pglite/index.d.ts`]: `
+export interface PgliteDatabase<TSchema = unknown> {
+  readonly _: TSchema;
+}
+
+export declare function drizzle(client: unknown, config?: unknown): any;
+`.trim(),
+};
 
 const PGLITE_DECLARATION_FILES = mapVirtualFiles(
   PGLITE_DECLARATION_IMPORTS,

@@ -9,6 +9,7 @@ import type { ExecutedProviderOperation } from "./types";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./components/ui/collapsible";
+import { ObjectTreeViewer } from "./components/ObjectTreeViewer";
 import { ScrollArea } from "./components/ui/scroll-area";
 import {
   Table,
@@ -32,9 +33,9 @@ function executedOperationSqlModelPath(index: number): string {
 
 export function JsonBlock({ value }: { value: unknown }): React.JSX.Element {
   return (
-    <ScrollArea className="h-40 rounded-md border bg-slate-50 p-2">
-      <pre className="font-mono text-xs text-slate-700">{JSON.stringify(value, null, 2)}</pre>
-    </ScrollArea>
+    <div className="rounded-md border bg-white">
+      <ObjectTreeViewer value={value} className="explain-object-viewer" />
+    </div>
   );
 }
 

@@ -1,4 +1,3 @@
-import { drizzle } from "drizzle-orm/pglite";
 import type { RedisLike, RedisPipelineLike } from "@tupl/provider-ioredis";
 import type { QueryRow } from "@tupl/schema";
 import { REDIS_INPUT_TABLE_NAME, type RedisInputRow } from "./redis-provider";
@@ -20,7 +19,7 @@ import {
 
 interface PlaygroundPgliteRuntime {
   client: PGliteClient;
-  db: ReturnType<typeof drizzle>;
+  db: ReturnType<typeof import("drizzle-orm/pglite").drizzle>;
 }
 
 interface PlaygroundRedisRuntime {
@@ -88,11 +87,10 @@ class InMemoryRedisClient implements PlaygroundRedisClient {
 let pgliteRuntimePromise: Promise<PlaygroundPgliteRuntime> | null = null;
 let redisRuntimePromise: Promise<PlaygroundRedisRuntime> | null = null;
 let pgliteCtorPromise: Promise<PGliteConstructor> | null = null;
+let drizzlePglitePromise: Promise<typeof import("drizzle-orm/pglite").drizzle> | null = null;
 let redisCtorPromise: Promise<RedisConstructor> | null = null;
 const executedProviderOperations: ExecutedProviderOperation[] = [];
 let nextOperationId = 1;
-
-const PGLITE_CDN_URL = "https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js";
 
 interface PGliteClient {
   exec(statement: string): Promise<unknown>;
@@ -273,7 +271,7 @@ function readRedisInputRows(rows: DownstreamRows): RedisInputRow[] {
 }
 
 async function createPgliteRuntime(): Promise<PlaygroundPgliteRuntime> {
-  const PGlite = await loadPGliteConstructor();
+  const [PGlite, drizzle] = await Promise.all([loadPGliteConstructor(), loadDrizzlePglite()]);
   const client = new PGlite();
 
   const logger = {
@@ -330,22 +328,6 @@ async function loadRedisConstructor(): Promise<RedisConstructor> {
 
 async function loadPGliteConstructor(): Promise<PGliteConstructor> {
   pgliteCtorPromise ??= (async () => {
-    const preferCdn =
-      typeof globalThis === "object" &&
-      typeof globalThis.location === "object" &&
-      (globalThis.location.protocol === "http:" || globalThis.location.protocol === "https:");
-    if (preferCdn) {
-      try {
-        const cdnModule = await import(/* @vite-ignore */ PGLITE_CDN_URL);
-        const cdnConstructor = (cdnModule as { PGlite?: unknown }).PGlite;
-        if (typeof cdnConstructor === "function") {
-          return cdnConstructor as PGliteConstructor;
-        }
-      } catch {
-        // fall through to local fallback
-      }
-    }
-
     const localModule = await import("@electric-sql/pglite");
     const localConstructor = (localModule as { PGlite?: unknown }).PGlite;
     if (typeof localConstructor === "function") {
@@ -353,12 +335,28 @@ async function loadPGliteConstructor(): Promise<PGliteConstructor> {
     }
 
     throw new Error("Failed to load PGlite constructor.");
-  })();
+  })().catch((error) => {
+    pgliteCtorPromise = null;
+    throw error;
+  });
   return pgliteCtorPromise;
 }
 
+async function loadDrizzlePglite(): Promise<typeof import("drizzle-orm/pglite").drizzle> {
+  drizzlePglitePromise ??= import("drizzle-orm/pglite")
+    .then((module) => module.drizzle)
+    .catch((error) => {
+      drizzlePglitePromise = null;
+      throw error;
+    });
+  return drizzlePglitePromise;
+}
+
 export async function getPlaygroundPgliteRuntime(): Promise<PlaygroundPgliteRuntime> {
-  pgliteRuntimePromise ??= createPgliteRuntime();
+  pgliteRuntimePromise ??= createPgliteRuntime().catch((error) => {
+    pgliteRuntimePromise = null;
+    throw error;
+  });
   return pgliteRuntimePromise;
 }
 
