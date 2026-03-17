@@ -217,6 +217,9 @@ export function requestSandboxWorker<K extends keyof SandboxRpcRequestMap>(
       }
 
       console.warn("[playground-sandbox] resetting worker after stale bundle error", error);
+      rejectPendingRequests(
+        new SandboxWorkerTransportError("Sandbox worker reset after stale bundle error."),
+      );
       resetSandboxWorker();
       return requestSandboxViaWorker(kind, payload);
     }
