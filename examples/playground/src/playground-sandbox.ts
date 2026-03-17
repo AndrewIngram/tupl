@@ -171,7 +171,6 @@ async function runSandboxPhase<T>(phase: string, fn: () => Promise<T>): Promise<
     return await fn();
   } catch (error) {
     const message = `[SANDBOX_${phase}] ${asErrorMessage(error)}`;
-    console.error(message, error);
     throw new Error(message);
   }
 }

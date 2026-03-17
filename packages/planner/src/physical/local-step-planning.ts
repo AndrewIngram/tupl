@@ -26,16 +26,21 @@ export async function planPhysicalNodeResult<TContext>(
 
     switch (node.kind) {
       case "values":
+        return Result.ok(
+          recordPhysicalStep(state, {
+            id: nextPhysicalStepId("local_project"),
+            kind: "local_project",
+            dependsOn: [],
+            summary: "Local literal row materialization",
+          }),
+        );
       case "cte_ref":
         return Result.ok(
           recordPhysicalStep(state, {
             id: nextPhysicalStepId("local_project"),
             kind: "local_project",
             dependsOn: [],
-            summary:
-              node.kind === "values"
-                ? "Local literal row materialization"
-                : `Local CTE read (${node.name})`,
+            summary: `Local CTE read (${node.name})`,
           }),
         );
       case "scan":
@@ -68,9 +73,13 @@ export async function planPhysicalNodeResult<TContext>(
       case "aggregate":
       case "sort":
       case "limit_offset":
-        return planUnaryLocalNodeResult(node, schema, providers, context, state);
+        return Result.ok(
+          yield* Result.await(planUnaryLocalNodeResult(node, schema, providers, context, state)),
+        );
       case "join":
-        return planJoinNodeResult(node, schema, providers, context, state);
+        return Result.ok(
+          yield* Result.await(planJoinNodeResult(node, schema, providers, context, state)),
+        );
       case "window": {
         const input = yield* Result.await(
           planPhysicalNodeResult(node.input, schema, providers, context, state),

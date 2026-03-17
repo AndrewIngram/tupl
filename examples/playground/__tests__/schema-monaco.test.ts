@@ -9,15 +9,10 @@ describe("playground/schema-monaco", () => {
     const setEagerModelSync = vi.fn();
     const addExtraLib = vi.fn();
     const createModel = vi.fn();
-    const getModel = vi.fn(() => null);
 
     const monaco = {
-      Uri: {
-        parse: (value: string) => ({ toString: () => value }),
-      },
       editor: {
         createModel,
-        getModel,
       },
       languages: {
         typescript: {
@@ -56,7 +51,7 @@ describe("playground/schema-monaco", () => {
       noSuggestionDiagnostics: false,
     });
     expect(setEagerModelSync).toHaveBeenCalledWith(true);
-    expect(createModel).toHaveBeenCalled();
     expect(addExtraLib).toHaveBeenCalled();
+    expect(createModel).not.toHaveBeenCalled();
   });
 });
