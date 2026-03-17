@@ -9,13 +9,6 @@ const STATIC_WORKSPACE = buildPlaygroundStaticWorkspaceSnapshot();
 
 let workspaceLibrariesRegistered = false;
 
-function inferLanguage(path: string): "typescript" | "javascript" {
-  if (path.endsWith(".ts") || path.endsWith(".d.ts") || path.endsWith(".tsx")) {
-    return "typescript";
-  }
-  return "javascript";
-}
-
 export function configureSchemaTypescriptProject(monaco: typeof Monaco): void {
   monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
     target: monaco.languages.typescript.ScriptTarget.ES2020,
@@ -43,14 +36,11 @@ export function configureSchemaTypescriptProject(monaco: typeof Monaco): void {
     return;
   }
 
+  // These files only need to exist for TS resolution and diagnostics. Creating editor
+  // models for the whole readonly workspace triggers Monaco listener-pressure warnings.
   for (const [path, contents] of Object.entries(STATIC_WORKSPACE.sourceFiles)) {
-    const uri = monaco.Uri.parse(`file://${path}`);
-    const existing = monaco.editor.getModel(uri);
-    if (!existing) {
-      monaco.editor.createModel(contents, inferLanguage(path), uri);
-    }
+    monaco.languages.typescript.typescriptDefaults.addExtraLib(contents, `file://${path}`);
   }
-
   for (const [path, contents] of Object.entries(STATIC_WORKSPACE.declarationFiles)) {
     monaco.languages.typescript.typescriptDefaults.addExtraLib(contents, `file://${path}`);
   }

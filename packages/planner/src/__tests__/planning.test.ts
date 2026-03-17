@@ -216,6 +216,36 @@ describe("query/planning", () => {
     });
   });
 
+  it("physically plans providerless recursive CTEs without panic", async () => {
+    const schema = buildEntitySchema({});
+
+    const lowered = lowerSqlToRel(
+      `
+        WITH RECURSIVE fib AS (
+          SELECT 0 AS n, 1 AS next_n, 1 AS depth
+          UNION ALL
+          SELECT next_n AS n, n + next_n AS next_n, depth + 1 AS depth
+          FROM fib
+          WHERE depth < 10
+        )
+        SELECT n
+        FROM fib
+        ORDER BY depth
+      `,
+      schema,
+    );
+
+    const result = await planPhysicalQueryResult(lowered.rel, schema, {}, {});
+    expect(Result.isOk(result)).toBe(true);
+    if (Result.isError(result)) {
+      throw result.error;
+    }
+
+    expect(result.value.rel.kind).toBe("with");
+    expect(result.value.steps.length).toBeGreaterThan(0);
+    expect(result.value.rootStepId).toMatch(/^local_/u);
+  });
+
   it("plans lookup_join for cross-provider joins with lookupMany", async () => {
     const schema = buildEntitySchema({
       orders: {
