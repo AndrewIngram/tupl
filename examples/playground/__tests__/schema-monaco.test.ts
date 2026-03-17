@@ -36,8 +36,10 @@ describe("playground/schema-monaco", () => {
     } as unknown as Parameters<typeof configureSchemaTypescriptProject>[0];
 
     configureSchemaTypescriptProject(monaco);
+    const addExtraLibCallsAfterFirstConfigure = addExtraLib.mock.calls.length;
+    configureSchemaTypescriptProject(monaco);
 
-    expect(setCompilerOptions).toHaveBeenCalledTimes(1);
+    expect(setCompilerOptions).toHaveBeenCalledTimes(2);
     expect(setCompilerOptions).toHaveBeenCalledWith(
       expect.objectContaining({
         strict: true,
@@ -52,6 +54,9 @@ describe("playground/schema-monaco", () => {
     });
     expect(setEagerModelSync).toHaveBeenCalledWith(true);
     expect(addExtraLib).toHaveBeenCalled();
+    expect(createModel).not.toHaveBeenCalled();
+    expect(addExtraLibCallsAfterFirstConfigure).toBeGreaterThan(1);
+    expect(addExtraLib.mock.calls.length).toBe(addExtraLibCallsAfterFirstConfigure);
     expect(createModel).not.toHaveBeenCalled();
   });
 });

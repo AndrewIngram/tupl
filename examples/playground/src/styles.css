@@ -79,4 +79,49 @@
   .query-editor-overlay {
     z-index: 40;
   }
+
+  .explain-object-viewer {
+    background: white;
+    border-radius: 0.375rem;
+    color: rgb(51 65 85);
+    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 0.75rem;
+  }
+
+  .object-tree-viewer__value--default {
+    color: rgb(30 41 59);
+  }
+
+  .object-tree-viewer__value--object {
+    color: rgb(37 99 235);
+  }
+
+  .object-tree-viewer__value--array {
+    color: rgb(217 119 6);
+  }
+
+  .object-tree-viewer__value--string {
+    color: rgb(5 150 105);
+  }
+
+  .object-tree-viewer__value--number {
+    color: rgb(8 145 178);
+  }
+
+  .object-tree-viewer__value--boolean {
+    color: rgb(220 38 38);
+  }
+
+  .object-tree-viewer__value--null,
+  .object-tree-viewer__value--undefined {
+    color: rgb(100 116 139);
+  }
+
+  .object-tree-viewer__value--function {
+    color: rgb(109 40 217);
+    font-style: italic;
+  }
 }

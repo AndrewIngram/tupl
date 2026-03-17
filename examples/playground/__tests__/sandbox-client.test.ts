@@ -122,4 +122,77 @@ describe("playground sandbox client", () => {
     });
     expect(validateSchemaInSandbox).toHaveBeenCalledTimes(2);
   });
+
+  it("recreates the worker and retries once after a stale bundle error", async () => {
+    let workerInstanceCount = 0;
+
+    class StaleBundleWorker {
+      onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent<unknown>) => void) | null = null;
+      private readonly instanceNumber: number;
+
+      constructor() {
+        workerInstanceCount += 1;
+        this.instanceNumber = workerInstanceCount;
+      }
+
+      postMessage(request: { id: number }): void {
+        queueMicrotask(() => {
+          if (this.instanceNumber === 1) {
+            this.onmessage?.({
+              data: {
+                id: request.id,
+                ok: false,
+                error: "[SANDBOX_RESEED] Invalid FS bundle size: 2 !== 1",
+              },
+            } as MessageEvent<unknown>);
+            return;
+          }
+
+          this.onmessage?.({
+            data: {
+              id: request.id,
+              ok: true,
+              payload: {
+                ok: false,
+                issues: [{ severity: "error", message: "SCHEMA_EXPORT_MISSING" }],
+                diagnostics: [],
+                graph: null,
+                schemaText: "",
+                exports: [],
+              },
+            },
+          } as MessageEvent<unknown>);
+        });
+      }
+
+      terminate(): void {}
+    }
+
+    (
+      globalThis as typeof globalThis & {
+        Worker?: new (url: URL | string, options?: WorkerOptions) => Worker;
+      }
+    ).Worker = StaleBundleWorker as unknown as new (
+      url: URL | string,
+      options?: WorkerOptions,
+    ) => Worker;
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { requestSandboxWorker } = await import("../src/playground-sandbox-client");
+    const result = await requestSandboxWorker("validate_schema", {
+      schemaCode: "",
+      options: {},
+    });
+
+    expect(workerInstanceCount).toBe(2);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[playground-sandbox] resetting worker after stale bundle error",
+      expect.any(Error),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.issues[0]?.message).toContain("SCHEMA_EXPORT_MISSING");
+  });
 });

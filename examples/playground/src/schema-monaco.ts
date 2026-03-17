@@ -7,9 +7,13 @@ import {
 
 const STATIC_WORKSPACE = buildPlaygroundStaticWorkspaceSnapshot();
 
-let workspaceLibrariesRegistered = false;
+const SCHEMA_MONACO_CONFIGURED_SYMBOL = Symbol.for("tupl.playground.schema-monaco-configured");
 
 export function configureSchemaTypescriptProject(monaco: typeof Monaco): void {
+  const monacoWithFlag = monaco as typeof Monaco & {
+    [SCHEMA_MONACO_CONFIGURED_SYMBOL]?: boolean;
+  };
+
   monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
     target: monaco.languages.typescript.ScriptTarget.ES2020,
     module: monaco.languages.typescript.ModuleKind.ESNext,
@@ -32,7 +36,7 @@ export function configureSchemaTypescriptProject(monaco: typeof Monaco): void {
   });
   monaco.languages.typescript.typescriptDefaults.setEagerModelSync(true);
 
-  if (workspaceLibrariesRegistered) {
+  if (monacoWithFlag[SCHEMA_MONACO_CONFIGURED_SYMBOL]) {
     return;
   }
 
@@ -45,5 +49,5 @@ export function configureSchemaTypescriptProject(monaco: typeof Monaco): void {
     monaco.languages.typescript.typescriptDefaults.addExtraLib(contents, `file://${path}`);
   }
 
-  workspaceLibrariesRegistered = true;
+  monacoWithFlag[SCHEMA_MONACO_CONFIGURED_SYMBOL] = true;
 }

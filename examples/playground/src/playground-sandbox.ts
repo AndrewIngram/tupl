@@ -1,7 +1,5 @@
 import * as drizzleOrmModule from "drizzle-orm";
 import * as drizzlePgCoreModule from "drizzle-orm/pg-core";
-import * as drizzlePgliteModule from "drizzle-orm/pglite";
-import * as pgliteModule from "@electric-sql/pglite";
 import * as betterResultModule from "better-result";
 import type { ProviderAdapter } from "@tupl/provider-kit";
 import { lowerSqlToRelResult, planPhysicalQueryResult } from "@tupl/planner";
@@ -121,6 +119,10 @@ const providerRuntimeCache = new Map<
   string,
   Promise<SandboxProviderRuntime<PlaygroundRuntimeContext>>
 >();
+let browserPlaygroundModulePromise: Promise<{
+  drizzlePgliteModule: typeof import("drizzle-orm/pglite");
+  pgliteModule: typeof import("@electric-sql/pglite");
+}> | null = null;
 let nextSessionId = 1;
 const MAX_PROVIDER_RUNTIME_CACHE_ENTRIES = 8;
 const MAX_SANDBOX_SESSION_ENTRIES = 32;
@@ -224,7 +226,8 @@ function readProviderExportOrThrow<TContext>(
 }
 
 async function buildExternalRuntimeModules(): Promise<Record<string, unknown>> {
-  const [dbRuntime, redisRuntime] = await Promise.all([
+  const [{ drizzlePgliteModule, pgliteModule }, dbRuntime, redisRuntime] = await Promise.all([
+    loadBrowserPlaygroundModules(),
     getPlaygroundPgliteRuntime(),
     getPlaygroundRedisRuntime(),
   ]);
@@ -242,6 +245,26 @@ async function buildExternalRuntimeModules(): Promise<Record<string, unknown>> {
       getPlaygroundDb: () => dbRuntime.db,
     },
   };
+}
+
+async function loadBrowserPlaygroundModules(): Promise<{
+  drizzlePgliteModule: typeof import("drizzle-orm/pglite");
+  pgliteModule: typeof import("@electric-sql/pglite");
+}> {
+  browserPlaygroundModulePromise ??= Promise.all([
+    import("drizzle-orm/pglite"),
+    import("@electric-sql/pglite"),
+  ])
+    .then(([drizzlePgliteModule, pgliteModule]) => ({
+      drizzlePgliteModule,
+      pgliteModule,
+    }))
+    .catch((error) => {
+      browserPlaygroundModulePromise = null;
+      throw error;
+    });
+
+  return browserPlaygroundModulePromise;
 }
 
 function buildWorkspace(

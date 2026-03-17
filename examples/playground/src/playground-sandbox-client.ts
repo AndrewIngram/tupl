@@ -40,6 +40,16 @@ class SandboxWorkerTransportError extends Error {
   }
 }
 
+function isRetryableSandboxWorkerResetError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message.includes("Invalid FS bundle size:") || error.message.includes("[SANDBOX_RESEED]")
+  );
+}
+
 let sandboxWorker: Worker | null = null;
 let nextRequestId = 1;
 const pendingRequests = new Map<number, PendingRequest>();
@@ -48,6 +58,13 @@ const SANDBOX_WORKER_ENABLED = true;
 function resetSandboxWorker(): void {
   sandboxWorker?.terminate();
   sandboxWorker = null;
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    rejectPendingRequests(new SandboxWorkerTransportError("Sandbox worker reloaded."));
+    resetSandboxWorker();
+  });
 }
 
 function rejectPendingRequests(error: Error): void {
@@ -195,7 +212,13 @@ export function requestSandboxWorker<K extends keyof SandboxRpcRequestMap>(
 
   return requestSandboxViaWorker(kind, payload).catch(async (error: unknown) => {
     if (!(error instanceof SandboxWorkerTransportError)) {
-      throw error;
+      if (!isRetryableSandboxWorkerResetError(error)) {
+        throw error;
+      }
+
+      console.warn("[playground-sandbox] resetting worker after stale bundle error", error);
+      resetSandboxWorker();
+      return requestSandboxViaWorker(kind, payload);
     }
 
     rejectPendingRequests(error);
