@@ -1,5 +1,7 @@
 # tupl
 
+**Warning**: Feel free to play around with this, but don't rely on it in real code. The API for defining your abstracted database is converging on something I'm happy with, but the approach to building custom providers (e.g Drizzle, Objection etc) is very unstable and prone to significant rewrites.
+
 `tupl` lets you expose a controlled SQL facade over one or more underlying data systems.
 
 ## What
