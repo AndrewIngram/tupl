@@ -5,12 +5,14 @@ import {
 import type { LookupManyCapableProviderAdapter } from "@tupl/provider-kit/shapes";
 
 import { executeLookupManyResult } from "./execution/lookup-execution";
-import { objectionQueryTranslationBackend } from "./planning/rel-builder";
+import {
+  objectionQueryTranslationBackend,
+  type ObjectionTranslatedQuery,
+} from "./planning/rel-builder";
 import { resolveKnex } from "./backend/runtime-checks";
 import type {
   CreateObjectionProviderOptions,
   KnexLike,
-  KnexLikeQueryBuilder,
   ObjectionProviderEntities,
   ObjectionProviderEntityConfig,
   ResolvedEntityConfig,
@@ -50,7 +52,7 @@ export function createObjectionProvider<
     ResolvedEntityConfig<TContext>,
     ScanBinding<TContext>,
     KnexLike,
-    KnexLikeQueryBuilder,
+    ObjectionTranslatedQuery,
     ObjectionProviderEntities<TEntities>
   >({
     name: providerName,

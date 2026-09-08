@@ -31,6 +31,7 @@
     "@tupl/provider-drizzle": "workspace:*",
     "@tupl/provider-kysely": "workspace:*",
     "@tupl/provider-objection": "workspace:*",
-    "@tupl/schema": "workspace:*"
+    "@tupl/schema": "workspace:*",
+    "vite": "catalog:"
   }
 }

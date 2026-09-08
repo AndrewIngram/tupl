@@ -87,7 +87,7 @@ function createMockKnex(
       rightJoin(table: unknown) {
         return builder.innerJoin?.(table, "", "") as KnexLikeQueryBuilder;
       },
-      fullJoin(table: unknown) {
+      fullOuterJoin(table: unknown) {
         return builder.innerJoin?.(table, "", "") as KnexLikeQueryBuilder;
       },
       where(...args: unknown[]) {

@@ -11,7 +11,6 @@ import {
   resolveRelationalCapabilityContext,
 } from "./relational-capabilities";
 import { buildRelationalEntityHandles } from "./relational-entities";
-import { type RelationalProviderCompileRelArgs } from "./relational-adapter-types";
 import type {
   LookupCapableRelationalProviderAdapter,
   RelationalProviderAdapter,

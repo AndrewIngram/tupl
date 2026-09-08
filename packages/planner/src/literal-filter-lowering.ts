@@ -9,7 +9,6 @@ import {
   parseSupportedCorrelatedInSubquery,
   parseSupportedCorrelatedScalarAggregateSubquery,
 } from "./subqueries/analysis";
-import { literalFilterToRelExpr } from "./expr/literal-filter-operators";
 import type {
   CorrelatedExistsFilter,
   CorrelatedInSubqueryFilter,

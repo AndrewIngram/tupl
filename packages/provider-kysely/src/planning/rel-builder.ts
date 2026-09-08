@@ -7,7 +7,7 @@ import {
 } from "@tupl/provider-kit/relational-sql";
 
 import {
-  applyBase,
+  createScopedSource,
   applyWhereClause,
   resolveQualifiedColumnRef,
   toRef,
@@ -36,10 +36,7 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
   KyselyQueryBuilderLike
 > = {
   async createRootQuery({ runtime, root, context }) {
-    const rootFrom = `${root.table} as ${root.alias}`;
-    let query = runtime.selectFrom(rootFrom);
-    query = await applyBase(query, runtime, root, context, root.alias);
-    return query;
+    return runtime.selectFrom(await createScopedSource(runtime, root, context));
   },
   async applyRegularJoin({ query, join, context, runtime }) {
     const joinMethod =
@@ -58,14 +55,13 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
       );
     }
 
-    const next = (fn as (...args: unknown[]) => KyselyQueryBuilderLike).call(
+    const source = await createScopedSource(runtime, join.right, context);
+    return (fn as (...args: unknown[]) => KyselyQueryBuilderLike).call(
       query,
-      `${join.right.table} as ${join.right.alias}`,
+      source,
       `${join.leftKey.alias}.${join.leftKey.column}`,
       `${join.rightKey.alias}.${join.rightKey.column}`,
     );
-
-    return applyBase(next, runtime, join.right, context, join.right.alias);
   },
   applySemiJoin({ query, leftKey, subquery }) {
     return query.where(`${leftKey.alias}.${leftKey.column}`, "in", subquery);

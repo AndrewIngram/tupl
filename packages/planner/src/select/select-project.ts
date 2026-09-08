@@ -98,30 +98,31 @@ function buildFinalProject(current: RelNode, shape: PreparedSimpleSelect): RelNo
     convention: "local",
     input: current,
     columns: shape.aggregateMode
-      ? [...shape.safeAggregateProjections, ...shape.aggregateWindowProjections].map((projection) =>
-          projection.kind === "group" && projection.source
-            ? {
-                kind: "column" as const,
-                source: { column: projection.source.column },
-                output: projection.output,
-              }
-            : projection.kind === "metric"
+      ? [...shape.safeAggregateProjections, ...shape.aggregateWindowProjections].map(
+          (projection) =>
+            projection.kind === "group" && projection.source
               ? {
                   kind: "column" as const,
-                  source: { column: projection.metric.as },
+                  source: { column: projection.source.column },
                   output: projection.output,
                 }
-              : "function" in projection
+              : projection.kind === "metric"
                 ? {
                     kind: "column" as const,
-                    source: { column: projection.function.as },
+                    source: { column: projection.metric.as },
                     output: projection.output,
                   }
-                : {
-                    kind: "expr" as const,
-                    expr: projection.expr!,
-                    output: projection.output,
-                  },
+                : "function" in projection
+                  ? {
+                      kind: "column" as const,
+                      source: { column: projection.function.as },
+                      output: projection.output,
+                    }
+                  : {
+                      kind: "expr" as const,
+                      expr: projection.expr!,
+                      output: projection.output,
+                    },
         )
       : shape.safeProjections.map((projection) => ({
           ...(projection.kind === "expr" && !projection.source

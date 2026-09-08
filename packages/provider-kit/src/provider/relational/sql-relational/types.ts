@@ -85,6 +85,8 @@ export type SqlRelationalOrderTerm = SqlRelationalQualifiedOrderTerm | SqlRelati
 /**
  * Query translation hooks own backend-specific query-builder lowering once provider-kit has chosen
  * a rel strategy and assembled the backend-neutral single-query shape.
+ * TQuery must not be thenable: wrap executable builders in an object so awaiting
+ * translation hooks cannot execute an unfinished query.
  */
 export interface SqlRelationalQueryTranslationBackend<
   TContext,

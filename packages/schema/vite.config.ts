@@ -8,6 +8,7 @@ export default defineConfig({
     conditions: ["source", "module", "import", "default"],
   },
   pack: {
+    deps: { resolveDepSubpath: true },
     entry: ["src/index.ts"],
     format: ["esm", "cjs"],
     sourcemap: true,

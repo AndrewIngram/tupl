@@ -50,6 +50,19 @@ export async function applyBase<TContext>(
   });
 }
 
+export async function createScopedSource<TContext>(
+  db: KyselyDatabaseLike,
+  binding: ScanBinding<TContext>,
+  context: TContext,
+) {
+  const from = `${binding.table} as ${binding.alias}`;
+  if (!binding.resolved.config.base) {
+    return from;
+  }
+  const query = await applyBase(db.selectFrom(from), db, binding, context, binding.alias);
+  return query.selectAll().as(binding.alias);
+}
+
 export function applyWhereClause<TContext>(
   query: KyselyQueryBuilderLike,
   clause: ScanFilterClause,

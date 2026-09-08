@@ -47,3 +47,13 @@ Compiled plans are provider-specific payloads. `tupl` does not assume SQL text i
   - one nested `queryBackend` for backend-specific query translation
   - optional `advanced` overrides only for real backend exceptions
 - `createRelationalProviderAdapter(...)` remains the lower-level escape hatch for unusual adapters.
+
+## Mandatory entity scope
+
+A provider's `scope` or `base` callback restricts the entity's rows for the current execution context. Apply it to every source before joins, aggregation, set operations, CTEs, windows, sorting, and pagination. Lookup paths must apply the same restrictions. Resolve callbacks at execution time, including when a compiled plan is reused with another context, and propagate callback failures.
+
+Drizzle and Kysely use scoped derived tables for relational reads. Objection uses its scoped base queries as derived sources. Applying mandatory scope as a final `WHERE` predicate on an outer join is incorrect: it removes unmatched rows instead of joining the restricted inputs. Unscoped sources can use their physical tables directly.
+
+Query translation hooks may be awaited. Adapters with thenable query builders must carry those builders inside a non-thenable object throughout translation, including set-operation branches and CTEs. Objection uses `{ builder }`; only `executeQuery` consumes the thenable.
+
+The database-backed operation matrix in `test/__tests__/provider-scope.test.ts` checks these contracts against SQLite for all three SQL providers. Redis shares context-aware key construction and decoding between its keyed scan and lookup paths.
