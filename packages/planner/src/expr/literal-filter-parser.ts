@@ -161,7 +161,7 @@ export function parseLiteralFilter(
   return null;
 }
 
-export function flattenConjunctiveWhere(where: unknown): unknown[] | null {
+export function flattenConjunctiveWhere(where: unknown): unknown[] {
   if (!where) {
     return [];
   }
@@ -176,15 +176,7 @@ export function flattenConjunctiveWhere(where: unknown): unknown[] | null {
   if (expr.type === "binary_expr" && expr.operator === "AND") {
     const left = flattenConjunctiveWhere(expr.left);
     const right = flattenConjunctiveWhere(expr.right);
-    if (!left || !right) {
-      return null;
-    }
-
     return [...left, ...right];
-  }
-
-  if (expr.type === "binary_expr" && expr.operator === "OR") {
-    return null;
   }
 
   return [expr];

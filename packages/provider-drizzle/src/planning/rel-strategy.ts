@@ -80,8 +80,7 @@ export function resolveDrizzleRelCompileStrategy(
     canCompileSetOp: (current) =>
       canCompileSetOpRel(
         current,
-        (branch) =>
-          canCompileBasicRel(branch, (table) => !!entityConfigs[table]) ? "basic" : null,
+        (branch) => resolveDrizzleRelCompileStrategy(branch, entityConfigs),
         requireColumnProjectMapping,
       ),
     canCompileWith: (current) =>
@@ -301,6 +300,11 @@ function createProjectedScanBinding<TContext>(
   const columns: Record<string, AnyColumn | SQL> = {};
 
   for (const rawMapping of project.columns) {
+    if (rawMapping.output.includes(".")) {
+      throw new UnsupportedSingleQueryPlanError(
+        "Qualified projected join outputs require local execution.",
+      );
+    }
     if (isRelProjectColumnMapping(rawMapping)) {
       if (rawMapping.source.alias && rawMapping.source.alias !== base.alias) {
         throw new UnsupportedSingleQueryPlanError(

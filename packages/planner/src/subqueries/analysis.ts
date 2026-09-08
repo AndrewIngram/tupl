@@ -311,6 +311,7 @@ export function parseSupportedCorrelatedExistsSubquery(
   }
 
   const subquery = parsed.subquery;
+  if (!Array.isArray(subquery.columns)) return null;
 
   if (subquery.groupby || subquery.having || subquery.limit || subquery.window) {
     return null;
@@ -351,6 +352,22 @@ export function parseSupportedCorrelatedExistsSubquery(
   }
 
   const { where: _ignoredWhere, ...subqueryWithoutWhere } = subquery;
+  // Keep the removed correlation key in the lowered scan and schema validation.
+  // EXISTS does not expose its projection, but decorrelation still needs this value.
+  const inner = correlation.inner;
+  const columns = [...subquery.columns];
+  if (
+    !columns.some((entry) => {
+      const ref = readColumnRef(entry.expr);
+      return ref?.alias === inner.alias && ref.column === inner.column;
+    })
+  ) {
+    columns.push({
+      expr: { type: "column_ref", table: inner.alias, column: inner.column },
+      as: inner.column,
+    });
+  }
+  const keyedSubquery = { ...subqueryWithoutWhere, columns };
 
   return {
     negated: parsed.negated,
@@ -358,10 +375,10 @@ export function parseSupportedCorrelatedExistsSubquery(
     rewrittenSubquery:
       remainingParts.length > 0
         ? {
-            ...subqueryWithoutWhere,
+            ...keyedSubquery,
             where: rebuildAndParts(remainingParts),
           }
-        : subqueryWithoutWhere,
+        : keyedSubquery,
     outer: correlation.outer,
     inner: correlation.inner,
   };

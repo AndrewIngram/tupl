@@ -1,6 +1,11 @@
 import { Result, type Result as BetterResult } from "better-result";
 
-import { RelLoweringError, type DataEntityHandle, type RelNode } from "@tupl/foundation";
+import {
+  RelLoweringError,
+  type DataEntityHandle,
+  type RelNode,
+  type RelExpr,
+} from "@tupl/foundation";
 
 import type { SchemaDefinition } from "./contracts/schema-contracts";
 
@@ -20,7 +25,7 @@ export function validateRelAgainstSchema(
       const logicalColumn = column.includes(".")
         ? column.slice(column.lastIndexOf(".") + 1)
         : column;
-      if (!(logicalColumn in entity.columns)) {
+      if (!Object.hasOwn(entity.columns, logicalColumn)) {
         return Result.err(
           new RelLoweringError({
             operation: "validate relational plan against schema",
@@ -31,12 +36,12 @@ export function validateRelAgainstSchema(
       return Result.ok(undefined);
     }
 
-    const table = schema.tables[tableName];
+    const table = Object.hasOwn(schema.tables, tableName) ? schema.tables[tableName] : undefined;
     if (!table) {
       return Result.ok(undefined);
     }
     const logicalColumn = column.includes(".") ? column.slice(column.lastIndexOf(".") + 1) : column;
-    if (!(logicalColumn in table.columns)) {
+    if (!Object.hasOwn(table.columns, logicalColumn)) {
       return Result.err(
         new RelLoweringError({
           operation: "validate relational plan against schema",
@@ -47,10 +52,21 @@ export function validateRelAgainstSchema(
     return Result.ok(undefined);
   };
 
+  const visitExpr = (expr: RelExpr): BetterResult<void, RelLoweringError> => {
+    if (expr.kind === "subquery") return visit(expr.rel);
+    if (expr.kind === "function") {
+      for (const arg of expr.args) {
+        const result = visitExpr(arg);
+        if (Result.isError(result)) return result;
+      }
+    }
+    return Result.ok(undefined);
+  };
+
   const visit = (current: RelNode): BetterResult<void, RelLoweringError> => {
     switch (current.kind) {
       case "scan":
-        if (!schema.tables[current.table] && !current.entity) {
+        if (!Object.hasOwn(schema.tables, current.table) && !current.entity) {
           return Result.err(
             new RelLoweringError({
               operation: "validate relational plan against schema",
@@ -81,7 +97,19 @@ export function validateRelAgainstSchema(
       case "cte_ref":
         return Result.ok(undefined);
       case "filter":
+        return Result.gen(function* () {
+          if (current.expr) yield* visitExpr(current.expr);
+          yield* visit(current.input);
+          return Result.ok(undefined);
+        });
       case "project":
+        return Result.gen(function* () {
+          for (const column of current.columns) {
+            if ("expr" in column) yield* visitExpr(column.expr);
+          }
+          yield* visit(current.input);
+          return Result.ok(undefined);
+        });
       case "aggregate":
       case "window":
       case "sort":

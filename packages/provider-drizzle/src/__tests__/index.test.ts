@@ -3,12 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { stringifyUnknownValue, type RelNode } from "@tupl/foundation";
 import { type QueryRow, type ScanFilterClause } from "@tupl/provider-kit";
-import {
-  createDrizzleProvider,
-  impossibleCondition,
-  runDrizzleScan,
-  type DrizzleQueryExecutor,
-} from "../index";
+import { createDrizzleProvider, runDrizzleScan, type DrizzleQueryExecutor } from "../index";
 
 type TestColumn = { name: string };
 type TestRow = Record<string, unknown>;
@@ -919,7 +914,6 @@ describe("drizzle adapter", () => {
         total_cents: totalCentsColumn as never,
         org_id: orgIdColumn as never,
       },
-      scope: [impossibleCondition()],
       request: {
         table: "orders",
         select: ["id", "total_cents"],

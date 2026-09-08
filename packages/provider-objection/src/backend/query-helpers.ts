@@ -50,35 +50,26 @@ export async function executeQuery(query: KnexLikeQueryBuilder): Promise<QueryRo
   return (await (query as unknown as Promise<QueryRow[]>)) ?? [];
 }
 
-export function createJoinSource<TContext>(
-  binding: ScanBinding<TContext>,
+/** Physical tables and trusted base builders enter every read through this constructor. */
+export function createScopedSource<TContext>(
+  binding: ResolvedEntityConfig<TContext>,
   context: TContext,
+  alias: string,
 ): unknown {
-  if (!binding.resolved.config.base) {
-    return { [binding.alias]: binding.table };
-  }
-
-  const base = resolveBaseQueryBuilder(binding.resolved.config.base, context);
-  const cloned = base.clone?.() ?? base;
-  return (cloned.as?.(binding.alias) ?? cloned) as unknown;
+  if (!binding.config.base) return { [alias]: binding.table };
+  const base = resolveBaseQueryBuilder(binding.config.base, context);
+  const query = base.clone?.() ?? base;
+  if (!query.as) throw new Error("Scoped Objection sources must support aliasing.");
+  return query.as(alias);
 }
 
 export function createBaseQuery<TContext>(
   knex: KnexLike,
   binding: ResolvedEntityConfig<TContext>,
   context: TContext,
-  alias?: string,
+  alias = binding.table,
 ): KnexLikeQueryBuilder {
-  if (!binding.config.base) {
-    return knex.queryBuilder().from(alias ? { [alias]: binding.table } : binding.table);
-  }
-
-  const base = resolveBaseQueryBuilder(binding.config.base, context);
-  const query = base.clone?.() ?? base;
-  if (alias && query.as) {
-    return knex.queryBuilder().from(query.as(alias));
-  }
-  return query;
+  return knex.queryBuilder().from(createScopedSource(binding, context, alias));
 }
 
 export function applyWhereClause<TContext>(
@@ -110,9 +101,9 @@ export function applyWhereClause<TContext>(
     case "not_like":
       return query.where(column, "not like", clause.value);
     case "is_distinct_from":
-      return query.where(column, "is distinct from", clause.value);
+      return query.whereRaw("?? is distinct from ?", [column, clause.value]);
     case "is_not_distinct_from":
-      return query.where(column, "is not distinct from", clause.value);
+      return query.whereRaw("?? is not distinct from ?", [column, clause.value]);
     case "is_null":
       return query.whereNull(column);
     case "is_not_null":

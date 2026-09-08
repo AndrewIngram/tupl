@@ -23,6 +23,7 @@ export type KnexLikeQueryBuilder = {
   intersect?: (...args: any[]) => KnexLikeQueryBuilder;
   except?: (...args: any[]) => KnexLikeQueryBuilder;
   where: (...args: any[]) => KnexLikeQueryBuilder;
+  whereRaw: (...args: any[]) => KnexLikeQueryBuilder;
   whereIn: (...args: any[]) => KnexLikeQueryBuilder;
   whereNull: (...args: any[]) => KnexLikeQueryBuilder;
   whereNotNull: (...args: any[]) => KnexLikeQueryBuilder;

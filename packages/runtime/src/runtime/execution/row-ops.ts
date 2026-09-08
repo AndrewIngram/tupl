@@ -56,7 +56,7 @@ export function matchesClause(row: Record<string, unknown>, clause: ScanFilterCl
     case "eq":
       return value != null && value === clause.value;
     case "neq":
-      return value != null && value !== clause.value;
+      return value != null && clause.value != null && value !== clause.value;
     case "gt":
       return value != null && clause.value != null && compareNonNull(value, clause.value) > 0;
     case "gte":
@@ -71,7 +71,7 @@ export function matchesClause(row: Record<string, unknown>, clause: ScanFilterCl
     }
     case "not_in": {
       const set = new Set(clause.values.filter((entry) => entry != null));
-      return value != null && !set.has(value);
+      return value != null && !clause.values.some((entry) => entry == null) && !set.has(value);
     }
     case "like":
       return typeof value === "string" && typeof clause.value === "string"

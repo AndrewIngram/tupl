@@ -1,16 +1,5 @@
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  getTableName,
-  is,
-  Table,
-  Subquery,
-  sql,
-  type AnyColumn,
-  type SQL,
-} from "drizzle-orm";
+import { createScopedSource } from "../backend/scoped-source";
+import { asc, desc, eq, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import type { RelNode } from "@tupl/foundation";
 import type { ScanFilterClause } from "@tupl/provider-kit";
 import type {
@@ -20,11 +9,7 @@ import type {
   SqlRelationalWithSelection,
 } from "@tupl/provider-kit/relational-sql";
 
-import {
-  executeDrizzleQueryBuilder,
-  normalizeScope,
-  toSqlConditionFromSource,
-} from "../backend/query-helpers";
+import { executeDrizzleQueryBuilder, toSqlConditionFromSource } from "../backend/query-helpers";
 import type {
   DrizzleExecutableBuilder,
   DrizzleProviderTableConfig,
@@ -63,7 +48,11 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
   DrizzleTranslatedQuery
 > = {
   async createRootQuery({ runtime, plan, selection, context }) {
-    const source = await createScopedSource(plan.joinPlan.root, context);
+    const source = createScopedSource(
+      plan.joinPlan.root.sourceTable,
+      plan.joinPlan.root.scanColumns,
+      await plan.joinPlan.root.tableConfig.scope?.(context),
+    );
     const preferDistinctSelection =
       !!plan.pipeline.aggregate &&
       plan.pipeline.aggregate.metrics.length === 0 &&
@@ -90,7 +79,11 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
     };
   },
   async applyRegularJoin({ query, join, aliases, context }) {
-    const source = await createScopedSource(join.right, context);
+    const source = createScopedSource(
+      join.right.sourceTable,
+      join.right.scanColumns,
+      await join.right.tableConfig.scope?.(context),
+    );
     const joinable = query.builder as DrizzleExecutableBuilder & {
       innerJoin?: (table: object, on: SQL) => unknown;
       leftJoin?: (table: object, on: SQL) => unknown;
@@ -339,24 +332,6 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
     return executeDrizzleQueryBuilder(ensureWhereApplied(query).builder, runtime);
   },
 };
-
-async function createScopedSource<TContext>(binding: ScanBinding<TContext>, context: TContext) {
-  const scope = await binding.tableConfig.scope?.(context);
-  const condition = and(...normalizeScope(scope));
-  if (!condition) {
-    return binding.sourceTable;
-  }
-  if (!is(binding.sourceTable, Table)) {
-    throw new UnsupportedSingleQueryPlanError("Scoped Drizzle sources must be Drizzle tables.");
-  }
-
-  // Keep physical column references valid while restricting each input before outer joins.
-  return new Subquery(
-    sql`select * from ${binding.sourceTable} where ${condition}`,
-    binding.scanColumns,
-    getTableName(binding.sourceTable),
-  );
-}
 
 function ensureWhereApplied(query: DrizzleTranslatedQuery): DrizzleTranslatedQuery {
   if (query.whereClauses.length === 0) {

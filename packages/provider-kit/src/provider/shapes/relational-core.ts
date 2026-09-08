@@ -100,6 +100,7 @@ export function canCompileBasicRel(
       return false;
     case "join":
       return (
+        (node.joinType !== "semi" || node.right.output.length === 1) &&
         canCompileBasicRel(node.left, isKnownScan, options) &&
         canCompileBasicRel(node.right, isKnownScan, options)
       );

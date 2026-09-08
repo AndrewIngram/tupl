@@ -557,10 +557,10 @@ function buildSqlRelationalSelection<
           ? (binding as { outputColumns: string[] }).outputColumns
           : binding.scan.select
         ).map(
-          (column) =>
+          (column, index) =>
             ({
               kind: "column",
-              output: `${binding.alias}.${column}`,
+              output: binding.scan.output[index]?.name ?? `${binding.alias}.${column}`,
               source: {
                 alias: binding.alias,
                 column,

@@ -35,21 +35,6 @@ export function parseWhereFilters(
   }
 
   const parts = flattenConjunctiveWhere(where);
-  if (parts == null) {
-    const residualExpr = lowerSqlAstToRelExpr(where, bindings, aliasToBinding, lowerExprContext);
-    if (!residualExpr) {
-      return null;
-    }
-    return {
-      literals: [],
-      inSubqueries: [],
-      existsSubqueries: [],
-      correlatedInSubqueries: [],
-      correlatedScalarAggregates: [],
-      residualExpr,
-    };
-  }
-
   const literals: LiteralFilter[] = [];
   const inSubqueries: InSubqueryFilter[] = [];
   const existsSubqueries: CorrelatedExistsFilter[] = [];

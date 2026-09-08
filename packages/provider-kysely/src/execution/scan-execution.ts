@@ -6,7 +6,7 @@ import {
   type TableScanRequest,
 } from "@tupl/provider-kit";
 import type { KyselyDatabaseLike, ResolvedEntityConfig, ScanBinding } from "../types";
-import { applyBase, applyWhereClause } from "../backend/query-helpers";
+import { createScopedSource, applyWhereClause } from "../backend/query-helpers";
 
 function normalizeKyselyScanError(
   error: unknown,
@@ -51,10 +51,9 @@ export async function executeScanResult<TContext>(
   return AdapterResult.tryPromise({
     try: async () => {
       const alias = request.alias ?? binding.table;
-      const from = `${binding.table} as ${alias}`;
-
-      let query = db.selectFrom(from);
-      query = await applyBase(query, db, binding, context, alias);
+      let query = db.selectFrom(
+        await createScopedSource(db, { ...binding, alias, resolved: binding }, context),
+      );
 
       const aliases = new Map<string, ScanBinding<TContext>>([
         [

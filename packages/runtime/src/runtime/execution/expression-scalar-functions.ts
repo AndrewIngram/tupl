@@ -13,23 +13,37 @@ export function evaluateScalarFunctionResult(
 ): BetterResult<unknown, TuplExecutionError> {
   switch (name) {
     case "eq":
-      return Result.ok(args[0] != null && args[0] === args[1]);
+      return Result.ok(args[0] == null || args[1] == null ? null : args[0] === args[1]);
     case "neq":
-      return Result.ok(args[0] != null && args[0] !== args[1]);
+      return Result.ok(args[0] == null || args[1] == null ? null : args[0] !== args[1]);
     case "gt":
-      return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) > 0);
+      return Result.ok(
+        args[0] == null || args[1] == null ? null : compareNonNull(args[0], args[1]) > 0,
+      );
     case "gte":
-      return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) >= 0);
+      return Result.ok(
+        args[0] == null || args[1] == null ? null : compareNonNull(args[0], args[1]) >= 0,
+      );
     case "lt":
-      return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) < 0);
+      return Result.ok(
+        args[0] == null || args[1] == null ? null : compareNonNull(args[0], args[1]) < 0,
+      );
     case "lte":
-      return Result.ok(args[0] != null && args[1] != null && compareNonNull(args[0], args[1]) <= 0);
+      return Result.ok(
+        args[0] == null || args[1] == null ? null : compareNonNull(args[0], args[1]) <= 0,
+      );
     case "and":
-      return Result.ok(args.every(Boolean));
+      return Result.ok(sqlAnd(args));
     case "or":
-      return Result.ok(args.some(Boolean));
+      return Result.ok(
+        args.some((arg) => arg != null && Boolean(arg))
+          ? true
+          : args.some((arg) => arg == null)
+            ? null
+            : false,
+      );
     case "not":
-      return Result.ok(!args[0]);
+      return Result.ok(args[0] == null ? null : !args[0]);
     case "add":
       return evaluateNumericBinaryResult(args[0], args[1], "ADD", (left, right) => left + right);
     case "subtract":
@@ -56,18 +70,20 @@ export function evaluateScalarFunctionResult(
       return Result.ok(
         typeof args[0] === "string" && typeof args[1] === "string"
           ? testSqlLikePattern(args[0], args[1])
-          : false,
+          : null,
       );
     case "not_like":
       return Result.ok(
         typeof args[0] === "string" && typeof args[1] === "string"
           ? !testSqlLikePattern(args[0], args[1])
-          : false,
+          : null,
       );
     case "in":
-      return Result.ok(args[0] != null && args.slice(1).some((arg) => arg === args[0]));
-    case "not_in":
-      return Result.ok(args[0] != null && args.slice(1).every((arg) => arg !== args[0]));
+      return Result.ok(evaluateIn(args));
+    case "not_in": {
+      const matches = evaluateIn(args);
+      return Result.ok(matches == null ? null : !matches);
+    }
     case "is_null":
       return Result.ok(args[0] == null);
     case "is_not_null":
@@ -78,9 +94,10 @@ export function evaluateScalarFunctionResult(
       return Result.ok(args[0] === args[1]);
     case "between":
       return Result.ok(
-        args[0] != null && args[1] != null && args[2] != null
-          ? compareNonNull(args[0], args[1]) >= 0 && compareNonNull(args[0], args[2]) <= 0
-          : false,
+        sqlAnd([
+          args[0] == null || args[1] == null ? null : compareNonNull(args[0], args[1]) >= 0,
+          args[0] == null || args[2] == null ? null : compareNonNull(args[0], args[2]) <= 0,
+        ]),
       );
     case "lower":
       return Result.ok(args[0] == null ? null : stringifyUnknownValue(args[0]).toLowerCase());
@@ -246,4 +263,16 @@ function castValueResult(value: unknown, target: unknown) {
         }),
       );
   }
+}
+
+function evaluateIn(args: unknown[]) {
+  if (args.length === 1) return false;
+  if (args[0] == null) return null;
+  if (args.slice(1).includes(args[0])) return true;
+  return args.slice(1).some((arg) => arg == null) ? null : false;
+}
+
+function sqlAnd(args: unknown[]) {
+  if (args.some((arg) => arg != null && !arg)) return false;
+  return args.some((arg) => arg == null) ? null : true;
 }

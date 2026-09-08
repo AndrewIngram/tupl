@@ -152,10 +152,9 @@ export function createSqlRelationalCompileHelpers<
       );
     },
     resolveStrategy(node) {
-      return (
-        planningHooks.resolveRelCompileStrategy?.(node, resolvedEntities, options) ??
-        resolveSqlRelationalCompileStrategy(node, resolvedEntities, createScanBinding, options)
-      );
+      return planningHooks.resolveRelCompileStrategy
+        ? planningHooks.resolveRelCompileStrategy(node, resolvedEntities, options)
+        : resolveSqlRelationalCompileStrategy(node, resolvedEntities, createScanBinding, options);
     },
   };
 }

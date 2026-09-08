@@ -37,4 +37,4 @@ Run the new suite before and after the fixes, existing provider tests, then `vp 
 
 ## Remaining assurance work
 
-The generated properties currently exercise provider lookups. They do not establish containment for arbitrary user SQL. Extend testing through the public SQL entrypoint with nested Boolean expressions, an independently authorized-only reference database, and hidden-row mutations. Exploratory SQL probes also exposed unresolved projection and predicate correctness cases; do not interpret these provider-level results as proof that the full planner/runtime pipeline is correct. PostgreSQL execution and error/timing leakage remain outside this verification.
+The subsequent [query containment assurance pass](./query-containment-assurance.md) added public SQL tests with nested Boolean expressions, independently authorized-only reference databases, hidden-row mutations, and PostgreSQL execution through PGlite. It also fixed the projection, predicate, and schema-validation failures exposed by that harness. The tests cover a bounded grammar; arbitrary SQL correctness and error/timing leakage are not proved.

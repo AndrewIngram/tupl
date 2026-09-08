@@ -94,6 +94,10 @@ function createMockKnex(
         calls.where.push(args);
         return builder;
       },
+      whereRaw(...args: unknown[]) {
+        calls.where.push(args);
+        return builder;
+      },
       whereIn(...args: unknown[]) {
         calls.whereIn.push(args);
         return builder;

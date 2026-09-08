@@ -57,3 +57,15 @@ Drizzle and Kysely use scoped derived tables for relational reads. Objection use
 Query translation hooks may be awaited. Adapters with thenable query builders must carry those builders inside a non-thenable object throughout translation, including set-operation branches and CTEs. Objection uses `{ builder }`; only `executeQuery` consumes the thenable.
 
 The database-backed operation matrix in `test/__tests__/provider-scope.test.ts` checks these contracts against SQLite for all three SQL providers. Redis shares context-aware key construction and decoding between its keyed scan and lookup paths.
+
+## Containment assurance
+
+The result invariant is `query(scoped tables)`: user predicates can restrict the authorized inputs but cannot redefine them. Each SQL provider shares one physical-source constructor between relational reads and lookup reads. Scope predicates live inside derived sources, including on lookup paths; user predicates apply outside. This does not require materialized CTEs. Scope callbacks and provider implementations remain trusted application code.
+
+Public SQL is validated against the declared schema before execution. Validation traverses expression subqueries as well as ordinary relational children, and column membership uses own properties. Physical table names and undeclared columns must not reach backend execution through aliases, nested expressions, or prototype properties.
+
+`test/__tests__/query-containment.test.ts` exercises Drizzle, Kysely, and Objection against SQLite and PGlite, with normal pushdown and scan-only fallback. Its reference databases are populated independently with only authorized rows and declared columns. Generated Boolean expression trees are rendered into scans, aggregates, CTEs, EXISTS subqueries, unions, and windows. Each generated query runs before and after changing hidden rows and hidden fields, and both results must match the reference. Fixed cases also cover joins, self-joins, set operations, pagination, null semantics, scope errors, and rejection before backend dispatch. Redis's keyed reads are covered separately in `test/__tests__/redis-containment.test.ts`.
+
+Provider capability overrides are authoritative: an explicit unsupported result must not fall through to generic SQL compilation. Fallback execution must retain the same scoped inputs and SQL three-valued Boolean semantics. Scan translation must honor the requested output names so fallback mapping does not turn qualified values into nulls.
+
+These tests establish evidence for result containment over the covered grammar; they are not a proof for arbitrary SQL. Unsupported syntax is rejected. Error-message and timing noninterference, multi-connection PostgreSQL behavior, and correctness of application-supplied scope callbacks are outside this suite. PGlite exercises PostgreSQL SQL semantics through its Drizzle, Kysely, and Knex adapters; it does not replace production-server concurrency or network-driver testing.

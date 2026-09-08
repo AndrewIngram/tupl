@@ -203,7 +203,7 @@ describe("sql relational provider factory", () => {
     );
     const rows = unwrapProviderOperationResult(await provider.execute(compiled, {}));
 
-    expect(rows).toEqual([{ steps: "root:orders_raw > select:column:orders_raw.id" }]);
+    expect(rows).toEqual([{ steps: "root:orders_raw > select:column:id" }]);
   });
 
   it("executes shared basic single-query pushdown through the public factory", async () => {

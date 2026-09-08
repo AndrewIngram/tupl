@@ -9,7 +9,7 @@ import {
 import {
   applyWhereClause,
   applyWindowFunction,
-  createJoinSource,
+  createScopedSource,
   resolveQualifiedColumnRef,
   resolveWithBodyColumnRef,
   toRef,
@@ -33,7 +33,9 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
   ObjectionTranslatedQuery
 > = {
   createRootQuery({ runtime, root, context }) {
-    return { builder: runtime.queryBuilder().from(createJoinSource(root, context)) };
+    return {
+      builder: runtime.queryBuilder().from(createScopedSource(root.resolved, context, root.alias)),
+    };
   },
   applyRegularJoin({ query: { builder: query }, join, context }) {
     const joinMethod =
@@ -52,7 +54,7 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
       );
     }
 
-    const rightSource = createJoinSource(join.right, context);
+    const rightSource = createScopedSource(join.right.resolved, context, join.right.alias);
     return {
       builder: (fn as (...args: unknown[]) => KnexLikeQueryBuilder).call(
         query,

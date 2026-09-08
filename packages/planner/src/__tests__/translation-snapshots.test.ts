@@ -736,6 +736,14 @@ describe("query/translation-snapshots", () => {
                 "kind": "expr",
                 "output": "expr",
               },
+              {
+                "kind": "column",
+                "output": "id",
+                "source": {
+                  "alias": "u",
+                  "column": "id",
+                },
+              },
             ],
             "convention": "local",
             "id": "project_4",
@@ -746,10 +754,14 @@ describe("query/translation-snapshots", () => {
               "kind": "scan",
               "output": [
                 {
+                  "name": "u.id",
+                },
+                {
                   "name": "u.team_id",
                 },
               ],
               "select": [
+                "id",
                 "team_id",
               ],
               "table": "users",
@@ -765,6 +777,9 @@ describe("query/translation-snapshots", () => {
             "output": [
               {
                 "name": "expr",
+              },
+              {
+                "name": "id",
               },
             ],
           },
@@ -840,7 +855,7 @@ describe("query/translation-snapshots", () => {
               },
               {
                 "kind": "column",
-                "output": "u.id",
+                "output": "id",
                 "source": {
                   "alias": "u",
                   "column": "id",
@@ -856,10 +871,14 @@ describe("query/translation-snapshots", () => {
               "kind": "scan",
               "output": [
                 {
+                  "name": "u.id",
+                },
+                {
                   "name": "u.team_id",
                 },
               ],
               "select": [
+                "id",
                 "team_id",
               ],
               "table": "users",
@@ -877,12 +896,11 @@ describe("query/translation-snapshots", () => {
                 "name": "expr",
               },
               {
-                "name": "u.id",
+                "name": "id",
               },
             ],
           },
           "rightKey": {
-            "alias": "u",
             "column": "id",
           },
         },

@@ -1,3 +1,4 @@
+import { createScopedSource } from "./scoped-source";
 import {
   and,
   asc,
@@ -30,8 +31,7 @@ export async function runDrizzleScan<TTable extends string, TColumn extends stri
   const filterConditions = (options.request.where ?? []).map((clause) =>
     toSqlCondition(clause, options.columns, options.tableName),
   );
-  const scopeConditions = normalizeScope(options.scope);
-  const whereConditions = [...scopeConditions, ...filterConditions];
+  const source = createScopedSource(options.table, options.columns, options.scope);
 
   const selectable = options.db.select(selection) as {
     from: (table: never) => {
@@ -43,7 +43,7 @@ export async function runDrizzleScan<TTable extends string, TColumn extends stri
     };
   };
 
-  let builder = selectable.from(options.table as never) as {
+  let builder = selectable.from(source as never) as {
     where: (condition: SQL) => unknown;
     orderBy: (...clauses: SQL[]) => unknown;
     limit: (value: number) => unknown;
@@ -51,7 +51,7 @@ export async function runDrizzleScan<TTable extends string, TColumn extends stri
     execute: () => Promise<QueryRow[]>;
   };
 
-  const where = and(...whereConditions);
+  const where = and(...filterConditions);
   if (where) {
     builder = builder.where(where) as typeof builder;
   }
@@ -105,13 +105,6 @@ export async function executeDrizzleQueryBuilder(
   throw new Error(
     "Drizzle query builder is not executable via execute(), promise semantics, or db.execute().",
   );
-}
-
-export function normalizeScope(scope: SQL | SQL[] | undefined): SQL[] {
-  if (!scope) {
-    return [];
-  }
-  return Array.isArray(scope) ? scope : [scope];
 }
 
 export function buildSelection<TColumn extends string>(
@@ -175,14 +168,14 @@ export function toSqlConditionFromSource(clause: ScanFilterClause, source: AnyCo
     case "lte":
       return lte(source as never, clause.value as never);
     case "in": {
-      const values = clause.values.filter((value) => value != null);
+      const values = clause.values;
       if (values.length === 0) {
         return impossibleCondition();
       }
       return inArray(source as never, values as never[]);
     }
     case "not_in": {
-      const values = clause.values.filter((value) => value != null);
+      const values = clause.values;
       if (values.length === 0) {
         return sql`true`;
       }

@@ -88,6 +88,7 @@ export async function executeScanResult<TContext>(
     ...scan,
     table: request.table,
     select: request.select,
+    output: request.select.map((name) => ({ name })),
     ...(request.where ? { where: request.where } : {}),
     ...(request.orderBy ? { orderBy: request.orderBy } : {}),
     ...(request.limit != null ? { limit: request.limit } : {}),
