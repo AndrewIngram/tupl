@@ -11,7 +11,7 @@ export {
   getNormalizedColumnBindings,
   getNormalizedColumnSourceMap,
   resolveNormalizedColumnSource,
-} from "./normalization/binding-normalization";
+} from "./normalization/normalized-column-sources";
 export {
   createPhysicalBindingFromEntity,
   createTableDefinitionFromEntity,

@@ -348,7 +348,22 @@ describe("query/session", () => {
       },
     });
 
-    await expect(session.next()).rejects.toMatchObject({
+    const failureEvents = [];
+    let retainedError: unknown;
+    while (!retainedError) {
+      try {
+        const next = await session.next();
+        if (!("done" in next)) {
+          failureEvents.push(next);
+        }
+      } catch (error) {
+        retainedError = error;
+      }
+    }
+
+    expect(failureEvents.length).toBeGreaterThan(0);
+    expect(failureEvents.every((event) => event.status === "failed")).toBe(true);
+    expect(retainedError).toMatchObject({
       _tag: "TuplTimeoutError",
       name: "TuplTimeoutError",
       message: "Query timed out after 5ms.",

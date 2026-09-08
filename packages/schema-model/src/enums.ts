@@ -4,7 +4,12 @@ import type { TuplResult, TuplSchemaNormalizationError } from "@tupl/foundation"
 import { resolveColumnDefinition } from "./definition";
 import { copyNormalizedSchemaBindings, finalizeSchemaDefinition } from "./normalization";
 import { createSchemaNormalizationError } from "./schema-errors";
-import type { ColumnDefinition, SchemaDefinition, TableColumns, TableDefinition } from "./types";
+import type {
+  ColumnDefinition,
+  SchemaDefinition,
+  TableColumns,
+  TableDefinition,
+} from "./contracts/schema-contracts";
 
 /**
  * Enum resolution owns `enumFrom` expansion and validation against upstream schema definitions.

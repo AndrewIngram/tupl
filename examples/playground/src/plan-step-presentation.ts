@@ -170,12 +170,10 @@ function buildFacts(step: QueryExecutionPlanStep, state: QueryStepState | null):
   if (step.dependsOn.length > 0) {
     facts.push(`${step.dependsOn.length} input${step.dependsOn.length === 1 ? "" : "s"}`);
   }
-  if (state?.outputRowCount != null) {
+  if (state?.status === "done") {
     facts.push(`${state.outputRowCount} output rows`);
-  } else if (state?.rowCount != null) {
-    facts.push(`${state.rowCount} rows`);
   }
-  if (state?.durationMs != null) {
+  if (state?.status === "done" || state?.status === "failed") {
     facts.push(`${state.durationMs}ms`);
   }
 
@@ -265,16 +263,6 @@ function classLabel(stepClass: StepExecutionClass): string {
 }
 
 function placementSummary(step: QueryExecutionPlanStep, state: QueryStepState | null): string {
-  if (step.kind === "remote_fragment") {
-    const provider =
-      typeof step.operation.details?.provider === "string"
-        ? step.operation.details.provider
-        : "provider";
-    return `Remote on ${provider}`;
-  }
-  if (step.kind === "lookup_join") {
-    return "Remote lookup + local stitch";
-  }
   if (state?.routeUsed === "scan") {
     return "Remote scan";
   }
@@ -289,6 +277,16 @@ function placementSummary(step: QueryExecutionPlanStep, state: QueryStepState | 
   }
   if (state?.routeUsed === "local") {
     return "Local runtime";
+  }
+  if (step.kind === "remote_fragment") {
+    const provider =
+      typeof step.operation.details?.provider === "string"
+        ? step.operation.details.provider
+        : "provider";
+    return `Remote on ${provider}`;
+  }
+  if (step.kind === "lookup_join") {
+    return "Remote lookup + local stitch";
   }
 
   return classLabel(classifyStepExecution(step, state));

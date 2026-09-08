@@ -26,7 +26,7 @@ These are the current architecture and process questions that remain intentional
 
 ### Lookup-join planning vs runtime lookup capability
 
-- Current state: planner lookup-join candidacy no longer checks whether the right-side provider implements `lookupMany`; runtime still guards the optimization before execution.
+- Current state: planner lookup-join candidacy no longer checks whether the right-side provider implements `lookupMany`; runtime still guards the optimization before execution. Session events now report the route actually taken, but the static plan can still describe a lookup that is not executed.
 - Question: is the current split acceptable as a planner simplification, or should planner candidacy regain lookup-capability awareness to keep explain/physical-plan diagnostics closer to actual execution choices?
 
 ### Aggregate-mode navigation window validation

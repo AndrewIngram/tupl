@@ -25,6 +25,7 @@ import {
   type RelExecutionContext,
 } from "./local-execution";
 import { prefixRow, scanLocalRows } from "./row-ops";
+import { enforceMaterializationLimitResult } from "../policy";
 
 /**
  * Scan execution owns provider-backed physical scans and explicit reads from materialized CTEs.
@@ -126,6 +127,13 @@ export async function executeScanResult<TContext>(
   );
   if (Result.isError(rowsResult)) {
     return rowsResult;
+  }
+  const providerRowsLimitResult = enforceMaterializationLimitResult(
+    rowsResult.value,
+    context.guardrails,
+  );
+  if (Result.isError(providerRowsLimitResult)) {
+    return providerRowsLimitResult;
   }
   const projectedResult = tryExecutionStep("map provider rows to logical rows", () =>
     mapProviderRowsToLogical(

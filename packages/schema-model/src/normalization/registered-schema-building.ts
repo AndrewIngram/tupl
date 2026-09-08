@@ -3,27 +3,24 @@ import type { TuplResult, TuplSchemaNormalizationError } from "@tupl/foundation"
 import { getDataEntityProvider } from "@tupl/provider-kit";
 
 import { type SchemaBuilderState } from "../dsl/builder-state";
-import {
-  buildSchemaDslViewRelHelpers,
-  isDslTableDefinition,
-  isDslViewDefinition,
-} from "../dsl/builder-helpers";
+import { buildSchemaDslViewRelHelpers } from "../dsl/dsl-view-helpers";
+import { isDslTableDefinition, isDslViewDefinition } from "../dsl/dsl-tokens";
 import { createSchemaNormalizationError } from "../schema-errors";
 import type {
-  NormalizedColumnBinding,
-  NormalizedTableBinding,
   SchemaDataEntityHandle,
   SchemaDefinition,
   SchemaDslTableToken,
-  SchemaDslViewRelHelpers,
   TableColumns,
   TableDefinition,
-} from "../types";
-import {
-  buildColumnSourceMapFromBindings,
-  normalizeColumnBinding,
-  validateCalculatedColumnDependencies,
-} from "./binding-normalization";
+} from "../contracts/schema-contracts";
+import type {
+  NormalizedColumnBinding,
+  NormalizedTableBinding,
+} from "../contracts/normalized-contracts";
+import type { SchemaDslViewRelHelpers } from "../contracts/schema-view-contracts";
+import { buildColumnSourceMapFromBindings } from "./normalized-column-sources";
+import { normalizeColumnBinding } from "./column-binding-normalizer";
+import { validateCalculatedColumnDependencies } from "./calculated-column-validation";
 import { setNormalizedSchemaBindings } from "./normalized-schema-state";
 import { finalizeSchemaDefinition } from "./schema-finalization-validation";
 import { resolveViewRelDefinition } from "./view-normalization";

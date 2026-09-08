@@ -7,7 +7,7 @@ import type {
 
 import { validateSchemaConstraints } from "../constraints";
 import { createSchemaNormalizationError } from "../schema-errors";
-import type { SchemaDefinition } from "../types";
+import type { SchemaDefinition } from "../contracts/schema-contracts";
 import { getNormalizedSchemaBindings, getNormalizedTableBinding } from "./normalized-schema-state";
 
 /**

@@ -1,5 +1,5 @@
 import { isSchemaDataEntityHandle, toSchemaDslTableToken } from "./dsl-tokens";
-import type { SchemaColRefToken } from "../types";
+import type { SchemaColRefToken } from "../contracts/schema-contracts";
 
 /**
  * DSL view helpers own scan/join/aggregate helper assembly for schema-defined views.

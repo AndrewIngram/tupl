@@ -10,7 +10,11 @@ import {
 import { validateSchemaConstraints } from "./constraints";
 import { createSchemaNormalizationError } from "./schema-errors";
 import type { ResolvedColumnDefinition as ResolvedColumnDefinitionType } from "./definition";
-import type { SchemaDefinition, SqlScalarType, TableDefinition } from "./types";
+import type {
+  SchemaDefinition,
+  SqlScalarType,
+  TableDefinition,
+} from "./contracts/schema-contracts";
 
 export interface SqlDdlOptions {
   ifNotExists?: boolean;

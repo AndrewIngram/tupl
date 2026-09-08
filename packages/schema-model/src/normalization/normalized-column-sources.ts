@@ -1,12 +1,15 @@
-import type { NormalizedColumnBinding, NormalizedPhysicalTableBinding } from "../types";
+import type {
+  NormalizedColumnBinding,
+  NormalizedPhysicalTableBinding,
+  NormalizedTableBinding,
+} from "../contracts/normalized-contracts";
 
 /**
  * Normalized column sources own lookup and source-map helpers for normalized bindings.
  */
 export function getNormalizedColumnBindings(
   binding: Pick<
-    | NormalizedPhysicalTableBinding
-    | Extract<import("../types").NormalizedTableBinding, { kind: "view" }>,
+    NormalizedPhysicalTableBinding | Extract<NormalizedTableBinding, { kind: "view" }>,
     "columnBindings" | "columnToSource"
   >,
 ): Record<string, NormalizedColumnBinding> {
@@ -24,8 +27,7 @@ export function getNormalizedColumnBindings(
 
 export function getNormalizedColumnSourceMap(
   binding: Pick<
-    | NormalizedPhysicalTableBinding
-    | Extract<import("../types").NormalizedTableBinding, { kind: "view" }>,
+    NormalizedPhysicalTableBinding | Extract<NormalizedTableBinding, { kind: "view" }>,
     "columnBindings" | "columnToSource"
   >,
 ): Record<string, string> {
@@ -40,8 +42,7 @@ export function getNormalizedColumnSourceMap(
 
 export function resolveNormalizedColumnSource(
   binding: Pick<
-    | NormalizedPhysicalTableBinding
-    | Extract<import("../types").NormalizedTableBinding, { kind: "view" }>,
+    NormalizedPhysicalTableBinding | Extract<NormalizedTableBinding, { kind: "view" }>,
     "columnBindings" | "columnToSource"
   >,
   logicalColumn: string,

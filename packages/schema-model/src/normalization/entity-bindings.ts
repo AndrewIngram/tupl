@@ -8,11 +8,13 @@ import { createSchemaNormalizationError } from "../schema-errors";
 import type {
   NormalizedPhysicalTableBinding,
   NormalizedSourceColumnBinding,
+} from "../contracts/normalized-contracts";
+import type {
   SchemaDataEntityHandle,
   SchemaValueCoercion,
   TableColumnDefinition,
   TableDefinition,
-} from "../types";
+} from "../contracts/schema-contracts";
 
 /**
  * Entity bindings own conversion from data-entity metadata into physical schema bindings.

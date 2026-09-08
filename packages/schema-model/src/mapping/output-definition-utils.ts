@@ -1,7 +1,11 @@
 import type { RelColumnRef } from "@tupl/foundation";
 
 import { resolveColumnDefinition } from "../definition";
-import type { SchemaValueCoercion, SqlScalarType, TableColumnDefinition } from "../types";
+import type {
+  SchemaValueCoercion,
+  SqlScalarType,
+  TableColumnDefinition,
+} from "../contracts/schema-contracts";
 
 /**
  * Output definition utilities own shared column-definition helpers for inferred relational outputs.

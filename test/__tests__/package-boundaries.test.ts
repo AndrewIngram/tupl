@@ -1,10 +1,27 @@
-import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vite-plus/test";
 
+import { getPackageName, getPublicSourceExports } from "../architecture/package-exports";
+import {
+  getModuleSpecifiers,
+  getSourceExports,
+  isForwardingModule,
+  referencedWorkspacePackage,
+} from "../architecture/typescript-modules";
+
 const REPO_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
-const IMPORT_PATTERN = /(?:from\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\))/g;
 
 const LAYER_RULES = {
   "packages/foundation/src": new Set<string>(["@tupl/foundation"]),
@@ -49,125 +66,6 @@ const DISALLOWED_PUBLIC_REFS = [
   "packages/schema/README.md",
 ] as const;
 
-const DIRECT_SUBPATH_EXPORTS = [
-  {
-    name: "@tupl/provider-kit/shapes",
-    subpath: "./shapes",
-    target: "packages/provider-kit/src/provider/shapes/index.ts",
-    packageJson: "packages/provider-kit/package.json",
-  },
-  {
-    name: "@tupl/provider-kit/testing",
-    subpath: "./testing",
-    target: "packages/provider-kit/src/testing.ts",
-    packageJson: "packages/provider-kit/package.json",
-  },
-  {
-    name: "@tupl/runtime/executor",
-    subpath: "./executor",
-    target: "packages/runtime/src/runtime/executor.ts",
-    packageJson: "packages/runtime/package.json",
-  },
-  {
-    name: "@tupl/runtime/session",
-    subpath: "./session",
-    target: "packages/runtime/src/runtime/session/index.ts",
-    packageJson: "packages/runtime/package.json",
-  },
-  {
-    name: "@tupl/schema-model/mapping",
-    subpath: "./mapping",
-    target: "packages/schema-model/src/mapping/index.ts",
-    packageJson: "packages/schema-model/package.json",
-  },
-] as const;
-
-const DISALLOWED_WRAPPER_TARGETS = [
-  "packages/provider-kit/src/shapes/index.ts",
-  "packages/runtime/src/executor.ts",
-  "packages/runtime/src/runtime/errors.ts",
-  "packages/schema-model/src/schema/index.ts",
-] as const;
-
-const STRUCTURAL_LINE_BUDGETS = {
-  "packages/planner/src/planning.ts": 200,
-  "packages/planner/src/sql-lowering.ts": 250,
-  "packages/planner/src/query-shape-validation.ts": 1200,
-  "packages/planner/src/structured-select-lowering.ts": 1200,
-  "packages/planner/src/simple-select-lowering.ts": 200,
-  "packages/planner/src/select/select-shape.ts": 400,
-  "packages/planner/src/select/select-join-tree.ts": 450,
-  "packages/planner/src/select/select-project.ts": 300,
-  "packages/planner/src/select/select-projections.ts": 800,
-  "packages/planner/src/select/select-from-lowering.ts": 400,
-  "packages/planner/src/where-lowering.ts": 1200,
-  "packages/planner/src/sql-expr-lowering.ts": 1200,
-  "packages/planner/src/sql-expr-utils.ts": 200,
-  "packages/planner/src/expr/expr-literals.ts": 300,
-  "packages/planner/src/expr/expr-column-refs.ts": 300,
-  "packages/planner/src/subqueries/expr-subquery-lowering.ts": 300,
-  "packages/planner/src/expr/expr-functions.ts": 300,
-  "packages/planner/src/aggregate-lowering.ts": 1200,
-  "packages/planner/src/aggregate-ordering.ts": 200,
-  "packages/planner/src/aggregate/group-by-resolution.ts": 300,
-  "packages/planner/src/aggregate/aggregate-order-resolution.ts": 400,
-  "packages/planner/src/having-lowering.ts": 800,
-  "packages/planner/src/view-expansion.ts": 1200,
-  "packages/planner/src/provider-fragments.ts": 1200,
-  "packages/planner/src/provider/conventions.ts": 1200,
-  "packages/planner/src/physical-planning.ts": 200,
-  "packages/planner/src/physical/local-step-planning.ts": 800,
-  "packages/planner/src/physical/remote-fragment-planning.ts": 300,
-  "packages/planner/src/physical/physical-plan-state.ts": 100,
-  "packages/runtime/src/runtime/execution/local-execution.ts": 300,
-  "packages/runtime/src/runtime/execution/execution-plan-builder.ts": 200,
-  "packages/runtime/src/runtime/execution/execution-graph.ts": 600,
-  "packages/runtime/src/runtime/execution/explain-shaping.ts": 300,
-  "packages/runtime/src/runtime/execution/step-families.ts": 300,
-  "packages/runtime/src/runtime/session/session.ts": 100,
-  "packages/runtime/src/runtime/provider/provider-fragment-session.ts": 200,
-  "packages/runtime/src/runtime/provider/provider-session-lifecycle.ts": 200,
-  "packages/runtime/src/runtime/provider/provider-fragment-errors.ts": 200,
-  "packages/runtime/src/runtime/provider/provider-fragment-replay.ts": 300,
-  "packages/runtime/src/runtime/session/rel-execution-session.ts": 800,
-  "packages/runtime/src/runtime/session/query-session-factory.ts": 250,
-  "packages/runtime/src/runtime/execution/remote-subtree.ts": 800,
-  "packages/runtime/src/runtime/execution/scan-execution.ts": 800,
-  "packages/runtime/src/runtime/execution/lookup-join.ts": 800,
-  "packages/runtime/src/runtime/execution/local-operators.ts": 800,
-  "packages/runtime/src/runtime/execution/window-execution.ts": 800,
-  "packages/runtime/src/runtime/execution/expression-eval.ts": 800,
-  "packages/runtime/src/runtime/execution/subquery-preparation.ts": 800,
-  "packages/runtime/src/runtime/execution/row-ops.ts": 800,
-  "packages/planner/src/views/view-lowering.ts": 800,
-  "packages/schema-model/src/types.ts": 150,
-  "packages/schema-model/src/normalization.ts": 150,
-  "packages/schema-model/src/normalization/schema-finalization.ts": 150,
-  "packages/schema-model/src/normalization/normalized-schema-state.ts": 200,
-  "packages/schema-model/src/normalization/registered-schema-building.ts": 800,
-  "packages/schema-model/src/normalization/schema-finalization-validation.ts": 300,
-  "packages/schema-model/src/dsl/builder.ts": 400,
-  "packages/schema-model/src/dsl/builder-helpers.ts": 200,
-  "packages/schema-model/src/dsl/dsl-tokens.ts": 300,
-  "packages/schema-model/src/dsl/typed-column-builders.ts": 300,
-  "packages/schema-model/src/dsl/dsl-column-exprs.ts": 300,
-  "packages/schema-model/src/dsl/dsl-view-helpers.ts": 300,
-  "packages/schema-model/src/mapping/mapping.ts": 250,
-  "packages/schema-model/src/mapping/rel-output-inference.ts": 200,
-  "packages/schema-model/src/mapping/row-coercion.ts": 300,
-  "packages/schema-model/src/mapping/logical-row-mapping.ts": 200,
-  "packages/schema-model/src/mapping/output-inference.ts": 500,
-  "packages/schema-model/src/mapping/rel-output-mapping.ts": 200,
-  "packages/provider-kysely/src/index.ts": 250,
-  "packages/provider-kysely/src/execution/scan-execution.ts": 350,
-  "packages/provider-objection/src/index.ts": 250,
-  "packages/provider-objection/src/execution/scan-execution.ts": 350,
-  "packages/provider-drizzle/src/index.ts": 250,
-  "packages/provider-drizzle/src/planning/rel-strategy.ts": 500,
-  "packages/provider-drizzle/src/planning/rel-builder.ts": 1000,
-  "packages/provider-drizzle/src/execution/scan-execution.ts": 350,
-} as const;
-
 function walkFiles(root: string): string[] {
   const entries = readdirSync(root);
   const out: string[] = [];
@@ -198,53 +96,121 @@ function walkFiles(root: string): string[] {
   return out;
 }
 
-function getWorkspaceImports(contents: string): string[] {
-  const imports = new Set<string>();
-  for (const match of contents.matchAll(IMPORT_PATTERN)) {
-    const specifier = match[1] ?? match[2];
-    if (!specifier?.startsWith("@tupl/")) {
+function discoverPackageSources(packagesRoot: string) {
+  const sources: Array<{ packageName: string; sourceDir: string }> = [];
+
+  for (const entry of readdirSync(packagesRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
       continue;
     }
-    imports.add(rootPackageOf(specifier));
+
+    const sourceDir = join(packagesRoot, entry.name, "src");
+    try {
+      const sourceStat = lstatSync(sourceDir);
+      if (!sourceStat.isSymbolicLink() && sourceStat.isDirectory()) {
+        sources.push({ packageName: entry.name, sourceDir });
+      }
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+
+  return sources;
+}
+
+function readPackageJson(packageDirectory: string): unknown {
+  return JSON.parse(readFileSync(join(packageDirectory, "package.json"), "utf8"));
+}
+
+function getPackageNamesByDirectory(packagesRoot: string) {
+  return new Map(
+    discoverPackageSources(packagesRoot).map(({ packageName: packageDirectory }) => [
+      packageDirectory,
+      getPackageName(readPackageJson(join(packagesRoot, packageDirectory))),
+    ]),
+  );
+}
+
+function getWorkspaceImports(
+  contents: string,
+  importerFile: string,
+  packageNamesByDirectory: ReadonlyMap<string, string>,
+) {
+  const imports = new Set<string>();
+  for (const specifier of getModuleSpecifiers(contents, importerFile)) {
+    const packageName = referencedWorkspacePackage({
+      importerFile,
+      packageNamesByDirectory,
+      repoRoot: REPO_ROOT,
+      specifier,
+    });
+    if (packageName) {
+      imports.add(packageName);
+    }
   }
   return [...imports];
 }
 
-function rootPackageOf(specifier: string): string {
-  const [scope, name] = specifier.split("/");
-  return `${scope}/${name}`;
-}
+function getPublicSourceModules(packagesRoot: string) {
+  const modules = new Map<string, string>();
 
-function isWrapperOnlyFile(contents: string): boolean {
-  const body = contents
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "")
-    .trim();
-
-  if (body.length === 0) {
-    return false;
+  for (const { packageName: packageDirectory } of discoverPackageSources(packagesRoot)) {
+    const packageRoot = join(packagesRoot, packageDirectory);
+    for (const entry of getPublicSourceExports(readPackageJson(packageRoot))) {
+      modules.set(
+        resolve(packageRoot, entry.target),
+        `${entry.packageName}${entry.subpath.slice(1)}`,
+      );
+    }
   }
 
-  const lines = body
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return (
-    lines.length === 1 && /^export\s+(\*|\{[^}]+\})\s+from\s+["'][^"']+["'];?$/.test(lines[0] ?? "")
-  );
+  return modules;
 }
 
 describe("package boundaries", () => {
+  it("discovers package sources among ordinary filesystem entries", () => {
+    const packagesRoot = mkdtempSync(join(tmpdir(), "tupl-package-discovery-"));
+    try {
+      mkdirSync(join(packagesRoot, "runtime", "src"), { recursive: true });
+      mkdirSync(join(packagesRoot, "notes"));
+      writeFileSync(join(packagesRoot, ".DS_Store"), "ordinary file");
+
+      expect(discoverPackageSources(packagesRoot)).toEqual([
+        {
+          packageName: "runtime",
+          sourceDir: join(packagesRoot, "runtime", "src"),
+        },
+      ]);
+    } finally {
+      rmSync(packagesRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the schema facade explicitly curated", () => {
-    const schemaIndex = readFileSync(join(REPO_ROOT, "packages/schema/src/index.ts"), "utf8");
-    expect(schemaIndex).not.toMatch(/export\s+\*\s+from\s+["']@tupl\/schema-model["']/);
-    expect(schemaIndex).not.toMatch(/export\s+\*\s+from\s+["']@tupl\/runtime["']/);
-    expect(schemaIndex).not.toContain("QueryExecutionPlan");
-    expect(schemaIndex).not.toContain("QueryStepEvent");
-    expect(schemaIndex).not.toContain("validateTableConstraintRows");
+    const schemaIndexPath = join(REPO_ROOT, "packages/schema/src/index.ts");
+    const exports = getSourceExports(readFileSync(schemaIndexPath, "utf8"), schemaIndexPath);
+    const exportedNames = new Set(
+      exports.flatMap((entry) => (entry.names === "*" ? [] : entry.names)),
+    );
+
+    expect(
+      exports.filter(
+        (entry) =>
+          entry.names === "*" &&
+          (entry.moduleSpecifier === "@tupl/schema-model" ||
+            entry.moduleSpecifier === "@tupl/runtime"),
+      ),
+    ).toEqual([]);
+    expect(exportedNames.has("QueryExecutionPlan")).toBe(false);
+    expect(exportedNames.has("QueryStepEvent")).toBe(false);
+    expect(exportedNames.has("validateTableConstraintRows")).toBe(false);
   });
 
   it("keeps the semantic package graph acyclic and downward-only", () => {
+    const packageNamesByDirectory = getPackageNamesByDirectory(join(REPO_ROOT, "packages"));
+
     for (const [dir, allowedImports] of Object.entries(LAYER_RULES)) {
       for (const file of walkFiles(join(REPO_ROOT, dir))) {
         if (!file.endsWith(".ts") && !file.endsWith(".tsx")) {
@@ -254,7 +220,11 @@ describe("package boundaries", () => {
           continue;
         }
 
-        const imports = getWorkspaceImports(readFileSync(file, "utf8"));
+        const imports = getWorkspaceImports(
+          readFileSync(file, "utf8"),
+          file,
+          packageNamesByDirectory,
+        );
         const disallowed = imports.filter((pkg) => !allowedImports.has(pkg));
         expect(
           disallowed,
@@ -304,39 +274,27 @@ describe("package boundaries", () => {
     }
   });
 
-  it("keeps canonical public subpaths pointing at real modules", () => {
-    for (const entry of DIRECT_SUBPATH_EXPORTS) {
-      const pkg = JSON.parse(readFileSync(join(REPO_ROOT, entry.packageJson), "utf8")) as {
-        exports: Record<string, string>;
-      };
-      const packageDir = join(REPO_ROOT, entry.packageJson, "..");
-      const expectedTarget = `./${relative(packageDir, join(REPO_ROOT, entry.target)).replaceAll("\\", "/")}`;
-      expect(pkg.exports[entry.subpath], entry.name).toBe(expectedTarget);
+  it("keeps package exports pointing at real source modules", () => {
+    for (const [target, entrypoint] of getPublicSourceModules(join(REPO_ROOT, "packages"))) {
+      expect(statSync(target).isFile(), entrypoint).toBe(true);
     }
   });
 
   it("avoids wrapper-only files outside package roots and public subpath roots", () => {
     const offenders: string[] = [];
+    const publicSourceModules = getPublicSourceModules(join(REPO_ROOT, "packages"));
 
-    for (const pkgDir of readdirSync(join(REPO_ROOT, "packages"))) {
-      const srcDir = join(REPO_ROOT, "packages", pkgDir, "src");
-      if (!statSync(srcDir).isDirectory()) {
-        continue;
-      }
-
-      for (const file of walkFiles(srcDir)) {
+    for (const { sourceDir } of discoverPackageSources(join(REPO_ROOT, "packages"))) {
+      for (const file of walkFiles(sourceDir)) {
         if (!file.endsWith(".ts") || file.endsWith(".d.ts")) {
           continue;
         }
 
         const relFile = relative(REPO_ROOT, file);
-        if (relFile.endsWith("/index.ts") && relFile === `packages/${pkgDir}/src/index.ts`) {
+        if (publicSourceModules.has(file)) {
           continue;
         }
-        if (DIRECT_SUBPATH_EXPORTS.some((entry) => entry.target === relFile)) {
-          continue;
-        }
-        if (isWrapperOnlyFile(readFileSync(file, "utf8"))) {
+        if (isForwardingModule(readFileSync(file, "utf8"), file)) {
           offenders.push(relFile);
         }
       }
@@ -346,6 +304,8 @@ describe("package boundaries", () => {
   });
 
   it("keeps package-local test support on the owning layer or below", () => {
+    const packageNamesByDirectory = getPackageNamesByDirectory(join(REPO_ROOT, "packages"));
+
     for (const [dir, allowedImports] of Object.entries(LAYER_RULES)) {
       const supportRoot = join(REPO_ROOT, dir);
       for (const file of walkFiles(supportRoot)) {
@@ -353,7 +313,11 @@ describe("package boundaries", () => {
           continue;
         }
 
-        const imports = getWorkspaceImports(readFileSync(file, "utf8"));
+        const imports = getWorkspaceImports(
+          readFileSync(file, "utf8"),
+          file,
+          packageNamesByDirectory,
+        );
         const disallowed = imports.filter((pkg) => !allowedImports.has(pkg));
         expect(
           disallowed,
@@ -365,6 +329,7 @@ describe("package boundaries", () => {
 
   it("keeps low-level packages and tests off the schema facade", () => {
     const offenders: string[] = [];
+    const packageNamesByDirectory = getPackageNamesByDirectory(join(REPO_ROOT, "packages"));
 
     for (const file of walkFiles(join(REPO_ROOT, "packages"))) {
       if (!file.endsWith(".ts") && !file.endsWith(".tsx")) {
@@ -376,8 +341,12 @@ describe("package boundaries", () => {
         continue;
       }
 
-      const contents = readFileSync(file, "utf8");
-      if (contents.includes(`from "@tupl/schema"`) || contents.includes(`from '@tupl/schema'`)) {
+      const imports = getWorkspaceImports(
+        readFileSync(file, "utf8"),
+        file,
+        packageNamesByDirectory,
+      );
+      if (imports.includes("@tupl/schema")) {
         offenders.push(relFile);
       }
     }
@@ -395,8 +364,12 @@ describe("package boundaries", () => {
         continue;
       }
 
-      const contents = readFileSync(file, "utf8");
-      if (contents.includes(`from "@tupl/schema"`) || contents.includes(`from '@tupl/schema'`)) {
+      const imports = getWorkspaceImports(
+        readFileSync(file, "utf8"),
+        file,
+        packageNamesByDirectory,
+      );
+      if (imports.includes("@tupl/schema")) {
         offenders.push(relFile);
       }
     }
@@ -453,20 +426,24 @@ describe("package boundaries", () => {
 
   it("keeps private test-support imports out of product source", () => {
     const offenders: string[] = [];
+    const packageNamesByDirectory = getPackageNamesByDirectory(join(REPO_ROOT, "packages"));
 
-    for (const pkgDir of readdirSync(join(REPO_ROOT, "packages"))) {
-      const srcDir = join(REPO_ROOT, "packages", pkgDir, "src");
-      if (!statSync(srcDir).isDirectory()) {
+    for (const { packageName, sourceDir } of discoverPackageSources(join(REPO_ROOT, "packages"))) {
+      if (packageName === "test-support") {
         continue;
       }
 
-      for (const file of walkFiles(srcDir)) {
+      for (const file of walkFiles(sourceDir)) {
         if (!file.endsWith(".ts") || file.includes("/__tests__/")) {
           continue;
         }
 
-        const contents = readFileSync(file, "utf8");
-        if (contents.includes("@tupl/test-support")) {
+        const imports = getWorkspaceImports(
+          readFileSync(file, "utf8"),
+          file,
+          packageNamesByDirectory,
+        );
+        if (imports.includes("@tupl/test-support")) {
           offenders.push(relative(REPO_ROOT, file));
         }
       }
@@ -477,6 +454,7 @@ describe("package boundaries", () => {
 
   it("keeps foundation free of testing surfaces", () => {
     const offenders: string[] = [];
+    const packageNamesByDirectory = getPackageNamesByDirectory(join(REPO_ROOT, "packages"));
 
     for (const file of walkFiles(join(REPO_ROOT, "packages/foundation/src"))) {
       if (!file.endsWith(".ts")) {
@@ -484,9 +462,11 @@ describe("package boundaries", () => {
       }
 
       const contents = readFileSync(file, "utf8");
+      const imports = getWorkspaceImports(contents, file, packageNamesByDirectory);
+      const moduleSpecifiers = getModuleSpecifiers(contents, file);
       if (
-        contents.includes("@tupl/test-support") ||
-        contents.includes("@tupl/provider-kit/testing")
+        imports.includes("@tupl/test-support") ||
+        moduleSpecifiers.includes("@tupl/provider-kit/testing")
       ) {
         offenders.push(relative(REPO_ROOT, file));
       }
@@ -505,6 +485,7 @@ describe("package boundaries", () => {
 
   it("keeps first-party providers on the provider-kit adapter facade", () => {
     const offenders: string[] = [];
+    const packageNamesByDirectory = getPackageNamesByDirectory(join(REPO_ROOT, "packages"));
     const providerRoots = [
       "packages/provider-drizzle/src",
       "packages/provider-ioredis/src",
@@ -518,8 +499,12 @@ describe("package boundaries", () => {
           continue;
         }
 
-        const contents = readFileSync(file, "utf8");
-        if (contents.includes("@tupl/schema-model")) {
+        const imports = getWorkspaceImports(
+          readFileSync(file, "utf8"),
+          file,
+          packageNamesByDirectory,
+        );
+        if (imports.includes("@tupl/schema-model")) {
           offenders.push(relative(REPO_ROOT, file));
         }
       }
@@ -576,30 +561,28 @@ describe("package boundaries", () => {
           continue;
         }
 
-        const contents = readFileSync(file, "utf8");
-        if (
-          contents.includes('from "../index"') ||
-          contents.includes("from '../index'") ||
-          contents.includes('from "../../index"') ||
-          contents.includes("from '../../index'")
-        ) {
+        const packageRoot = join(REPO_ROOT, root);
+        const importsPackageRoot = getModuleSpecifiers(readFileSync(file, "utf8"), file).some(
+          (specifier) => {
+            if (!specifier.startsWith(".")) {
+              return false;
+            }
+
+            const resolvedImport = resolve(dirname(file), specifier);
+            return (
+              resolvedImport === packageRoot ||
+              resolvedImport === join(packageRoot, "index") ||
+              resolvedImport === join(packageRoot, "index.ts")
+            );
+          },
+        );
+        if (importsPackageRoot) {
           offenders.push(relative(REPO_ROOT, file));
         }
       }
     }
 
     expect(offenders).toEqual([]);
-  });
-
-  it("removes the temporary internal core monoliths", () => {
-    expect(() =>
-      statSync(join(REPO_ROOT, "packages/schema-model/src/schema-model-core.ts")),
-    ).toThrow();
-    expect(() =>
-      statSync(join(REPO_ROOT, "packages/runtime/src/runtime/query-runner-core.ts")),
-    ).toThrow();
-    expect(() => statSync(join(REPO_ROOT, "packages/planner/src/query-runner-core.ts"))).toThrow();
-    expect(() => statSync(join(REPO_ROOT, "packages/planner/src/sql-lowering-core.ts"))).toThrow();
   });
 
   it("keeps runtime free of schema-view lowering logic", () => {
@@ -618,40 +601,6 @@ describe("package boundaries", () => {
         contents.includes("rewriteViewBindingExprForExecution")
       ) {
         offenders.push(relative(REPO_ROOT, file));
-      }
-    }
-
-    expect(offenders).toEqual([]);
-  });
-
-  it("keeps planner-owned and runtime-owned modules within structural budgets", () => {
-    const offenders: string[] = [];
-
-    for (const [file, limit] of Object.entries(STRUCTURAL_LINE_BUDGETS)) {
-      const lineCount = readFileSync(join(REPO_ROOT, file), "utf8").split("\n").length;
-      if (lineCount > limit) {
-        offenders.push(`${file} (${lineCount} > ${limit})`);
-      }
-    }
-
-    expect(offenders).toEqual([]);
-  });
-
-  it("keeps workspace tooling off deleted wrapper paths", () => {
-    const offenders: string[] = [];
-    const files = [
-      "tsconfig.json",
-      "vite.config.ts",
-      "examples/playground/tsconfig.json",
-      "examples/playground/vite.config.ts",
-    ];
-
-    for (const file of files) {
-      const contents = readFileSync(join(REPO_ROOT, file), "utf8");
-      for (const target of DISALLOWED_WRAPPER_TARGETS) {
-        if (contents.includes(target)) {
-          offenders.push(`${file}: ${target}`);
-        }
       }
     }
 

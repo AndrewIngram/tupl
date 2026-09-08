@@ -35,3 +35,12 @@ These invariants should hold unless a deliberate architecture change updates thi
 
 - Expected library failures should use tagged `Result` errors.
 - Internal helper signatures should prefer inference over wide explicit return annotations.
+
+## Runtime resource ownership
+
+- Runtime owns materialization limits. `maxExecutionRows` caps each intermediate
+  or final row set, rather than only the final query output.
+- Local operators check growth before appending beyond the limit. Runtime checks
+  provider arrays before mapping them, but does not control provider allocation.
+- Query sessions retain one execution outcome, including failures. Observing a
+  session must not start the query a second time or replace failure with empty rows.

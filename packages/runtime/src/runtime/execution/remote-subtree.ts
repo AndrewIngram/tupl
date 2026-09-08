@@ -16,6 +16,12 @@ import {
   type RemoteExecutionResult,
   type RelExecutionContext,
 } from "./local-execution";
+import { enforceMaterializationLimitResult } from "../policy";
+import {
+  describeProviderFragmentExecution,
+  describeRelExecution,
+  type RelExecutionObservation,
+} from "./execution-observer";
 
 /**
  * Remote subtree owns provider pushdown for non-scan relational subtrees.
@@ -23,6 +29,7 @@ import {
 export async function tryExecuteRemoteSubtreeResult<TContext>(
   node: RelNode,
   context: RelExecutionContext<TContext>,
+  observation?: RelExecutionObservation,
 ): Promise<RemoteExecutionResult> {
   if (node.kind === "scan") {
     return Result.ok(null);
@@ -36,6 +43,8 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
   if (!fragment) {
     return Result.ok(null);
   }
+
+  observation?.updateDescriptor(describeProviderFragmentExecution(fragment.provider));
 
   const provider = resolveProviderForNode(node, fragment.provider, context);
   if (!provider) {
@@ -56,6 +65,7 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
 
   const capability = normalizeCapability(capabilityResult.value);
   if (!capability.supported) {
+    observation?.updateDescriptor(describeRelExecution(node));
     return Result.ok(null);
   }
 
@@ -75,6 +85,13 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
   );
   if (Result.isError(rowsResult)) {
     return rowsResult;
+  }
+  const providerRowsLimitResult = enforceMaterializationLimitResult(
+    rowsResult.value,
+    context.guardrails,
+  );
+  if (Result.isError(providerRowsLimitResult)) {
+    return providerRowsLimitResult;
   }
 
   return tryExecutionStep("map provider rows to logical rel output rows", () =>

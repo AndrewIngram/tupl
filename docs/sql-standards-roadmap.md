@@ -47,11 +47,10 @@ Implemented:
 - Query/runtime fallback policy controls for unsupported or expensive provider pushdown
 - Rel-first provider compilation with local fallback when a provider rejects a subtree
 - Optional keyed lookup helpers for targeted execution optimizations
-- Dependency-aware parallel execution for independent branches:
-  - set-op branches
-  - independent CTE branches
-  - eligible source scan stages
-- Opt-in step execution sessions via `executableSchema.createSession(...)`
+- Opt-in query sessions via `createExecutableSchemaSession(...)` from `@tupl/runtime/session`
+  - Pull-based observations of actual execution in completion order
+  - One retained execution result or failure per session
+  - No session concurrency scheduler; local branches execute in executor order
 - Schema constraint metadata: `PRIMARY KEY`, `UNIQUE`, `FOREIGN KEY`
 - Structured `CHECK` metadata (`kind: "in"`) and enum-derived checks
 - Optional query-time constraint validation modes: `off`, `warn`, `error`
@@ -172,7 +171,7 @@ Performance is important but not the primary goal.
 | Derived tables and correlated subqueries | done                | done    | done     | none new                    |
 | Window functions (current supported set) | done                | done    | done     | none new                    |
 | Branch-level parallel execution          | n/a                 | done    | done     | none new                    |
-| Step-by-step query session API           | n/a                 | done    | done     | none new                    |
+| Query execution observation API          | n/a                 | done    | done     | none new                    |
 | Constraint runtime validation            | n/a                 | n/a     | done     | none new                    |
 | Writes (`INSERT/UPDATE/DELETE`)          | explicit no-support | n/a     | n/a      | none                        |
 

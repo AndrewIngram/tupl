@@ -38,6 +38,7 @@ export function tryPlanRemoteFragmentStep<TContext>(
   const id = nextPlanId(state, "remote_fragment");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "remote_fragment",
     dependsOn: [],
     summary: `Execute provider fragment (${resolution.fragment.provider})`,

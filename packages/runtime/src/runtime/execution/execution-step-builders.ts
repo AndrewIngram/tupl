@@ -16,6 +16,7 @@ export function buildScanStep(
   const id = nextPlanId(state, "scan");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "scan",
     dependsOn: [],
     summary: `Scan ${node.alias ?? node.table} (${node.table})`,
@@ -49,6 +50,7 @@ export function buildCteRefStep(
   const id = nextPlanId(state, "scan");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "scan",
     dependsOn: [],
     summary: `Read CTE ${node.alias ?? node.name} (${node.name})`,
@@ -82,6 +84,7 @@ export function buildValuesStep(
   const id = nextPlanId(state, "projection");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "projection",
     dependsOn: [],
     summary: "Materialize literal rows",
@@ -112,6 +115,7 @@ export function buildFilterStep(
   const id = nextPlanId(state, "filter");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "filter",
     dependsOn: [...new Set([inputId, ...subqueryDeps])],
     summary: "Apply WHERE filter",
@@ -150,6 +154,7 @@ export function buildProjectStep(
   const id = nextPlanId(state, "projection");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "projection",
     dependsOn: [...new Set([inputId, ...subqueryDeps])],
     summary: "Project result rows",
@@ -178,6 +183,7 @@ export function buildAggregateStep(
   const id = nextPlanId(state, "aggregate");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "aggregate",
     dependsOn: [inputId],
     summary: "Compute grouped aggregates",
@@ -213,6 +219,7 @@ export function buildWindowStep(
   const id = nextPlanId(state, "window");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "window",
     dependsOn: [inputId],
     summary: "Compute window functions",
@@ -249,6 +256,7 @@ export function buildSortStep(
   const id = nextPlanId(state, "order");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "order",
     dependsOn: [inputId],
     summary: "Order result rows",
@@ -279,6 +287,7 @@ export function buildLimitOffsetStep(
   const id = nextPlanId(state, "limit_offset");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "limit_offset",
     dependsOn: [inputId],
     summary: "Apply LIMIT/OFFSET",

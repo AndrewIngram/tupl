@@ -1,10 +1,7 @@
 import { Result } from "better-result";
 
-import {
-  buildCapabilityReport,
-  type ProviderOperationResult,
-  type ProviderCapabilityReport,
-} from "..";
+import { buildCapabilityReport, type ProviderCapabilityReport } from "../capabilities";
+import type { ProviderOperationResult } from "../contracts";
 import type { QueryRow, RelNode, ScanFilterClause, TableScanRequest } from "@tupl/foundation";
 import type { ProviderLookupManyRequest } from "./lookup-optimization";
 import {

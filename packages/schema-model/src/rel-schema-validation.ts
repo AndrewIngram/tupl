@@ -2,7 +2,7 @@ import { Result, type Result as BetterResult } from "better-result";
 
 import { RelLoweringError, type DataEntityHandle, type RelNode } from "@tupl/foundation";
 
-import type { SchemaDefinition } from "./types";
+import type { SchemaDefinition } from "./contracts/schema-contracts";
 
 /**
  * Rel-schema validation owns checking that relational plans only reference schema-backed tables and columns.

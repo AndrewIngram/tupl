@@ -1,7 +1,7 @@
 import type { RelExpr } from "@tupl/foundation";
 
 import { isSchemaDataEntityHandle, isSchemaDslTableToken } from "../dsl/dsl-tokens";
-import type { SchemaDataEntityHandle, SchemaDslTableToken } from "../types";
+import type { SchemaDataEntityHandle, SchemaDslTableToken } from "../contracts/schema-contracts";
 
 /**
  * Normalized column expr owns rewriting DSL column references into normalized RelExpr refs.

@@ -1,4 +1,4 @@
-import { buildCapabilityReport, type ProviderCapabilityReport } from "..";
+import { buildCapabilityReport, type ProviderCapabilityReport } from "../capabilities";
 
 export interface ScanEntityBinding {
   entity: string;

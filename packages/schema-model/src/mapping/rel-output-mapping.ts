@@ -1,4 +1,9 @@
-import type { QueryRow, SchemaDefinition } from "../types";
+import type { QueryRow } from "../contracts/query-contracts";
+import type {
+  SchemaDefinition,
+  SchemaValueCoercion,
+  TableColumnDefinition,
+} from "../contracts/schema-contracts";
 
 import { inferRelOutputDefinitions, buildRelOutputCoercion } from "./output-inference";
 
@@ -12,8 +17,8 @@ export function inferAndMapRelOutputRows(
   normalizeRowValue: (
     value: unknown,
     outputName: string,
-    definition?: import("../types").TableColumnDefinition,
-    coerce?: import("../types").SchemaValueCoercion,
+    definition?: TableColumnDefinition,
+    coerce?: SchemaValueCoercion,
   ) => unknown,
 ): QueryRow[] {
   if (rel.output.length === 0) {

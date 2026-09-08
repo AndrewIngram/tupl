@@ -10,12 +10,12 @@ import {
 import { assertColumnCompatibility, resolveEntityColumnSource } from "./entity-bindings";
 import { resolveColumnExpr } from "./normalized-column-expr";
 import type {
-  NormalizedColumnBinding,
   SchemaColRefToken,
   SchemaDataEntityHandle,
   SchemaDslTableToken,
   TableColumnDefinition,
-} from "../types";
+} from "../contracts/schema-contracts";
+import type { NormalizedColumnBinding } from "../contracts/normalized-contracts";
 import { parseColumnSource, resolveColRefToken, resolveEnumRef } from "./view-normalization";
 
 /**

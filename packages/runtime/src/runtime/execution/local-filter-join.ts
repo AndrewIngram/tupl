@@ -3,13 +3,14 @@ import { Result } from "better-result";
 import type { RelJoinNode, RelNode } from "@tupl/foundation";
 
 import { evaluateRelExprResult } from "./expression-eval";
-import { maybeExecuteLookupJoinResult, applyLocalHashJoin } from "./lookup-join";
+import { applyLocalHashJoinResult, maybeExecuteLookupJoinResult } from "./lookup-join";
 import {
   executeRelNodeResult,
   type RelExecutionContext,
   type RelExecutionResult,
 } from "./local-execution";
 import { matchesClause, type InternalRow } from "./row-ops";
+import type { RelExecutionObservation } from "./execution-observer";
 
 /**
  * Local filter/join execution owns in-memory filtering and join materialization once inputs are available.
@@ -49,6 +50,7 @@ export async function executeFilterResult<TContext>(
 export async function executeJoinResult<TContext>(
   join: RelJoinNode,
   context: RelExecutionContext<TContext>,
+  observation?: RelExecutionObservation,
 ): Promise<RelExecutionResult> {
   const leftRowsResult = await executeRelNodeResult(join.left, context);
   if (Result.isError(leftRowsResult)) {
@@ -59,6 +61,7 @@ export async function executeJoinResult<TContext>(
     join,
     leftRowsResult.value as InternalRow[],
     context,
+    observation,
   );
   if (Result.isError(lookupResult)) {
     return lookupResult;
@@ -72,11 +75,10 @@ export async function executeJoinResult<TContext>(
     return rightRowsResult;
   }
 
-  return Result.ok(
-    applyLocalHashJoin(
-      join,
-      leftRowsResult.value as InternalRow[],
-      rightRowsResult.value as InternalRow[],
-    ),
+  return applyLocalHashJoinResult(
+    join,
+    leftRowsResult.value as InternalRow[],
+    rightRowsResult.value as InternalRow[],
+    context.guardrails,
   );
 }

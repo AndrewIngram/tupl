@@ -2,18 +2,16 @@ import { Result } from "better-result";
 import { describe, expect, it } from "vite-plus/test";
 
 import { type RelNode } from "@tupl/foundation";
-import { type FragmentProviderAdapter } from "@tupl/provider-kit";
+import { type ProviderAdapter } from "@tupl/provider-kit";
 import {
   type LookupManyCapableProviderAdapter,
   type ProviderLookupManyRequest,
 } from "@tupl/provider-kit/shapes";
 import { type QueryRow, type ScanFilterClause, type TableScanRequest } from "@tupl/schema-model";
 import { executeRelWithProvidersResult } from "@tupl/runtime/executor";
-import { finalizeProviders } from "@tupl/test-support/runtime";
 import { buildEntitySchema } from "@tupl/test-support/schema";
 
-type TestProvider = Omit<FragmentProviderAdapter, "name"> &
-  Partial<LookupManyCapableProviderAdapter>;
+type TestContext = Record<string, never>;
 
 function toScanRequest(rel: RelNode): TableScanRequest | null {
   if (rel.kind !== "scan") {
@@ -247,8 +245,9 @@ describe("query/local executor", () => {
       { id: "u2", email: "b@example.com" },
     ];
 
-    const providers = finalizeProviders({
+    const providers = {
       orders_provider: {
+        name: "orders_provider",
         canExecute() {
           return true;
         },
@@ -263,8 +262,9 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(ordersRows, request));
         },
-      } satisfies TestProvider,
+      } satisfies ProviderAdapter<TestContext>,
       users_provider: {
+        name: "users_provider",
         canExecute() {
           return true;
         },
@@ -283,8 +283,8 @@ describe("query/local executor", () => {
           const keys = new Set(request.keys);
           return Result.ok(usersRows.filter((row) => keys.has(row.id)));
         },
-      } satisfies TestProvider,
-    });
+      } satisfies ProviderAdapter<TestContext> & LookupManyCapableProviderAdapter<TestContext>,
+    };
 
     const rel: RelNode = {
       id: "join_1",
@@ -359,8 +359,9 @@ describe("query/local executor", () => {
       output: [{ name: "o.id" }],
     };
 
-    const providers = finalizeProviders({
+    const providers = {
       memory: {
+        name: "memory",
         canExecute() {
           return true;
         },
@@ -370,8 +371,8 @@ describe("query/local executor", () => {
         async execute() {
           return Result.err(new Error("Downstream provider failed."));
         },
-      } satisfies TestProvider,
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const result = await executeRelWithProvidersResult(
       rel,
@@ -407,8 +408,9 @@ describe("query/local executor", () => {
       },
     });
 
-    const providers = finalizeProviders({
+    const providers = {
       memory: {
+        name: "memory",
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -423,8 +425,8 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows([{ value: "oops" }], request));
         },
-      } satisfies TestProvider,
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const rel: RelNode = {
       id: "project_1",
@@ -499,8 +501,9 @@ describe("query/local executor", () => {
       { id: "o3", org_id: "org_2", total_cents: 4000 },
     ];
 
-    const providers = finalizeProviders({
+    const providers = {
       memory: {
+        name: "memory",
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -519,8 +522,8 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(rows, request));
         },
-      } satisfies TestProvider,
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const rel: RelNode = {
       id: "aggregate_1",
@@ -588,8 +591,9 @@ describe("query/local executor", () => {
       right_items: [{ id: "b" }, { id: "c" }],
     };
 
-    const providers = finalizeProviders({
+    const providers = {
       memory: {
+        name: "memory",
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -608,8 +612,8 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(tableRows[request.table] ?? [], request));
         },
-      } satisfies TestProvider,
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const rel: RelNode = {
       id: "set_1",
@@ -687,8 +691,9 @@ describe("query/local executor", () => {
       { id: "ord_4", user_id: "usr_3", total_cents: 9900 },
     ];
 
-    const providers = finalizeProviders({
+    const providers = {
       memory: {
+        name: "memory",
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -707,8 +712,8 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(rows, request));
         },
-      } satisfies TestProvider,
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const rel: RelNode = {
       id: "project_root",
@@ -838,8 +843,9 @@ describe("query/local executor", () => {
       { id: "u3", email: "c@example.com", team: "enterprise" },
     ];
 
-    const providers = finalizeProviders({
+    const providers = {
       memory: {
+        name: "memory",
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -858,8 +864,8 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(rows, request));
         },
-      } satisfies TestProvider,
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const rel: RelNode = {
       id: "with_1",
@@ -964,8 +970,9 @@ describe("query/local executor", () => {
       preferred_vendors: [{ vendor_id: "v1" }, { vendor_id: "v3" }],
     };
 
-    const providers = finalizeProviders({
+    const providers = {
       memory: {
+        name: "memory",
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -984,8 +991,8 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(tableRows[request.table] ?? [], request));
         },
-      } satisfies TestProvider,
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const rel: RelNode = {
       id: "semi_project",
@@ -1059,8 +1066,9 @@ describe("query/local executor", () => {
       { id: "e", team: "blue", score: 80 },
     ];
 
-    const providers = finalizeProviders({
+    const providers = {
       memory: {
+        name: "memory",
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -1079,8 +1087,8 @@ describe("query/local executor", () => {
           }
           return Result.ok(scanRows(rows, request));
         },
-      } satisfies TestProvider,
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const rel: RelNode = {
       id: "rank_project",

@@ -40,6 +40,26 @@ Schema finalization is outside the query planner/runtime loop:
 - Unsupported or cross-provider portions fall back to local execution.
 - Fragment boundaries materialize canonical rows.
 
+## Execution observations
+
+Session plans describe possible work. Runtime observations describe relational
+node invocations that actually execute, including the selected provider or local
+route. A provider-owned subtree produces one fragment observation, not fictional
+completions for its unexecuted local children.
+
+Completion events have a relational node ID, a unique execution ID, and a per-node
+occurrence number. A matching static step ID is included when available. Runtime
+fallback can expose operations hidden by the static plan. Recursive evaluation can
+produce several observations for one node; step state keeps its latest occurrence.
+
+Events arrive in completion order while execution continues. Timings include time
+spent awaiting children, so summing step durations does not measure query duration.
+Unexecuted steps and explanatory grouping nodes have no measured completion.
+
+Sessions retain unread event metadata until consumed and capture rows only for the
+final output when requested. Timeouts close observation; late provider completion
+cannot change the session's retained failure.
+
 ## Current limitations
 
 - Physical planning is not cost-based.

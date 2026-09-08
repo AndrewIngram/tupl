@@ -12,9 +12,9 @@ import {
   type ExplainProviderDescriptionMode,
 } from "./explain/provider-plan-descriptions";
 import {
-  enforceExecutionRowLimitResult,
   enforcePlannerNodeLimitResult,
   resolveGuardrails,
+  validateQueryGuardrailsResult,
 } from "./policy";
 import {
   maybeRejectFallbackResult,
@@ -34,6 +34,7 @@ export async function queryInternalResult<TContext>(
 ): Promise<BetterResult<QueryRow[], TuplError>> {
   return Result.gen(async function* () {
     const guardrails = resolveGuardrails(input.queryGuardrails);
+    yield* validateQueryGuardrailsResult(guardrails);
     const logicalPlan = yield* buildLogicalQueryPlanResult(
       input.sql,
       input.preparedSchema.schema,
@@ -68,7 +69,7 @@ export async function queryInternalResult<TContext>(
       ),
     );
 
-    return enforceExecutionRowLimitResult(rows, guardrails);
+    return Result.ok(rows);
   });
 }
 
@@ -148,6 +149,7 @@ export async function explainInternalResult<TContext>(
 ): Promise<BetterResult<ExplainResult, TuplError>> {
   return Result.gen(async function* () {
     const guardrails = resolveGuardrails(input.queryGuardrails);
+    yield* validateQueryGuardrailsResult(guardrails);
     const plannedQuery = yield* Result.await(
       buildPhysicalQueryPlanResult(
         input.sql,

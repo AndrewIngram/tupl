@@ -12,15 +12,17 @@ import {
   parsePositiveOrdinalLiteral,
   resolveColumnRef,
 } from "./sql-expr-lowering";
-import { parseWindowOver } from "./sql-expr-utils";
+import { parseWindowOver } from "./windows/window-specifications";
 import { lowerHavingExpr } from "./having-lowering";
 import {
-  parseOrderBy,
   resolveAggregateGroupBy,
+  validateAggregateProjectionGroupBy,
+} from "./aggregate/group-by-resolution";
+import {
+  parseOrderBy,
   resolveAggregateOrderBy,
   resolveNonAggregateOrderBy,
-  validateAggregateProjectionGroupBy,
-} from "./aggregate-ordering";
+} from "./aggregate/aggregate-order-resolution";
 
 /**
  * Aggregate lowering owns GROUP BY, HAVING, aggregate metrics, and ORDER BY resolution

@@ -24,6 +24,7 @@ export function buildJoinStep<TContext>(
     const id = nextPlanId(state, "lookup_join");
     state.steps.push({
       id,
+      relNodeId: node.id,
       kind: "lookup_join",
       dependsOn: [leftId],
       summary: `Lookup join ${lookupJoin.leftTable}.${lookupJoin.leftKey} -> ${lookupJoin.rightTable}.${lookupJoin.rightKey}`,
@@ -59,6 +60,7 @@ export function buildJoinStep<TContext>(
   const id = nextPlanId(state, "join");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "join",
     dependsOn: [leftId, rightId],
     summary: `${node.joinType.toUpperCase()} join`,
@@ -132,6 +134,7 @@ export function buildSetOpStep(
   const id = nextPlanId(state, "projection");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "projection",
     dependsOn: [leftStep, rightStep],
     summary: `Apply set operation (${node.op})`,
@@ -183,6 +186,7 @@ export function buildWithStep(
   const id = nextPlanId(state, "projection");
   state.steps.push({
     id,
+    relNodeId: node.id,
     kind: "projection",
     dependsOn: [...cteStepIds, bodyStepId],
     summary: "Finalize WITH query",

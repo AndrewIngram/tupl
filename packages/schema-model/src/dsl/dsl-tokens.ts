@@ -1,15 +1,17 @@
 import type { RelExpr } from "@tupl/foundation";
 
 import type {
+  SchemaColRefToken,
+  SchemaDataEntityHandle,
+  SchemaDslTableToken,
+} from "../contracts/schema-contracts";
+import type {
   DslTableDefinition,
   DslViewDefinition,
   SchemaCalculatedColumnDefinition,
-  SchemaColRefToken,
   SchemaColumnLensDefinition,
-  SchemaDataEntityHandle,
-  SchemaDslTableToken,
   SchemaTypedColumnDefinition,
-} from "../types";
+} from "../contracts/table-definition-contracts";
 
 /**
  * DSL tokens own the token constructors and type guards used by the schema builder DSL.

@@ -1,27 +1,29 @@
 import type { RelNode } from "@tupl/foundation";
 
-import type {
-  SchemaBuilder,
-  SchemaDefinition,
-  TableMethodsForSchema,
-  TableMethodsMap,
-} from "../types";
+import type { SchemaBuilder } from "../contracts/schema-builder-contracts";
+import type { SchemaDefinition } from "../contracts/schema-contracts";
+import type { TableMethodsForSchema, TableMethodsMap } from "../contracts/query-contracts";
 import type {
   TablePlanningMethodsForSchema,
   TablePlanningMethodsMap,
 } from "../contracts/table-planning-contracts";
 import {
-  buildColumnExprHelpers as buildColumnExprHelpersInternal,
-  buildSchemaColumnsColHelper as buildSchemaColumnsColHelperInternal,
   createSchemaDslTableToken,
   isSchemaDataEntityHandle as isSchemaDataEntityHandleInternal,
-} from "./builder-helpers";
+} from "./dsl-tokens";
+import {
+  buildColumnExprHelpers as buildColumnExprHelpersInternal,
+  buildSchemaColumnsColHelper as buildSchemaColumnsColHelperInternal,
+} from "./dsl-column-exprs";
 import {
   schemaBuilderState,
   type RegisteredSchemaDefinition,
   type SchemaBuilderState,
 } from "./builder-state";
-import type { SchemaDslViewRelHelpers, SchemaViewRelNodeInput } from "../contracts/dsl-contracts";
+import type {
+  SchemaDslViewRelHelpers,
+  SchemaViewRelNodeInput,
+} from "../contracts/schema-view-contracts";
 import { buildRegisteredSchemaDefinition } from "../normalization";
 
 /**

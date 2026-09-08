@@ -8,7 +8,7 @@ import {
   buildRelOutputCoercion,
   resolveRelRefOutputDefinition,
 } from "./output-definition-utils";
-import type { SchemaDefinition, TableColumnDefinition } from "../types";
+import type { SchemaDefinition, TableColumnDefinition } from "../contracts/schema-contracts";
 
 /**
  * Output inference owns column-definition inference for relational output trees.

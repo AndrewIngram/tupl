@@ -43,6 +43,12 @@ Cross-module rules:
 - Internal cross-package test infrastructure lives in the private `@tupl/test-support` workspace package.
 - External provider authors should use `@tupl/provider-kit/testing` instead of importing repo-only helpers.
 
+The workspace boundary tests parse TypeScript imports and re-exports, including
+type imports, literal dynamic imports, and relative references across packages.
+Public forwarding-module exceptions come from package export declarations.
+Internal re-export-only modules must give way to direct imports from the owning
+module. File length and historical filenames do not define package ownership.
+
 Consumer guidance:
 
 - Provider implementations should prefer `@tupl/provider-kit`, `@tupl/provider-kit/shapes`, and `@tupl/provider-kit/testing` for ordinary adapter work.

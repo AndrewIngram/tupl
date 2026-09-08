@@ -15,14 +15,16 @@ import {
 import type {
   ColumnDefinition,
   ColumnForeignKeyReference,
-  SchemaCalculatedColumnDefinition,
   SchemaColRefToken,
-  SchemaColumnLensDefinition,
-  SchemaTypedColumnDefinition,
-  SchemaTypedColumnBuilder,
   SchemaValueCoercion,
   SqlScalarType,
-} from "../types";
+} from "../contracts/schema-contracts";
+import type {
+  SchemaCalculatedColumnDefinition,
+  SchemaColumnLensDefinition,
+  SchemaTypedColumnDefinition,
+} from "../contracts/table-definition-contracts";
+import type { SchemaTypedColumnBuilder } from "../contracts/typed-column-builder-contracts";
 
 export interface SchemaTypedColumnBuilderOptions {
   nullable?: boolean;

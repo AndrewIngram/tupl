@@ -55,6 +55,7 @@ export interface SessionSnapshot {
   events: QueryStepEvent[];
   result: QueryRow[] | null;
   done: boolean;
+  error: string | null;
   executedOperations: ExecutedProviderOperation[];
 }
 
@@ -272,6 +273,7 @@ export async function replaySession(
     snapshot.events,
     snapshot.result,
     snapshot.done,
+    snapshot.error,
   );
   return {
     session,
@@ -279,6 +281,7 @@ export async function replaySession(
     events: snapshot.events,
     result: snapshot.result,
     done: snapshot.done,
+    error: snapshot.error,
     executedOperations: snapshot.executedOperations,
   };
 }
@@ -298,24 +301,38 @@ export async function runSessionToCompletion(
       events: [...existingEvents, ...snapshot.events],
       result: snapshot.result,
       done: snapshot.done,
+      error: snapshot.error,
       executedOperations: snapshot.executedOperations,
     };
   }
 
   const events = [...existingEvents];
 
-  while (true) {
-    const next = await session.next();
-    if ("done" in next) {
-      return {
-        session,
-        plan: session.getPlan(),
-        events,
-        result: next.result,
-        done: true,
-        executedOperations: [],
-      };
+  try {
+    while (true) {
+      const next = await session.next();
+      if ("done" in next) {
+        return {
+          session,
+          plan: session.getPlan(),
+          events,
+          result: next.result,
+          done: true,
+          error: null,
+          executedOperations: [],
+        };
+      }
+      events.push(next);
     }
-    events.push(next);
+  } catch (error) {
+    return {
+      session,
+      plan: session.getPlan(),
+      events,
+      result: null,
+      done: true,
+      error: error instanceof Error ? error.message : String(error),
+      executedOperations: [],
+    };
   }
 }

@@ -14,6 +14,8 @@ import {
   stableRowKey,
   toColumnKey,
 } from "./row-ops";
+import type { InternalRow } from "./row-ops";
+import { appendMaterializedRowResult, appendMaterializedRowsResult } from "../policy";
 
 /**
  * Local ordering/CTE execution owns in-memory sort, limit/offset, set-op, and WITH materialization.
@@ -81,10 +83,40 @@ export async function executeSetOpResult<TContext>(
   const rightRows = rightRowsResult.value;
 
   switch (setOp.op) {
-    case "union_all":
-      return Result.ok([...leftRows, ...rightRows]);
-    case "union":
-      return Result.ok(dedupeRows([...leftRows, ...rightRows]));
+    case "union_all": {
+      const combined: InternalRow[] = [];
+      const leftAppendResult = appendMaterializedRowsResult(combined, leftRows, context.guardrails);
+      if (Result.isError(leftAppendResult)) {
+        return leftAppendResult;
+      }
+      const rightAppendResult = appendMaterializedRowsResult(
+        combined,
+        rightRows,
+        context.guardrails,
+      );
+      if (Result.isError(rightAppendResult)) {
+        return rightAppendResult;
+      }
+      return Result.ok(combined);
+    }
+    case "union": {
+      const combined: InternalRow[] = [];
+      const keys = new Set<string>();
+      for (const rows of [leftRows, rightRows]) {
+        for (const row of rows) {
+          const key = stableRowKey(row);
+          if (keys.has(key)) {
+            continue;
+          }
+          const appendResult = appendMaterializedRowResult(combined, row, context.guardrails);
+          if (Result.isError(appendResult)) {
+            return appendResult;
+          }
+          keys.add(key);
+        }
+      }
+      return Result.ok(combined);
+    }
     case "intersect": {
       const rightKeys = new Set(rightRows.map((row) => stableRowKey(row)));
       return Result.ok(dedupeRows(leftRows.filter((row) => rightKeys.has(stableRowKey(row)))));
@@ -163,12 +195,22 @@ export async function executeRepeatUnionResult<TContext>(
       if (fresh.length === 0) {
         break;
       }
-      accumulated = [...accumulated, ...fresh];
+      const appendResult = appendMaterializedRowsResult(accumulated, fresh, context.guardrails);
+      if (Result.isError(appendResult)) {
+        return appendResult;
+      }
       delta = fresh;
       continue;
     }
 
-    accumulated = [...accumulated, ...iterativeRows];
+    const appendResult = appendMaterializedRowsResult(
+      accumulated,
+      iterativeRows,
+      context.guardrails,
+    );
+    if (Result.isError(appendResult)) {
+      return appendResult;
+    }
     delta = iterativeRows;
   }
 

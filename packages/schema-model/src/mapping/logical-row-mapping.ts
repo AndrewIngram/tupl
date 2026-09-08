@@ -4,9 +4,9 @@ import type {
   NormalizedColumnBinding,
   NormalizedPhysicalTableBinding,
   NormalizedSourceColumnBinding,
-  QueryRow,
-  TableDefinition,
-} from "../types";
+} from "../contracts/normalized-contracts";
+import type { QueryRow } from "../contracts/query-contracts";
+import type { TableDefinition } from "../contracts/schema-contracts";
 
 /**
  * Logical row mapping owns logical-column projection against normalized physical bindings.

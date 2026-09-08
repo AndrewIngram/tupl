@@ -11,7 +11,7 @@ import {
   type ResolvedColumnDefinition,
 } from "./definition";
 import { createSchemaIssue, createSchemaValidationError } from "./schema-errors";
-import type { SchemaDefinition } from "./types";
+import type { SchemaDefinition } from "./contracts/schema-contracts";
 
 /**
  * Schema constraint validation owns logical schema invariants for tables, columns, and constraints.

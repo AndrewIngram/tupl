@@ -27,12 +27,19 @@ describe("playground/plan-step-presentation", () => {
     };
     const state: QueryStepState = {
       id: "scan_1",
+      relNodeId: "rel_scan_1",
+      executionId: "execution_1",
+      occurrence: 1,
       kind: "scan",
       status: "done",
       summary: "Scan orders",
       dependsOn: [],
       routeUsed: "scan",
+      executionIndex: 1,
+      startedAt: 100,
+      endedAt: 104,
       durationMs: 4,
+      rowCount: 12,
       outputRowCount: 12,
     };
 
@@ -94,6 +101,45 @@ describe("playground/plan-step-presentation", () => {
       operator: "Remote Fragment",
       signature: "warehouse rel",
       placement: "Remote on warehouse",
+    });
+  });
+
+  it("shows the measured local route when a statically remote step falls back", () => {
+    const step: QueryExecutionPlanStep = {
+      id: "remote_fragment_1",
+      relNodeId: "rel_remote_fragment_1",
+      kind: "remote_fragment",
+      dependsOn: [],
+      summary: "Execute provider fragment (warehouse)",
+      phase: "fetch",
+      operation: {
+        name: "provider_fragment",
+        details: {
+          provider: "warehouse",
+        },
+      },
+    };
+    const state: QueryStepState = {
+      id: step.id,
+      relNodeId: "rel_remote_fragment_1",
+      executionId: "execution_1",
+      occurrence: 1,
+      kind: "remote_fragment",
+      status: "done",
+      summary: step.summary,
+      dependsOn: [],
+      routeUsed: "local",
+      executionIndex: 1,
+      startedAt: 100,
+      endedAt: 104,
+      durationMs: 4,
+      rowCount: 2,
+      outputRowCount: 2,
+    };
+
+    expect(presentStep(step, state)).toMatchObject({
+      placement: "Local runtime",
+      executionLabel: "local over fetched rows",
     });
   });
 

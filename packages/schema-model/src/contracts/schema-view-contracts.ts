@@ -8,7 +8,7 @@ import type {
   DslTableDefinition,
   DslViewDefinition,
   SchemaDslRelationRef,
-} from "./table-dsl-contracts";
+} from "./table-definition-contracts";
 
 /**
  * Schema view contracts own logical view-rel node shapes and the builder-facing helper types used to author them.

@@ -1,4 +1,7 @@
-import type { DslTableDefinition, DslViewDefinition } from "../contracts/dsl-contracts";
+import type {
+  DslTableDefinition,
+  DslViewDefinition,
+} from "../contracts/table-definition-contracts";
 
 /**
  * Builder state owns the hidden registration map behind createSchemaBuilder().

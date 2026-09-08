@@ -8,7 +8,7 @@ import type {
   SchemaDslTableToken,
 } from "../contracts/schema-contracts";
 import { createSchemaNormalizationError } from "../schema-errors";
-import type { SchemaViewRelNode, SchemaViewRelNodeInput } from "../types";
+import type { SchemaViewRelNode, SchemaViewRelNodeInput } from "../contracts/schema-view-contracts";
 
 /**
  * View normalization owns normalization of DSL view definitions into schema-facing view contracts.
