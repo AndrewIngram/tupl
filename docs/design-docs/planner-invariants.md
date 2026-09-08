@@ -6,6 +6,9 @@ These invariants should hold unless a deliberate architecture change updates thi
 
 - There is no SQL rel fallback node in the canonical logical IR.
 - Supported queries lower to canonical rel or fail with tagged planning errors.
+- SELECT wildcards expand to public column references before projection analysis. CTE scopes carry ordered output names, including recursive seed outputs.
+- SELECT outputs have unique names because result rows are name-keyed objects. Reject collisions before provider planning; never silently overwrite them.
+- Set-operation branches have equal arity before positional output alignment.
 - Final executable plans should not contain unresolved scalar/EXISTS subquery expressions.
 
 ## Provider ownership

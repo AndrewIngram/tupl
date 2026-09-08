@@ -13,6 +13,7 @@ Planning remains internal; users write SQL, not plans.
 Implemented:
 
 - `SELECT ... FROM ...`
+- `SELECT *`, `alias.*`, and mixed wildcard/expression projections over public tables, views, joins, CTEs, and derived tables
 - `INNER JOIN ... ON a = b` (equality joins)
 - `LEFT JOIN ... ON a = b`
 - `RIGHT JOIN ... ON a = b`
@@ -75,6 +76,14 @@ Target direction:
 - Keep performance pragmatic: semi-optimal pushdown and batching where possible, without pursuing full database-style optimization.
 - Reintroduce optional capability/pushdown policy hints only as explicit performance controls (future).
   Legacy `filterable`/`sortable` and query reject/fallback policy knobs were removed from the core API and may return later only as opt-in performance hints.
+
+## Wildcard projections and output names
+
+Projection wildcards expand in place before aggregate and window analysis. Bare `*` uses FROM/JOIN order, then each relation's declared public column order. `alias.*` uses the visible relation alias. Public calculated columns participate; private physical columns do not. CTEs and derived tables use their SELECT output order, and recursive references use the seed's output shape.
+
+Rows are objects keyed by output name. Duplicate output names are rejected for wildcard and explicit projections before provider execution. For example, when both joined relations expose `id`, use `SELECT u.*, o.id AS order_id` instead of `SELECT *`. No automatic qualified names are generated. Unaliased expressions use the existing default name, so multiple expressions may need explicit aliases too.
+
+`COUNT(*)` keeps its aggregate meaning. Expanded projections must satisfy normal GROUP BY rules. Set-operation branches must have equal column counts after expansion; subsequent branches use the first branch's output names by position.
 
 ## Milestones
 

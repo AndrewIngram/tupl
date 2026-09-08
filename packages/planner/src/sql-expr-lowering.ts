@@ -37,6 +37,7 @@ import { lowerScalarSubqueryExpr } from "./subqueries/expr-subquery-lowering";
 export interface SqlExprLoweringContext {
   schema: SchemaDefinition;
   cteNames: Set<string>;
+  expandProjection: (ast: SelectAst) => SelectAst;
   tryLowerSelect(ast: SelectAst): import("@tupl/foundation").RelNode | null;
 }
 

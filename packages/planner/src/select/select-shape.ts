@@ -73,6 +73,7 @@ export function prepareSimpleSelectLowering(
   schema: SchemaDefinition,
   cteNames: Set<string>,
   tryLowerSelect: (ast: SelectAst) => RelNode | null,
+  expandProjection: (ast: SelectAst) => SelectAst,
 ): BetterResult<PreparedSimpleSelect | null, RelLoweringError> {
   if (ast.type !== "select" || ast.with || ast.set_op || ast._next) {
     return Result.ok(null);
@@ -118,6 +119,7 @@ export function prepareSimpleSelectLowering(
     schema,
     cteNames,
     tryLowerSelect,
+    expandProjection,
   };
 
   const joins = parseJoins(from, bindings, aliasToBinding);
@@ -154,6 +156,18 @@ export function prepareSimpleSelectLowering(
 
   const safeAggregateProjections = aggregateMode ? (aggregateProjections ?? []) : [];
   const safeProjections = aggregateMode ? [] : (projections ?? []);
+  const outputNames = new Set<string>();
+  for (const projection of aggregateMode ? safeAggregateProjections : safeProjections) {
+    if (outputNames.has(projection.output)) {
+      return Result.err(
+        new RelLoweringError({
+          operation: "validate SELECT outputs",
+          message: `Duplicate output column: ${projection.output}. Use explicit projections with unique aliases.`,
+        }),
+      );
+    }
+    outputNames.add(projection.output);
+  }
   const aggregateWindowProjections = aggregateMode
     ? parseAggregateWindowProjections(
         ast.columns,

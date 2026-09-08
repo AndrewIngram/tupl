@@ -304,13 +304,15 @@ function parseCorrelationEquality(
 export function parseSupportedCorrelatedExistsSubquery(
   raw: unknown,
   outerAliases: Set<string>,
+  expandProjection?: (ast: SelectAst) => SelectAst,
 ): SupportedCorrelatedExistsRewrite | null {
   const parsed = parseExistsSubqueryAst(raw);
   if (!parsed || !isCorrelatedSubquery(parsed.subquery, outerAliases)) {
     return null;
   }
 
-  const subquery = parsed.subquery;
+  // Shape validation has no schema; lowering expands stars before adding correlation keys.
+  const subquery = expandProjection ? expandProjection(parsed.subquery) : parsed.subquery;
   if (!Array.isArray(subquery.columns)) return null;
 
   if (subquery.groupby || subquery.having || subquery.limit || subquery.window) {

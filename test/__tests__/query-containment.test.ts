@@ -52,6 +52,11 @@ queries.push(
   "SELECT id, org FROM accounts WHERE EXISTS (SELECT id FROM details WHERE org=2 OR 1=1)",
 );
 queries.push(
+  "SELECT * FROM accounts",
+  "SELECT a.* FROM accounts a WHERE EXISTS (SELECT * FROM details d WHERE d.id=a.id)",
+  "SELECT a.*, 1 AS extra FROM accounts a",
+  "SELECT * FROM (SELECT id, label FROM accounts) a",
+  "WITH a AS (SELECT * FROM accounts) SELECT a.* FROM a",
   "SELECT id, org, label, value FROM accounts",
   "SELECT id FROM accounts ORDER BY id DESC LIMIT 1 OFFSET 1",
   "SELECT COUNT(*) AS n, SUM(value) AS total FROM accounts",
@@ -77,6 +82,10 @@ queries.push(
   "SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS n FROM accounts",
 );
 const rejected = [
+  "SELECT a.* FROM accounts a WHERE EXISTS (SELECT * FROM details d WHERE d.secret=a.id)",
+  "SELECT * FROM accounts a JOIN details d ON a.id=d.id",
+  "SELECT a.*, d.id FROM accounts a JOIN details d ON a.id=d.id",
+  "SELECT missing.* FROM accounts",
   "SELECT a.id FROM accounts a WHERE EXISTS (SELECT d.id FROM details d WHERE d.id=a.secret)",
   "SELECT a.id FROM accounts a WHERE EXISTS (SELECT d.id FROM details d WHERE d.secret=a.id)",
   "SELECT (SELECT MAX(secret) FROM details) AS hidden FROM accounts",
@@ -177,15 +186,6 @@ for (const dialect of ["sqlite", "postgres"] as const)
         }
         it.each(queries)("matches authorized-only SQL: %s", async (sql) => {
           await assertQuery(sql);
-        });
-        it("fails closed for unsupported wildcard projections", async () => {
-          fixture.statements.length = 0;
-          const result = await fixture.schema.query({
-            sql: "SELECT * FROM accounts",
-            context: { org: 1 },
-          });
-          expect(result.isErr()).toBe(true);
-          expect(fixture.statements).toEqual([]);
         });
         it.each(rejected)("rejects access outside the declared schema: %s", async (sql) => {
           fixture.statements.length = 0;

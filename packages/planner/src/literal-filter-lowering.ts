@@ -43,7 +43,11 @@ export function parseWhereFilters(
   const residualParts: RelExpr[] = [];
   const outerAliases = new Set(bindings.map((binding) => binding.alias));
   for (const part of parts) {
-    const correlatedExists = parseSupportedCorrelatedExistsSubquery(part, outerAliases);
+    const correlatedExists = parseSupportedCorrelatedExistsSubquery(
+      part,
+      outerAliases,
+      lowerExprContext.expandProjection,
+    );
     if (correlatedExists) {
       existsSubqueries.push({
         negated: correlatedExists.negated,

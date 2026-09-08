@@ -16,11 +16,18 @@ export function tryLowerSimpleSelect(
   schema: SchemaDefinition,
   cteNames: Set<string>,
   tryLowerSelect: (ast: SelectAst) => RelNode | null,
+  expandProjection: (ast: SelectAst) => SelectAst,
 ): BetterResult<RelNode | null, RelLoweringError> {
   return Result.gen(function* () {
     const shape = yield* Result.try({
       try: () => {
-        const result = prepareSimpleSelectLowering(ast, schema, cteNames, tryLowerSelect);
+        const result = prepareSimpleSelectLowering(
+          ast,
+          schema,
+          cteNames,
+          tryLowerSelect,
+          expandProjection,
+        );
         if (Result.isError(result)) {
           throw result.error;
         }

@@ -1217,6 +1217,12 @@ describe("query/provider runtime", () => {
       { order_id: "o1", spend: 2000 },
       { order_id: "o2", spend: 700 },
     ]);
+    expect(
+      await queryRows(executableSchema, {
+        context: {},
+        sql: "SELECT * FROM order_spend ORDER BY order_id ASC",
+      }),
+    ).toEqual(rows);
   });
 
   it("executes calculated columns on physical tables with select, filter, and order by", async () => {
@@ -1297,6 +1303,21 @@ describe("query/provider runtime", () => {
       { id: "o2", totalDollars: 32, isLargeOrder: true },
       { id: "o3", totalDollars: 21, isLargeOrder: true },
       { id: "o1", totalDollars: 12, isLargeOrder: false },
+    ]);
+    const wildcardRows = await queryRows(executableSchema, {
+      context: {},
+      sql: "SELECT o.* FROM myOrders o ORDER BY totalDollars DESC",
+    });
+    expect(wildcardRows).toEqual([
+      { id: "o2", totalCents: 3200, totalDollars: 32, isLargeOrder: true },
+      { id: "o3", totalCents: 2100, totalDollars: 21, isLargeOrder: true },
+      { id: "o1", totalCents: 1200, totalDollars: 12, isLargeOrder: false },
+    ]);
+    expect(Object.keys(wildcardRows[0]!)).toEqual([
+      "id",
+      "totalCents",
+      "totalDollars",
+      "isLargeOrder",
     ]);
   });
 

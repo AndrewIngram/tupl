@@ -242,11 +242,7 @@ class SqliteSelectParser {
     return ast;
   }
 
-  parseSelectColumns(): "*" | SelectColumnAst[] {
-    if (this.matchSymbol("*")) {
-      return "*";
-    }
-
+  parseSelectColumns(): SelectColumnAst[] {
     const columns: SelectColumnAst[] = [];
     while (true) {
       const expr = this.parseExpression();
