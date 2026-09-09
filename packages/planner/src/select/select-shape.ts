@@ -167,6 +167,7 @@ export function prepareSimpleSelectLowering(
         safeAggregateProjections,
         lowerExprContext,
         namedWindows,
+        aliasToBinding,
       )
     : [];
   if (aggregateMode && aggregateWindowProjections == null) {
@@ -305,15 +306,20 @@ export function prepareSimpleSelectLowering(
   });
   if (havingExpr) havingExpr = mapExpressionRefs(havingExpr, havingRef);
   const windowRef = (ref: RelColumnRef): RelColumnRef => {
+    const qualifier = ref.alias || ref.table;
+    const index = effectiveGroupBy.findIndex(
+      (source) =>
+        source.column === ref.column &&
+        (!qualifier || qualifier === (source.alias ?? source.table)),
+    );
+    if (index >= 0) return { column: aggregateGroupOutputs[index]! };
+    if (qualifier) return ref;
     const projected = safeAggregateProjections.find(
       (projection) => projection.output === ref.column,
     );
     if (projected?.kind === "metric") return { column: projected.metric.as };
     if (projected?.kind === "group" && projected.source) return havingRef(projected.source);
-    const index = effectiveGroupBy.findIndex(
-      (source) => source.column === ref.column && (!ref.alias || ref.alias === source.alias),
-    );
-    return index < 0 ? ref : { column: aggregateGroupOutputs[index]! };
+    return ref;
   };
   for (const fn of windowFunctions) {
     fn.partitionBy = fn.partitionBy.map(windowRef);
@@ -387,6 +393,7 @@ function parseAggregateWindowProjections(
   aggregateProjections: ParsedAggregateProjection[],
   lowerExprContext: SqlExprLoweringContext,
   namedWindows: Map<string, WindowSpecificationAst>,
+  aliasToBinding: Map<string, Binding>,
 ) {
   const bindings: Binding[] = [
     {
@@ -396,7 +403,6 @@ function parseAggregateWindowProjections(
       sourceKind: "table",
     },
   ];
-  const aliasToBinding = new Map<string, Binding>();
   const windowProjections = parseWindowProjections(
     rawColumns,
     bindings,
@@ -433,7 +439,16 @@ function parseAggregateWindowProjections(
         return ref;
       });
     for (const ref of refs) {
-      if (!availableColumns.has(ref.column)) {
+      const qualifier = ref.alias || ref.table;
+      const available = qualifier
+        ? aggregateProjections.some(
+            (projection) =>
+              projection.kind === "group" &&
+              projection.source?.column === ref.column &&
+              (projection.source.alias ?? projection.source.table) === qualifier,
+          )
+        : availableColumns.has(ref.column);
+      if (!available) {
         return null;
       }
     }

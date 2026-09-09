@@ -4,29 +4,34 @@ import type { SelectAst } from "../sqlite-parser/ast";
 import { parseLimitAndOffset } from "../sql-expr-lowering";
 import { nextRelId } from "../physical/planner-ids";
 
-export function applyCompoundModifiers(input: RelNode, ast: SelectAst, enclosingNames: boolean) {
+export function applyCompoundModifiers(input: RelNode, ast: SelectAst, branches: SelectAst[]) {
   let node = input;
   const orderBy = [];
   for (const term of ast.orderby ?? []) {
     const expr = term.expr;
-    let index =
-      "type" in expr && expr.type === "number"
-        ? expr.value - 1
-        : !enclosingNames && "type" in expr && expr.type === "column_ref"
-          ? input.output.findIndex((column) => column.name === expr.column)
-          : -1;
-    // SQLite resolves compound names against SELECT lists from left to right.
-    if (index < 0 && "type" in expr && expr.type === "column_ref") {
-      for (let branch: SelectAst | undefined = ast; branch; branch = branch._next) {
+    let index = "type" in expr && expr.type === "number" ? expr.value - 1 : -1;
+    if ("type" in expr && expr.type === "column_ref") {
+      // Resolve in each branch's SQL scope before applying enclosing CTE names.
+      for (const branch of branches) {
         if (!Array.isArray(branch.columns)) continue;
-        index = branch.columns.findIndex(
-          (entry) =>
-            entry.as === expr.column ||
-            (!entry.as &&
-              "type" in entry.expr &&
-              entry.expr.type === "column_ref" &&
-              entry.expr.column === expr.column),
-        );
+        index = !expr.table ? branch.columns.findIndex((entry) => entry.as === expr.column) : -1;
+        if (index < 0)
+          index = branch.columns.findIndex((entry) => {
+            const source = entry.expr;
+            if (
+              !("type" in source) ||
+              source.type !== "column_ref" ||
+              source.column !== expr.column
+            )
+              return false;
+            if (!expr.table) return true;
+            const qualifier =
+              source.table ??
+              (branch.from?.length === 1
+                ? (branch.from[0]?.as ?? branch.from[0]?.table)
+                : undefined);
+            return qualifier === expr.table;
+          });
         if (index >= 0) break;
       }
     }

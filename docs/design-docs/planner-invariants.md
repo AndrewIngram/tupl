@@ -90,8 +90,14 @@ These invariants should hold unless a deliberate architecture change updates thi
 - Compound ORDER BY and pagination wrap the complete set operation. Branch
   outputs align positionally before those modifiers run. Recursive CTE body
   ordering and pagination are rejected until recursive queue semantics exist.
+- Compound ORDER BY resolves aliases and source references against each branch's
+  expanded SELECT list, retaining table qualifiers. Match before applying enclosing
+  CTE output names, then sort by the resulting output position.
 - Aggregate grouping values and metrics have distinct internal names. HAVING,
   sorting, windows, and final projection must resolve the same identities.
+- Grouped window references resolve grouped sources before conflicting SELECT
+  aliases. Qualified references must identify a grouped source; a metric alias
+  cannot satisfy a qualified source reference.
 - Grouped navigation windows validate value and default expressions against
   grouped or aggregate outputs, just like partition and ordering references.
 - Binary arithmetic propagates null. Division and remainder by zero return null.

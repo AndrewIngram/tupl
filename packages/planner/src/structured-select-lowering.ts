@@ -20,6 +20,22 @@ export function tryLowerStructuredSelect(
   cteColumns: Map<string, string[]>,
   outputNames?: string[],
 ): BetterResult<RelNode | null, RelLoweringError> {
+  return lowerStructuredSelect(ast, schema, cteColumns, outputNames).map(
+    (result) => result?.node ?? null,
+  );
+}
+
+interface LoweredSelect {
+  node: RelNode;
+  ast: SelectAst;
+}
+
+function lowerStructuredSelect(
+  ast: SelectAst,
+  schema: SchemaDefinition,
+  cteColumns: Map<string, string[]>,
+  outputNames?: string[],
+): BetterResult<LoweredSelect | null, RelLoweringError> {
   return Result.gen(function* () {
     const normalizedAst = rewriteDerivedTables(ast);
     const scopedCteColumns = new Map(cteColumns);
@@ -73,8 +89,12 @@ export function tryLowerStructuredSelect(
     const hasSetOp = typeof normalizedAst.set_op === "string" && !!normalizedAst._next;
     if (!hasSetOp) {
       const { with: _ignoredWith, ...withoutWith } = normalizedAst;
+      const expandedAst = yield* Result.try({
+        try: () => expandSelectWildcards(withoutWith, schema, scopedCteColumns),
+        catch: (error) => toRelLoweringError(error, "expand SELECT wildcard"),
+      });
       const simple = yield* tryLowerSimpleSelectWithinStructuredLowering(
-        withoutWith as SelectAst,
+        expandedAst,
         schema,
         scopedCteColumns,
         outputNames,
@@ -84,7 +104,7 @@ export function tryLowerStructuredSelect(
       }
 
       if (loweredCtes.length === 0) {
-        return Result.ok(simple);
+        return Result.ok({ node: simple, ast: expandedAst });
       }
 
       const withNode: RelNode = {
@@ -96,7 +116,7 @@ export function tryLowerStructuredSelect(
         output: simple.output,
       };
 
-      return Result.ok(withNode);
+      return Result.ok({ node: withNode, ast: expandedAst });
     }
 
     const { with: _ignoredWith, ...withoutWith } = normalizedAst;
@@ -108,11 +128,10 @@ export function tryLowerStructuredSelect(
       limit: _compoundLimit,
       ...currentBaseAst
     } = currentAst;
-    const firstBranchAst = expandSelectWildcards(
-      currentBaseAst as SelectAst,
-      schema,
-      scopedCteColumns,
-    );
+    const firstBranchAst = yield* Result.try({
+      try: () => expandSelectWildcards(currentBaseAst, schema, scopedCteColumns),
+      catch: (error) => toRelLoweringError(error, "expand SELECT wildcard"),
+    });
     let currentNode: RelNode | null = yield* tryLowerSimpleSelectWithinStructuredLowering(
       firstBranchAst,
       schema,
@@ -123,6 +142,7 @@ export function tryLowerStructuredSelect(
       return Result.ok(null);
     }
 
+    const branches = [firstBranchAst];
     while (typeof currentAst.set_op === "string" && currentAst._next) {
       const op = parseSetOp(currentAst.set_op);
       if (!op) {
@@ -134,7 +154,7 @@ export function tryLowerStructuredSelect(
         _next: _ignoredRightNext,
         ...rightBaseAst
       } = currentAst._next;
-      const rightBase: RelNode | null = yield* tryLowerStructuredSelect(
+      const rightBase: LoweredSelect | null = yield* lowerStructuredSelect(
         rightBaseAst,
         schema,
         scopedCteColumns,
@@ -143,7 +163,11 @@ export function tryLowerStructuredSelect(
       if (!rightBase) {
         return Result.ok(null);
       }
-      const alignedRightBase: RelNode = yield* alignRelOutputShape(rightBase, currentNode.output);
+      branches.push(rightBase.ast);
+      const alignedRightBase: RelNode = yield* alignRelOutputShape(
+        rightBase.node,
+        currentNode.output,
+      );
 
       currentNode = {
         id: nextRelId("set_op"),
@@ -158,11 +182,7 @@ export function tryLowerStructuredSelect(
       currentAst = currentAst._next;
     }
 
-    currentNode = yield* applyCompoundModifiers(
-      currentNode,
-      { ...normalizedAst, ...(firstBranchAst.columns ? { columns: firstBranchAst.columns } : {}) },
-      !!outputNames,
-    );
+    currentNode = yield* applyCompoundModifiers(currentNode, normalizedAst, branches);
     if (outputNames && outputNames.length === currentNode.output.length) {
       currentNode = yield* alignRelOutputShape(
         currentNode,
@@ -171,7 +191,7 @@ export function tryLowerStructuredSelect(
     }
 
     if (loweredCtes.length === 0) {
-      return Result.ok(currentNode);
+      return Result.ok({ node: currentNode, ast: firstBranchAst });
     }
 
     const withNode: RelNode = {
@@ -183,7 +203,7 @@ export function tryLowerStructuredSelect(
       output: currentNode.output,
     };
 
-    return Result.ok(withNode);
+    return Result.ok({ node: withNode, ast: firstBranchAst });
   });
 }
 

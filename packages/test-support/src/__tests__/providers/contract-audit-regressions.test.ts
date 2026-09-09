@@ -23,6 +23,17 @@ const setup = [
   "INSERT INTO records VALUES (1,'a',9),(2,'b',2),(3,'b',2),(4,NULL,NULL),(5,'c',-6),(6,'c',0)",
 ];
 const parityCases = [
+  "SELECT a.category AS left_label,b.category AS right_label,COUNT(*) AS category,LAG(b.category) OVER (ORDER BY b.category,a.category) AS prev FROM records a JOIN records b ON a.id=b.n GROUP BY a.category,b.category ORDER BY left_label,right_label",
+  "SELECT category AS label,SUM(n) AS category,LAG(category) OVER (ORDER BY category) AS prev FROM records GROUP BY category ORDER BY label",
+  "SELECT category AS label,SUM(n) AS category,LAG(records.category,1,records.category) OVER (ORDER BY records.category) AS prev FROM records GROUP BY category ORDER BY label",
+  "SELECT category AS label,SUM(n) AS category,ROW_NUMBER() OVER (ORDER BY category) AS rn,COUNT(*) OVER (PARTITION BY category) AS size FROM records GROUP BY category ORDER BY label",
+  "SELECT a.category AS label,COUNT(*) AS category,LAG(a.category) OVER (ORDER BY a.category) AS prev FROM records a JOIN records b ON a.id=b.id GROUP BY a.category ORDER BY label",
+  "SELECT n AS x,id AS n FROM records UNION ALL SELECT n,id FROM records ORDER BY records.n LIMIT 3",
+  "SELECT n AS x,id AS n FROM records r UNION ALL SELECT n,id FROM records ORDER BY r.n LIMIT 3",
+  "SELECT n AS x FROM records UNION ALL SELECT id AS y FROM records ORDER BY n LIMIT 2",
+  "SELECT id AS x FROM records UNION ALL SELECT * FROM (SELECT id FROM records) ORDER BY id DESC LIMIT 2",
+  "WITH c(y,x) AS (SELECT n AS x,id AS y FROM records UNION ALL SELECT n,id FROM records ORDER BY records.n LIMIT 3) SELECT * FROM c ORDER BY x",
+  "SELECT id AS x,n AS y FROM records UNION ALL SELECT n AS x,id AS z FROM records ORDER BY y DESC LIMIT 3",
   "SELECT id,COALESCE(n,0) AS zero,ABS(n) AS magnitude FROM records ORDER BY id",
   "WITH c(a,b) AS (SELECT id,id FROM records WHERE id=1 UNION ALL SELECT id,id FROM records WHERE id=2 ORDER BY 1 DESC) SELECT a,b FROM c ORDER BY a",
   "SELECT category, SUM(n) AS __having_metric_2 FROM records GROUP BY category HAVING COUNT(*)>1 ORDER BY category",
@@ -184,6 +195,8 @@ describe.each(["drizzle", "kysely", "objection"] as const)(
           ).unwrap(),
         ).toEqual([{ id: 15 }, { id: 16 }]);
         for (const sql of [
+          "SELECT category AS label,COUNT(*) AS c,LAG(records.n) OVER (ORDER BY records.category) AS p FROM records GROUP BY category",
+          "SELECT category AS label,COUNT(*) AS c,LAG(records.c) OVER (ORDER BY records.category) AS p FROM records GROUP BY category",
           "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n<3 LIMIT 2) SELECT n FROM c",
           "SELECT category,COUNT(*) AS c,LAG(n) OVER (ORDER BY category) AS p FROM records GROUP BY category",
           "SELECT category,COUNT(*) AS c,LAG(category,1,n+1) OVER (ORDER BY category) AS p FROM records GROUP BY category",
