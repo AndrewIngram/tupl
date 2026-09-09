@@ -1,6 +1,6 @@
 {
   "name": "@tupl/provider-kit",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Provider contracts, entity binding, and shape helpers for tupl adapters",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/provider-kit#readme",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "@tupl/provider-objection",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Objection/Knex provider for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/provider-objection#readme",
   "license": "MIT",

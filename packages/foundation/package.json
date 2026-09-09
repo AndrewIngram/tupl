@@ -1,6 +1,6 @@
 {
   "name": "@tupl/foundation",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Foundational relational model, diagnostics, and value utilities for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/foundation#readme",
   "license": "MIT",

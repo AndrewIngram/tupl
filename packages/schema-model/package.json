@@ -1,6 +1,6 @@
 {
   "name": "@tupl/schema-model",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Logical schema DSL, normalization, and validation for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/schema-model#readme",
   "license": "MIT",

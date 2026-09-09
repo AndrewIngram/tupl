@@ -1,6 +1,6 @@
 {
   "name": "@tupl/planner",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "SQL parsing, lowering, and physical planning for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/planner#readme",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "@tupl/provider-drizzle",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Drizzle provider for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/provider-drizzle#readme",
   "license": "MIT",

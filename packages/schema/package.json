@@ -1,6 +1,6 @@
 {
   "name": "@tupl/schema",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Schema builder APIs for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/schema#readme",
   "license": "MIT",

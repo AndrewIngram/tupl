@@ -1,6 +1,6 @@
 {
   "name": "@tupl/provider-kysely",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Kysely provider for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/provider-kysely#readme",
   "license": "MIT",

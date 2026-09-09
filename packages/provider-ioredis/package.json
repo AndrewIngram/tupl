@@ -1,6 +1,6 @@
 {
   "name": "@tupl/provider-ioredis",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "ioredis-backed lookup provider for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/provider-ioredis#readme",
   "license": "MIT",
