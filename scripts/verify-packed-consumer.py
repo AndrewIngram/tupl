@@ -93,6 +93,42 @@ async function checkQuery() {
 """
 
 
+MIXED_CONSUMER = """
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import knex from 'knex';
+import {createObjectionProvider} from '@tupl/provider-objection';
+const require = createRequire(import.meta.url);
+const esm = await import('@tupl/schema');
+const cjs = require('@tupl/schema');
+const esmModel = await import('@tupl/schema-model');
+const cjsModel = require('@tupl/schema-model');
+const db = knex({client: 'better-sqlite3', connection: {filename: ':memory:'}, useNullAsDefault: true});
+try {
+  await db.schema.createTable('records', table => {table.integer('id'); table.text('name');});
+  await db('records').insert([{id: 1, name: 'alice'}, {id: 2, name: 'bob'}]);
+  const provider = createObjectionProvider({knex: db, entities: {records: {table: 'records', shape: {id: 'integer', name: 'text'}}}});
+  for (const [author, consumer, model] of [[cjs, esm, esmModel], [esm, cjs, cjsModel]]) {
+    const builder = author.createSchemaBuilder();
+    builder.table('records', provider.entities.records, {
+      columns: ({col, derive}) => {
+        const name = col.string('name', {nullable: false});
+        const label = derive({name}, ({name}) => name.toUpperCase());
+        return {id: col.integer('id'), label: col.string(label)};
+      },
+    });
+    assert.equal(model.isSchemaBuilder(builder), true);
+    for (const input of [builder, builder.build().unwrap()]) {
+      const schema = consumer.createExecutableSchema(input).unwrap();
+      assert.deepEqual((await schema.query({sql: "SELECT id,label FROM records WHERE label='BOB'", context: {}})).unwrap(), [{id: 2, label: 'BOB'}]);
+    }
+  }
+} finally {
+  await db.destroy();
+}
+"""
+
+
 def main():
     node = shutil.which("node")
     if not node:
@@ -147,12 +183,40 @@ checkQuery().catch(error => {{console.error(error); process.exitCode = 1;}});
             (base / filename).write_text(text)
             run([node, filename], base)
             print(f"PASS {filename}: {len(exports)} exports and native/derived SQLite queries")
+        mixed = MIXED_CONSUMER + f"""
+for (const name of {names}) {{
+  if (name === '@tupl/provider-objection') continue;
+  const imported = await import(name);
+  const required = require(name);
+  for (const key of Object.keys(required)) {{
+    assert.equal(imported[key], required[key], `${{name}}.${{key}} must share identity`);
+  }}
+}}
+"""
+        (base / "mixed.mjs").write_text(mixed)
+        run([node, "mixed.mjs"], base)
+        print("PASS mixed.mjs: shared export identities, builders, normalized schemas, and derived SQLite queries in both directions")
         imports = "\n".join(f"import * as entry{i} from {json.dumps(name)};\nvoid entry{i};" for i, name in enumerate(exports))
         for extension in ["mts", "cts"]:
             filename = f"consumer.{extension}"
             (base / filename).write_text(imports + TYPED_CONSUMER)
             run([str(ROOT / "node_modules/.bin/tsgo"), "--ignoreConfig", "--noEmit", "--strict", "--module", "nodenext", "--target", "es2022", filename], base)
             print(f"PASS {filename}: NodeNext export resolution and derived inference")
+
+        (base / "mixed.mts").write_text(TYPED_CONSUMER + """
+import cjs = require('@tupl/schema');
+import type {SchemaDerivedValue as ImportedValue} from '@tupl/schema-model/dsl' with {"resolution-mode": "import"};
+import type {SchemaDerivedValue as RequiredValue} from '@tupl/schema-model/dsl' with {"resolution-mode": "require"};
+cjs.createExecutableSchema(builder);
+cjs.createExecutableSchema(builder.build().unwrap());
+createExecutableSchema(cjs.createSchemaBuilder());
+declare const requiredValue: RequiredValue<{label: string}>;
+const importedValue: ImportedValue<{label: string}> = requiredValue;
+const back: RequiredValue<{label: string}> = importedValue;
+void back;
+""")
+        run([str(ROOT / "node_modules/.bin/tsgo"), "--ignoreConfig", "--noEmit", "--strict", "--module", "nodenext", "--target", "es2022", "mixed.mts"], base)
+        print("PASS mixed.mts: mixed import/require declarations")
 
 
 if __name__ == "__main__":

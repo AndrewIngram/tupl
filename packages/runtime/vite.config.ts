@@ -1,4 +1,5 @@
 import { defineConfig } from "vite-plus";
+import { sharedPackageIdentity } from "../../scripts/vite/sharedPackageIdentity.js";
 
 export default defineConfig({
   pack: {
@@ -8,7 +9,8 @@ export default defineConfig({
       executor: "src/runtime/executor.ts",
       session: "src/runtime/session/index.ts",
     },
-    format: ["esm", "cjs"],
+    format: ["cjs"],
+    onSuccess: sharedPackageIdentity(new URL("./package.json", import.meta.url)),
     sourcemap: true,
     clean: true,
     dts: true,

@@ -71,12 +71,17 @@ work. Provider-kit and provider packages never receive executable callbacks.
 
 ## Published entry points
 
-The six core packages publish built ESM, CommonJS, and matching declarations for
-every public root and subpath. The `source` condition supports workspace tooling;
+The six core packages publish one CommonJS runtime implementation, with ESM
+facades forwarding every public root and subpath to it. ESM declaration facades
+also forward to the CommonJS declarations, preserving runtime and type identity
+when dependencies mix import styles. The shared build helper generates facades
+from package export manifests after packaging. The `source` condition supports workspace tooling;
 ordinary Node imports resolve `dist`. Workspace test aliases derive from those
 export declarations so all packages share the same source module instances.
 
 Run `pnpm test:packed` to build and verify actual tarballs in an isolated consumer.
 It checks every core export, both Node import styles, strict NodeNext consumers,
-and native and derived SQLite queries. Consumer type checks do not skip library
-declarations.
+and native and derived SQLite queries. Mixed-format checks compare corresponding
+export identities and exchange builders and normalized schemas in both directions.
+Consumer type checks do not skip library declarations. The ESM facades depend on
+CommonJS interoperability; bundlers must support CommonJS dependencies.

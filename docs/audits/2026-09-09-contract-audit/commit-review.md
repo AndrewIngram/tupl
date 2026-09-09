@@ -4,7 +4,7 @@ Reviewed commit `3c522b4` against `841528b7636cce40d0d0254fd6ad8330e0ee62ba`.
 Three actionable findings were confirmed. No production files were changed during the review.
 
 Follow-up: the two SQL name-resolution findings are fixed in the working changes.
-The mixed ESM/CommonJS identity finding remains open. The regression suite now
+The mixed ESM/CommonJS identity finding is also fixed by shared CommonJS implementations with ESM facades. Packed checks now cover mixed-format runtime and declaration identity. The regression suite now
 covers qualified grouped windows, value/default/partition/order references,
 compound source and output aliases, CTE renaming, and later-branch wildcards.
 
