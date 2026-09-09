@@ -67,3 +67,17 @@ These invariants should hold unless a deliberate architecture change updates thi
   explicit callback inputs; public outputs obey their declared SQL types.
 - Application callbacks are trusted, pure and synchronous. Reject Promise-like
   results and wrap application failures; never turn them into null or empty output.
+
+## Existence demand and CTE aliases
+
+- An EXISTS subquery demands cardinality, not projected values. Preserve predicates,
+  grouping, distinct/set comparison inputs and pagination while removing unused
+  computations. Ordering can disappear only when no downstream value is demanded.
+  Validate public column access before pruning.
+- Preserve explicit CTE column lists in the parser and apply them positionally to
+  outputs. Recursive seeds expose these names to the recursive term. Alias count
+  must match output arity, and aliases must be unique. SELECT-local ORDER BY aliases
+  still resolve before the enclosing CTE renames its outputs.
+- Derived callback return unions containing Promise-like values are rejected.
+  Typed derived JSON retains its inferred shape through column definitions and
+  qualified view references; unvalidated provider JSON stays unknown.

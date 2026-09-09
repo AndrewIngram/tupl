@@ -282,3 +282,12 @@ not intermediate objects, and capture final rows only when requested.
 Materialization limits still apply. Synchronous callbacks cannot be interrupted
 mid-call; execution checks the deadline after each computed expression. Row limits
 do not bound the size of objects a trusted callback allocates.
+
+Wrapping an inferred object result with `col.json(derive(...))` preserves its
+TypeScript shape for subsequent derived dependencies, including qualified view
+references. This does not add stronger types to unvalidated provider JSON.
+
+`EXISTS` and `NOT EXISTS` skip derived values used only in the inner SELECT list.
+Inner predicates and operations that affect existence still demand their inputs.
+Explicit CTE column lists, such as `WITH d(documentId, text) AS (...)`, rename the
+query's outputs by position and must contain one unique name per output column.

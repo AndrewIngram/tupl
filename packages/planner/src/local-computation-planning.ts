@@ -76,6 +76,7 @@ function prune(node: RelNode, required: Set<string>): RelNode {
         ),
       };
     case "sort":
+      if (required.size === 0) return prune(node.input, required);
       return {
         ...node,
         input: prune(node.input, new Set([...required, ...node.orderBy.map((c) => key(c.source))])),
@@ -405,8 +406,11 @@ function hasComputation(node: RelNode): boolean {
   );
 }
 
-export function planLocalComputations(node: RelNode): RelNode {
-  if (!hasComputation(node)) return node;
-  const required = new Set(node.output.map((c) => c.name));
+export function planLocalComputations(
+  node: RelNode,
+  outputDemand: "values" | "existence" = "values",
+): RelNode {
+  if (outputDemand === "values" && !hasComputation(node)) return node;
+  const required = new Set(outputDemand === "values" ? node.output.map((c) => c.name) : []);
   return prune(move(materialize(prune(node, required))), required);
 }

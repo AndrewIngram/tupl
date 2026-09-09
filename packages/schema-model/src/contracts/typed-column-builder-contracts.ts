@@ -132,6 +132,15 @@ type ReferenceValue<R, K extends PropertyKey> = R extends { columns?: infer C }
 
 type RequiredOptions<O, R extends boolean> = R extends true ? O & { nullable: false } : O;
 
+type DerivedValue<H> = H extends SchemaValueHandle<infer V> ? V : never;
+
+// Unknown JSON remains runtime-validated; only known nullish constituents violate the declaration.
+type DerivedNullability<V, O> = O extends { nullable: false }
+  ? [Extract<V, null | undefined>] extends [never]
+    ? unknown
+    : never
+  : unknown;
+
 type SchemaTypedColumnBuilderMethod<
   TSourceColumns extends string,
   TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>>,
@@ -170,10 +179,24 @@ type SchemaTypedColumnBuilderMethod<
     >
   >;
   <
+    H extends SchemaDerivedValue<ColumnValue<TType, RequiredOptions<O, TRequired>>>,
     const O extends Omit<TOptions, "primaryKey" | "unique" | "enum" | "enumFrom" | "enumMap"> =
       TOptions,
   >(
-    expr: RelExpr | SchemaDerivedValue<ColumnValue<TType, RequiredOptions<O, TRequired>>>,
+    value: H & DerivedNullability<DerivedValue<NoInfer<H>>, RequiredOptions<NoInfer<O>, TRequired>>,
+    options?: O,
+  ): SchemaCalculatedColumnDefinition<
+    ColumnValue<
+      TType,
+      RequiredOptions<O, TRequired>,
+      TType extends "json" ? DerivedValue<H> : ScalarValue<TType>
+    >
+  >;
+  <
+    const O extends Omit<TOptions, "primaryKey" | "unique" | "enum" | "enumFrom" | "enumMap"> =
+      TOptions,
+  >(
+    expr: RelExpr,
     options?: O,
   ): SchemaCalculatedColumnDefinition<ColumnValue<TType, RequiredOptions<O, TRequired>>>;
 };

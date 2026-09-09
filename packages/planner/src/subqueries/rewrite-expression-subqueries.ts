@@ -4,11 +4,12 @@ import type { RelExpr, RelNode, TuplError } from "@tupl/foundation";
 /** Expression subqueries have their own relation scope and need the full rewrite pipeline. */
 export function rewriteExpressionSubqueries(
   node: RelNode,
-  rewrite: (rel: RelNode) => BetterResult<RelNode, TuplError>,
+  rewrite: (rel: RelNode, mode: "scalar" | "exists") => BetterResult<RelNode, TuplError>,
 ): BetterResult<RelNode, TuplError> {
   const expr = (value: RelExpr): BetterResult<RelExpr, TuplError> =>
     Result.gen(function* () {
-      if (value.kind === "subquery") return Result.ok({ ...value, rel: yield* rewrite(value.rel) });
+      if (value.kind === "subquery")
+        return Result.ok({ ...value, rel: yield* rewrite(value.rel, value.mode) });
       if (value.kind === "function" || value.kind === "local") {
         const args: RelExpr[] = [];
         for (const arg of value.args) args.push(yield* expr(arg));

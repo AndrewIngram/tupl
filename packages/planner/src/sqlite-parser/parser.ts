@@ -128,16 +128,11 @@ class SqliteSelectParser {
     while (true) {
       const cteName = this.parseIdentifier();
 
+      let columns: string[] | undefined;
       if (this.matchSymbol("(")) {
-        if (!this.matchSymbol(")")) {
-          while (true) {
-            this.parseIdentifier();
-            if (!this.matchSymbol(",")) {
-              break;
-            }
-          }
-          this.expectSymbol(")");
-        }
+        columns = [this.parseIdentifier()];
+        while (this.matchSymbol(",")) columns.push(this.parseIdentifier());
+        this.expectSymbol(")");
       }
 
       this.expectKeyword("AS");
@@ -147,6 +142,7 @@ class SqliteSelectParser {
 
       entries.push({
         name: { value: cteName },
+        ...(columns ? { columns } : {}),
         stmt: {
           ast: statement,
         },

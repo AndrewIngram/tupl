@@ -15,6 +15,7 @@ export interface SelectAst {
 }
 
 export interface CteAst {
+  columns?: string[];
   name: string | { value: string };
   stmt: {
     ast: SelectAst;

@@ -93,3 +93,8 @@ Completed computation stages expose operation IDs, labels, invocation counts, an
 input/output row counts in session observations. Failures preserve the existing
 single-execution session outcome. Execution deadline checks follow synchronous
 expressions; an individual callback cannot be preempted.
+
+Expression subquery rewriting carries its consumption mode into dependency
+planning. Scalar subqueries demand their output value; EXISTS subqueries demand
+only existence. The latter still retains values needed for predicates and
+cardinality-changing operations such as distinct comparisons and grouping.

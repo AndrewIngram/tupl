@@ -405,7 +405,8 @@ describe("derived boundary regressions", () => {
         columns: ({ col, derive }) => ({
           id: col.integer("id"),
           value: col.string(derive({ body: col.string("body") }, ({ body }) => body ?? "missing")),
-          wrong: col.integer(derive({}, (): any => "not a number")),
+          // @ts-expect-error Exercise public value validation for untyped application input.
+          wrong: col.integer(derive({}, (): unknown => "not a number")),
         }),
       });
       const schema = unwrap(createExecutableSchema(f.builder));
@@ -611,6 +612,147 @@ it("preserves derived grouping and HAVING semantics", async () => {
       ),
     ).toEqual([{ text: "hello", n: 2 }]);
     expect(f.parses()).toBe(3);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+describe("audit regressions: existence demand", () => {
+  const cases: Array<[string, boolean, number]> = [
+    ["SELECT text FROM documents WHERE id = 1", true, 0],
+    ["SELECT * FROM documents WHERE id = 1", true, 0],
+    ["SELECT text FROM documents WHERE id < 0", false, 0],
+    ["SELECT text FROM documents WHERE id = 1 LIMIT 0", false, 0],
+    ["SELECT text FROM documents ORDER BY text LIMIT 1 OFFSET 4", false, 0],
+    ["SELECT COUNT(text) FROM documents", true, 0],
+    ["SELECT text FROM documents WHERE status = 'published' AND text = 'world'", true, 3],
+    ["SELECT DISTINCT text FROM documents WHERE status = 'published' LIMIT 1 OFFSET 2", false, 3],
+    [
+      "SELECT text FROM documents WHERE status = 'published' INTERSECT SELECT text FROM documents WHERE id = 3",
+      true,
+      4,
+    ],
+    [
+      "SELECT text FROM documents WHERE status = 'published' EXCEPT SELECT text FROM documents WHERE status = 'published'",
+      false,
+      6,
+    ],
+  ];
+  for (const negate of [false, true]) {
+    it.each(cases)(`${negate ? "NOT EXISTS" : "EXISTS"}: %s`, async (inner, exists, parses) => {
+      const f = await fixture();
+      try {
+        const rows = await f.query(
+          `SELECT id FROM documents WHERE id = 2 AND ${negate ? "NOT " : ""}EXISTS (${inner})`,
+        );
+        expect(rows).toEqual(exists !== negate ? [{ id: 2 }] : []);
+        expect(f.parses()).toBe(parses);
+        expect(f.expensiveCalls()).toBe(0);
+        if (parses === 0) expect(f.sql.every((q) => !q.sql.includes("body"))).toBe(true);
+      } finally {
+        await f.db.destroy();
+      }
+    });
+  }
+});
+
+describe("audit regressions: CTE aliases", () => {
+  it.each([
+    [
+      "WITH d(id) AS (SELECT text FROM documents WHERE status = 'published' ORDER BY id DESC LIMIT 1) SELECT * FROM d",
+      [{ id: "hello" }],
+    ],
+    [
+      "WITH d(status, id) AS (SELECT id, status FROM documents ORDER BY id DESC LIMIT 1) SELECT * FROM d",
+      [{ status: 4, id: "published" }],
+    ],
+    [
+      "WITH d(label, n) AS (SELECT text AS original, COUNT(*) AS amount FROM documents WHERE status = 'published' GROUP BY text HAVING COUNT(*) > 1 ORDER BY original) SELECT * FROM d",
+      [{ label: "hello", n: 2 }],
+    ],
+    [
+      "WITH d(x) AS (SELECT id FROM documents WHERE id = 2 UNION ALL SELECT id AS original FROM documents WHERE id = 3 ORDER BY original) SELECT * FROM d",
+      [{ x: 2 }, { x: 3 }],
+    ],
+    [
+      "WITH d(x, y) AS (SELECT id, status FROM documents) SELECT y FROM d ORDER BY x",
+      [{ y: "draft" }, { y: "published" }, { y: "published" }, { y: "published" }],
+    ],
+    [
+      "WITH d(x, y) AS (SELECT id, text FROM documents WHERE status = 'published') SELECT y FROM d ORDER BY x",
+      [{ y: "hello" }, { y: "world" }, { y: "hello" }],
+    ],
+    [
+      "WITH d(x, y) AS (SELECT id, text FROM documents WHERE id = 2) SELECT * FROM d",
+      [{ x: 2, y: "hello" }],
+    ],
+    [
+      "WITH d(x, y) AS (SELECT id, id FROM documents WHERE id = 2) SELECT * FROM d",
+      [{ x: 2, y: 2 }],
+    ],
+    [
+      "WITH d(x) AS (SELECT id AS original FROM documents ORDER BY original DESC LIMIT 1) SELECT x FROM d",
+      [{ x: 4 }],
+    ],
+    [
+      "WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 3) SELECT * FROM seq",
+      [{ n: 1 }, { n: 2 }, { n: 3 }],
+    ],
+  ])("%s", async (sql, expected) => {
+    const f = await fixture();
+    try {
+      expect(await f.query(sql)).toEqual(expected);
+    } finally {
+      await f.db.destroy();
+    }
+  });
+
+  it.each([
+    "WITH d(x) AS (SELECT id, status FROM documents) SELECT * FROM d",
+    "WITH d(x, y) AS (SELECT id FROM documents) SELECT * FROM d",
+    "WITH d(x, x) AS (SELECT id, status FROM documents) SELECT * FROM d",
+  ])("rejects invalid aliases: %s", async (sql) => {
+    const f = await fixture();
+    try {
+      const result = await f.executable.query({ sql, context: {} });
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) expect(result.error.message).toContain("column aliases");
+      expect(f.sql).toEqual([]);
+    } finally {
+      await f.db.destroy();
+    }
+  });
+});
+
+it("validates private column access before pruning EXISTS outputs", async () => {
+  const f = await fixture();
+  try {
+    const result = await f.executable.query({
+      sql: "SELECT id FROM documents WHERE EXISTS (SELECT body FROM documents)",
+      context: {},
+    });
+    expect(Result.isError(result)).toBe(true);
+    expect(f.sql).toEqual([]);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it("prunes unused derived outputs from correlated existence checks", async () => {
+  const f = await fixture();
+  try {
+    expect(
+      await f.query(
+        "SELECT a.id FROM documents a WHERE a.id = 1 AND EXISTS (SELECT b.text FROM documents b WHERE b.id = a.id)",
+      ),
+    ).toEqual([{ id: 1 }]);
+    expect(
+      await f.query(
+        "SELECT a.id FROM documents a WHERE a.id = 1 AND NOT EXISTS (SELECT b.text FROM documents b WHERE b.id = a.id)",
+      ),
+    ).toEqual([]);
+    expect(f.parses()).toBe(0);
+    expect(f.sql.every((q) => !q.sql.includes("body"))).toBe(true);
   } finally {
     await f.db.destroy();
   }

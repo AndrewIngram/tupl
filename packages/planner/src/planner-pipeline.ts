@@ -32,6 +32,7 @@ export function rewriteLogicalRelResult<TContext>(
   rel: RelNode,
   schema: SchemaDefinition,
   context?: TContext,
+  outputDemand: "values" | "existence" = "values",
 ): BetterResult<RelNode, TuplError> {
   return Result.gen(function* () {
     const decorrelated = yield* Result.try({
@@ -39,11 +40,16 @@ export function rewriteLogicalRelResult<TContext>(
       catch: (error) => toRelRewriteError(error, "decorrelate logical rel"),
     });
 
-    const nested = yield* rewriteExpressionSubqueries(decorrelated, (subquery) =>
-      rewriteLogicalRelResult(subquery, schema, context),
+    const nested = yield* rewriteExpressionSubqueries(decorrelated, (subquery, mode) =>
+      rewriteLogicalRelResult(
+        subquery,
+        schema,
+        context,
+        mode === "exists" ? "existence" : "values",
+      ),
     );
     const expanded = yield* expandRelViewsResult(nested, schema, context);
-    return Result.ok(planLocalComputations(expanded));
+    return Result.ok(planLocalComputations(expanded, outputDemand));
   });
 }
 

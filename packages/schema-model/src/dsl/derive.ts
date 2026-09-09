@@ -69,7 +69,9 @@ export function evaluateLocalOperation(operation: RelLocalOperation, args: unkno
 
 export function derive<const D extends Record<string, DeriveInput>, T>(
   dependencies: D,
-  compute: (values: DeriveValues<D>) => T & (T extends PromiseLike<unknown> ? never : unknown),
+  compute: (
+    values: DeriveValues<D>,
+  ) => T & ([Extract<T, PromiseLike<unknown>>] extends [never] ? unknown : never),
 ): SchemaDerivedValue<T> {
   // The dependency keys and their value types are established together by this public generic.
   const operation = registerLocalOperation("derive", {
