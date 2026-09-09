@@ -64,6 +64,39 @@ for (const dialect of ["sqlite", "postgres"] as const)
           await fixture?.close();
         });
 
+        it("rejects ambiguous HAVING inputs before choosing grouped columns", async () => {
+          const source = "FROM accounts a JOIN accounts b ON a.id=b.id GROUP BY a.id";
+          const sql = `SELECT a.id,COUNT(*) AS n ${source} HAVING id>0 ORDER BY a.id`;
+          fixture.statements.length = 0;
+          const result = await fixture.schema.query({ sql, context: { org: 1 } });
+          expect(result.isErr(), sql).toBe(true);
+          expect(fixture.statements).toEqual([]);
+          const qualified = sql.replace("HAVING id", "HAVING a.id");
+          const control = await fixture.schema.query({ sql: qualified, context: { org: 1 } });
+          expect(control.unwrap()).toEqual(await fixture.reference(qualified));
+          const unique =
+            "SELECT a.id,COUNT(*) AS n FROM accounts a JOIN (SELECT id AS other_id FROM accounts) b ON a.id=b.other_id GROUP BY a.id HAVING id>0 ORDER BY a.id";
+          const uniqueResult = await fixture.schema.query({ sql: unique, context: { org: 1 } });
+          expect(uniqueResult.unwrap()).toEqual(await fixture.reference(unique));
+        });
+
+        propertyTest.prop(
+          { name: generatedName, threshold: fc.integer({ min: 0, max: 6 }) },
+          { numRuns: 30 },
+        )("checks HAVING ambiguity across all joined inputs", async ({ name, threshold }) => {
+          const column = quote(name);
+          const source = `(SELECT id AS ${column} FROM accounts)`;
+          const prefix = `SELECT a.${column} AS id,COUNT(*) AS n FROM ${source} a JOIN ${source} b ON a.${column}=b.${column} GROUP BY a.${column}`;
+          const sql = `${prefix} HAVING ${column}>${threshold} ORDER BY a.${column}`;
+          fixture.statements.length = 0;
+          const result = await fixture.schema.query({ sql, context: { org: 1 } });
+          expect(result.isErr(), sql).toBe(true);
+          expect(fixture.statements).toEqual([]);
+          const qualified = `${prefix} HAVING a.${column}>${threshold} ORDER BY a.${column}`;
+          const control = await fixture.schema.query({ sql: qualified, context: { org: 1 } });
+          expect(control.unwrap()).toEqual(await fixture.reference(qualified));
+        });
+
         propertyTest.prop(
           {
             depth: fc.integer({ min: 0, max: 3 }),

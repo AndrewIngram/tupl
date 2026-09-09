@@ -260,13 +260,17 @@ export function prepareSimpleSelectLowering(
   const aggregateMetricAliases = new Map<string, string>(
     aggregateMetrics.map((metric) => [getAggregateMetricSignature(metric), metric.as]),
   );
-  const havingInputColumns = new Set<string>();
+  const havingInputColumnCounts = new Map<string, number>();
   if (aggregateMode && ast.having && from.length > 0) {
     const inputs = expandProjection({ type: "select", columns: "*", from });
     if (Array.isArray(inputs.columns))
       for (const entry of inputs.columns) {
         const ref = toRawColumnRef(entry.expr);
-        if (ref) havingInputColumns.add(ref.column);
+        if (ref)
+          havingInputColumnCounts.set(
+            ref.column,
+            (havingInputColumnCounts.get(ref.column) ?? 0) + 1,
+          );
       }
   }
   const hiddenHavingMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"] = [];
@@ -281,13 +285,16 @@ export function prepareSimpleSelectLowering(
           (raw) => {
             const ref = toRawColumnRef(raw);
             if (!ref) return null;
+            // Grouping one source does not disambiguate a name shared by joined inputs.
+            const inputCount = havingInputColumnCounts.get(ref.column) ?? 0;
+            if (!ref.table && inputCount > 1) return null;
             const grouped = effectiveGroupBy.filter(
               (source) =>
                 source.column === ref.column &&
                 (!ref.table || ref.table === (source.alias ?? source.table)),
             );
             if (grouped.length === 1) return { kind: "column", ref: grouped[0]! };
-            if (ref.table || grouped.length > 1 || havingInputColumns.has(ref.column)) return null;
+            if (ref.table || grouped.length > 1 || inputCount > 0) return null;
             const projection = safeAggregateProjections.find((item) => item.output === ref.column);
             if (projection?.kind === "group" && projection.source)
               return { kind: "column", ref: projection.source };

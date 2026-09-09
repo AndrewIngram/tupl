@@ -124,6 +124,8 @@ These invariants should hold unless a deliberate architecture change updates thi
 - HAVING resolves grouped source columns before conflicting SELECT aliases. A
   source column outside the grouped scope cannot become available merely because
   a metric reuses its name. Qualified references never resolve to output aliases.
+  Unqualified names must be unambiguous across all inputs before grouping is
+  considered; grouping one joined source cannot disambiguate a shared name.
 - SQL providers must escape identifier delimiters as well as bind scalar values.
   Drizzle's SQLite/PostgreSQL identifier wrappers require embedded double quotes
   to be doubled before aliases or identifiers reach the backend.
