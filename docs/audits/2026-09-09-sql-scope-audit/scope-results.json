@@ -1,0 +1,6020 @@
+[
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "referenceError": "missing FROM-clause entry for table \"details\""
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      },
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "referenceError": "missing FROM-clause entry for table \"details\""
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      },
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "referenceError": "missing FROM-clause entry for table \"details\""
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      },
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "referenceError": "missing FROM-clause entry for table \"details\""
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      },
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "referenceError": "missing FROM-clause entry for table \"details\""
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      },
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT id FROM c UNION ALL SELECT id FROM (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) x",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT id FROM accounts ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 4
+      },
+      {
+        "id": 6
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH accounts_raw AS (SELECT id FROM accounts) SELECT id FROM accounts_raw ORDER BY id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "expected": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts WHERE id=1) SELECT a.id AS x,b.id AS y FROM c a JOIN (WITH c AS (SELECT id FROM details WHERE id=4) SELECT id FROM c) b ON 1=1",
+    "invalid": false,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "expected": [
+      {
+        "x": 1,
+        "y": 4
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id AS other FROM details ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY secret LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "expected": [
+      {
+        "secret": 1
+      },
+      {
+        "secret": 2
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS constructor FROM accounts ORDER BY constructor",
+    "invalid": false,
+    "actual": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "expected": [
+      {
+        "constructor": 1
+      },
+      {
+        "constructor": 2
+      },
+      {
+        "constructor": 5
+      }
+    ],
+    "calls": 1,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS \"__proto__\" FROM accounts UNION ALL SELECT id FROM details ORDER BY \"__proto__\" LIMIT 2",
+    "invalid": false,
+    "actual": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "expected": [
+      {
+        "__proto__": 1
+      },
+      {
+        "__proto__": 1
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT c.id+1 FROM c WHERE c.id<3) SELECT c.id,a.org FROM c LEFT JOIN accounts a ON c.id=a.id ORDER BY c.id",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "expected": [
+      {
+        "id": 1,
+        "org": 1
+      },
+      {
+        "id": 2,
+        "org": 1
+      },
+      {
+        "id": 3,
+        "org": null
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH c AS (SELECT id FROM details) SELECT id FROM c WHERE c.id=accounts.id)",
+    "invalid": false,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "expected": [
+      {
+        "id": 1
+      }
+    ],
+    "calls": 0,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts UNION ALL SELECT id FROM (SELECT * FROM details WHERE org=2 OR 1=1) d ORDER BY id LIMIT 2 OFFSET 2",
+    "invalid": false,
+    "actual": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "expected": [
+      {
+        "id": 2
+      },
+      {
+        "id": 4
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c(id,org) AS (SELECT id,org FROM accounts UNION ALL SELECT id,org FROM details ORDER BY details.id LIMIT 3) SELECT * FROM c ORDER BY id",
+    "invalid": false,
+    "referenceError": "missing FROM-clause entry for table \"details\""
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT a.id AS x,d.id AS y FROM accounts a FULL JOIN details d ON a.id=d.id WHERE a.id IS NULL OR d.id IS NULL ORDER BY x,y",
+    "invalid": false,
+    "actual": [
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      },
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      }
+    ],
+    "expected": [
+      {
+        "x": 2,
+        "y": null
+      },
+      {
+        "x": 5,
+        "y": null
+      },
+      {
+        "x": null,
+        "y": 4
+      },
+      {
+        "x": null,
+        "y": 6
+      }
+    ],
+    "calls": 2,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts WHERE secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT id FROM details ORDER BY accounts.secret",
+    "invalid": true,
+    "actual": {
+      "error": "Compound ORDER BY must reference an output column or a valid output ordinal."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT COUNT(*) AS secret,LAG(accounts.secret) OVER (ORDER BY accounts.id) FROM accounts GROUP BY accounts.id",
+    "invalid": true,
+    "actual": {
+      "error": "Query could not be lowered into canonical relational operators."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (SELECT id FROM details WHERE accounts.secret IS NOT NULL)",
+    "invalid": true,
+    "actual": {
+      "error": "Correlated subqueries are not yet supported."
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts WHERE EXISTS (WITH accounts AS (SELECT id FROM details) SELECT secret FROM accounts)",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 2,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id AS secret FROM accounts UNION ALL SELECT secret FROM accounts",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id FROM accounts AS \"accounts_raw\" WHERE accounts_raw.secret IS NOT NULL",
+    "invalid": true,
+    "actual": {
+      "error": "Unknown column in relational plan: accounts.secret"
+    },
+    "calls": 0,
+    "pass": true
+  }
+]

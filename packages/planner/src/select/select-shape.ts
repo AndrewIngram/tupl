@@ -32,7 +32,7 @@ import type {
 } from "../planner-types";
 import type { FromEntryAst, SelectAst, WindowSpecificationAst } from "../sqlite-parser/ast";
 import type { SqlExprLoweringContext } from "../sql-expr-lowering";
-import { parseLimitAndOffset } from "../sql-expr-lowering";
+import { parseLimitAndOffset, toRawColumnRef } from "../sql-expr-lowering";
 import {
   parseNamedWindows,
   parseProjection,
@@ -260,6 +260,15 @@ export function prepareSimpleSelectLowering(
   const aggregateMetricAliases = new Map<string, string>(
     aggregateMetrics.map((metric) => [getAggregateMetricSignature(metric), metric.as]),
   );
+  const havingInputColumns = new Set<string>();
+  if (aggregateMode && ast.having && from.length > 0) {
+    const inputs = expandProjection({ type: "select", columns: "*", from });
+    if (Array.isArray(inputs.columns))
+      for (const entry of inputs.columns) {
+        const ref = toRawColumnRef(entry.expr);
+        if (ref) havingInputColumns.add(ref.column);
+      }
+  }
   const hiddenHavingMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"] = [];
   let havingExpr =
     aggregateMode && ast.having
@@ -269,6 +278,23 @@ export function prepareSimpleSelectLowering(
           aliasToBinding,
           aggregateMetricAliases,
           hiddenHavingMetrics,
+          (raw) => {
+            const ref = toRawColumnRef(raw);
+            if (!ref) return null;
+            const grouped = effectiveGroupBy.filter(
+              (source) =>
+                source.column === ref.column &&
+                (!ref.table || ref.table === (source.alias ?? source.table)),
+            );
+            if (grouped.length === 1) return { kind: "column", ref: grouped[0]! };
+            if (ref.table || grouped.length > 1 || havingInputColumns.has(ref.column)) return null;
+            const projection = safeAggregateProjections.find((item) => item.output === ref.column);
+            if (projection?.kind === "group" && projection.source)
+              return { kind: "column", ref: projection.source };
+            if (projection?.kind === "metric")
+              return { kind: "column", ref: { column: projection.metric.as } };
+            return null;
+          },
         )
       : null;
   if (ast.having && (!aggregateMode || !havingExpr)) {

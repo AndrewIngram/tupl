@@ -112,3 +112,21 @@ These invariants should hold unless a deliberate architecture change updates thi
 - Provider capability checks must account for expression translation, not just
   relational node shapes. Unsupported expressions leave eligible descendants
   available for provider execution.
+
+## Column scope validation
+
+- Validate CTE references against lexical output schemas, including declared
+  aliases and recursive seed outputs. A reference's requested columns do not
+  establish that those columns exist.
+- Projections, predicates, grouping, metrics, sorting, window arguments, and join
+  keys must resolve against their input rows before rewrites or provider execution.
+  Missing columns are planning errors, never fabricated null values.
+- HAVING resolves grouped source columns before conflicting SELECT aliases. A
+  source column outside the grouped scope cannot become available merely because
+  a metric reuses its name. Qualified references never resolve to output aliases.
+- SQL providers must escape identifier delimiters as well as bind scalar values.
+  Drizzle's SQLite/PostgreSQL identifier wrappers require embedded double quotes
+  to be doubled before aliases or identifiers reach the backend.
+- Scope property tests generate names and clause positions, not only predicates.
+  Valid alpha-renaming must preserve results; unavailable-reference mutations must
+  fail before SQL execution. Retain shrunk failures as deterministic regressions.

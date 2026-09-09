@@ -205,8 +205,16 @@ export function resolveAggregateOrderBy(
   for (const term of orderByTerms) {
     if (term.kind === "ref") {
       const key = `${term.source.alias ?? ""}.${term.source.column}`;
+      const output = groupOutputsBySource.get(key);
+      if (!output)
+        return Result.err(
+          new RelLoweringError({
+            operation: "resolve aggregate ORDER BY",
+            message: `ORDER BY source is not a grouped column: ${key}`,
+          }),
+        );
       resolvedTerms.push({
-        source: { column: groupOutputsBySource.get(key) ?? term.source.column },
+        source: { column: output },
         direction: term.direction,
       });
       continue;

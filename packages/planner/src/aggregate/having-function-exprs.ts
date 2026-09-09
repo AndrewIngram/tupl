@@ -1,15 +1,8 @@
-import type { RelExpr, RelNode } from "@tupl/foundation";
+import type { RelExpr } from "@tupl/foundation";
 
-import type { Binding } from "../planner-types";
 import { mapBinaryOperatorToRelFunction, parseLiteral } from "../sql-expr-lowering";
 
-type LowerHavingExprFn = (
-  raw: unknown,
-  bindings: Binding[],
-  aliasToBinding: Map<string, Binding>,
-  aggregateMetricAliases: Map<string, string>,
-  hiddenMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"],
-) => RelExpr | null;
+type LowerHavingExprFn = (raw: unknown) => RelExpr | null;
 
 /**
  * Having function exprs own recursive binary/function lowering for HAVING predicates.
@@ -20,10 +13,6 @@ export function lowerHavingBinaryExpr(
     left?: unknown;
     right?: unknown;
   },
-  bindings: Binding[],
-  aliasToBinding: Map<string, Binding>,
-  aggregateMetricAliases: Map<string, string>,
-  hiddenMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"],
   lowerHavingExpr: LowerHavingExprFn,
 ): RelExpr | null {
   const operator = typeof expr.operator === "string" ? expr.operator.toUpperCase() : null;
@@ -36,27 +25,9 @@ export function lowerHavingBinaryExpr(
     if (range?.type !== "expr_list" || !Array.isArray(range.value) || range.value.length !== 2) {
       return null;
     }
-    const left = lowerHavingExpr(
-      expr.left,
-      bindings,
-      aliasToBinding,
-      aggregateMetricAliases,
-      hiddenMetrics,
-    );
-    const low = lowerHavingExpr(
-      range.value[0],
-      bindings,
-      aliasToBinding,
-      aggregateMetricAliases,
-      hiddenMetrics,
-    );
-    const high = lowerHavingExpr(
-      range.value[1],
-      bindings,
-      aliasToBinding,
-      aggregateMetricAliases,
-      hiddenMetrics,
-    );
+    const left = lowerHavingExpr(expr.left);
+    const low = lowerHavingExpr(range.value[0]);
+    const high = lowerHavingExpr(range.value[1]);
     if (!left || !low || !high) {
       return null;
     }
@@ -68,21 +39,8 @@ export function lowerHavingBinaryExpr(
   }
 
   if (operator === "IN" || operator === "NOT IN") {
-    const left = lowerHavingExpr(
-      expr.left,
-      bindings,
-      aliasToBinding,
-      aggregateMetricAliases,
-      hiddenMetrics,
-    );
-    const values = parseHavingExprListToRelExprArgs(
-      expr.right,
-      bindings,
-      aliasToBinding,
-      aggregateMetricAliases,
-      hiddenMetrics,
-      lowerHavingExpr,
-    );
+    const left = lowerHavingExpr(expr.left);
+    const values = parseHavingExprListToRelExprArgs(expr.right, lowerHavingExpr);
     if (!left || !values) {
       return null;
     }
@@ -94,13 +52,7 @@ export function lowerHavingBinaryExpr(
   }
 
   if (operator === "IS" || operator === "IS NOT") {
-    const left = lowerHavingExpr(
-      expr.left,
-      bindings,
-      aliasToBinding,
-      aggregateMetricAliases,
-      hiddenMetrics,
-    );
+    const left = lowerHavingExpr(expr.left);
     const rightLiteral = parseLiteral(expr.right);
     if (!left || rightLiteral !== null) {
       return null;
@@ -112,20 +64,8 @@ export function lowerHavingBinaryExpr(
     };
   }
 
-  const left = lowerHavingExpr(
-    expr.left,
-    bindings,
-    aliasToBinding,
-    aggregateMetricAliases,
-    hiddenMetrics,
-  );
-  const right = lowerHavingExpr(
-    expr.right,
-    bindings,
-    aliasToBinding,
-    aggregateMetricAliases,
-    hiddenMetrics,
-  );
+  const left = lowerHavingExpr(expr.left);
+  const right = lowerHavingExpr(expr.right);
   if (!left || !right) {
     return null;
   }
@@ -148,10 +88,6 @@ export function lowerHavingFunctionExpr(
     args?: { value?: unknown };
     over?: unknown;
   },
-  bindings: Binding[],
-  aliasToBinding: Map<string, Binding>,
-  aggregateMetricAliases: Map<string, string>,
-  hiddenMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"],
   lowerHavingExpr: LowerHavingExprFn,
 ): RelExpr | null {
   if (expr.over) {
@@ -165,14 +101,7 @@ export function lowerHavingFunctionExpr(
   }
 
   const normalized = rawName.toLowerCase();
-  const args = parseHavingFunctionArgsToRelExpr(
-    expr.args?.value,
-    bindings,
-    aliasToBinding,
-    aggregateMetricAliases,
-    hiddenMetrics,
-    lowerHavingExpr,
-  );
+  const args = parseHavingFunctionArgsToRelExpr(expr.args?.value, lowerHavingExpr);
   if (!args) {
     return null;
   }
@@ -207,10 +136,6 @@ export function lowerHavingFunctionExpr(
 
 function parseHavingFunctionArgsToRelExpr(
   raw: unknown,
-  bindings: Binding[],
-  aliasToBinding: Map<string, Binding>,
-  aggregateMetricAliases: Map<string, string>,
-  hiddenMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"],
   lowerHavingExpr: LowerHavingExprFn,
 ): RelExpr[] | null {
   if (raw == null) {
@@ -219,13 +144,7 @@ function parseHavingFunctionArgsToRelExpr(
   const values = Array.isArray(raw) ? raw : [raw];
   const args: RelExpr[] = [];
   for (const value of values) {
-    const arg = lowerHavingExpr(
-      value,
-      bindings,
-      aliasToBinding,
-      aggregateMetricAliases,
-      hiddenMetrics,
-    );
+    const arg = lowerHavingExpr(value);
     if (!arg) {
       return null;
     }
@@ -236,22 +155,11 @@ function parseHavingFunctionArgsToRelExpr(
 
 function parseHavingExprListToRelExprArgs(
   raw: unknown,
-  bindings: Binding[],
-  aliasToBinding: Map<string, Binding>,
-  aggregateMetricAliases: Map<string, string>,
-  hiddenMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"],
   lowerHavingExpr: LowerHavingExprFn,
 ): RelExpr[] | null {
   const expr = raw as { type?: unknown; value?: unknown };
   if (expr?.type !== "expr_list" || !Array.isArray(expr.value)) {
     return null;
   }
-  return parseHavingFunctionArgsToRelExpr(
-    expr.value,
-    bindings,
-    aliasToBinding,
-    aggregateMetricAliases,
-    hiddenMetrics,
-    lowerHavingExpr,
-  );
+  return parseHavingFunctionArgsToRelExpr(expr.value, lowerHavingExpr);
 }
