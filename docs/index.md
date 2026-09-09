@@ -15,6 +15,7 @@ Adapter and schema authoring:
 - [Creating an adapter](./creating-an-adapter.md)
 - [Building a non-relational adapter](./building-a-non-relational-adapter.md)
 - [Building a schema](./building-a-schema.md)
+- [Derived columns in TypeScript](./building-a-schema.md#derived-columns-in-typescript)
 - [Provider capability matrix](./provider-capability-matrix.md)
 
 Planning and repo process:

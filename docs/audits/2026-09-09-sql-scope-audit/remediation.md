@@ -2,10 +2,16 @@
 
 The two original correctness defects are fixed. Expanded fast-check coverage
 also found a related ORDER BY defect and a critical Drizzle SQL-injection defect.
-All four are fixed in these working changes. The earlier bounded audit's statement
+All four are fixed in this release. The earlier bounded audit's statement
 that no scope escape was confirmed is superseded by this evidence.
 
 ## Original fixes
+
+A subsequent correctness review found ambiguous unqualified HAVING references
+resolving against only grouped columns. This is also fixed: ambiguity is checked
+across all joined inputs first. Deterministic and generated tests cover rejection,
+qualified references, and unique unqualified names across all three SQL providers,
+both dialects, and native/local execution.
 
 HAVING binds actual grouped sources and supported SELECT aliases before evaluating
 expressions. Missing references and ungrouped source columns fail planning. The
@@ -85,5 +91,6 @@ These are bounded properties, not a claim of complete SQL coverage.
 
 The full suite passes 3,674 tests across 93 files. Packed ESM, CommonJS, mixed
 runtime, and strict declaration consumers pass. Workspace lint, canonical and
-uncached types, formatting, and diff whitespace checks also pass. Changes remain
-uncommitted.
+uncached types, formatting, and diff whitespace checks also pass. These fixes are included in 0.8.0. The subsequent HAVING ambiguity
+fix passed 3,698 tests across the same 93 files, including 360 additional generated
+ambiguity cases.

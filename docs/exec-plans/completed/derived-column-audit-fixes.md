@@ -64,4 +64,4 @@ planner changes here. No publication or additional commit is requested.
 - `vp test`: 88 files and 3,386 tests passed.
 - `vp lint`, `vp run -r typecheck`, `vp fmt`, and `git diff --check`: passed.
 - `pnpm -r exec tsgo --noEmit -p tsconfig.json`: passed without task-cache reuse.
-- Follow-up changes remain uncommitted in the current checkout.
+- Follow-up changes are included in the 0.8.0 release.

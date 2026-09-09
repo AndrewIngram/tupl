@@ -24,4 +24,4 @@ Keep shared resolution, integration coverage and final verification here.
   whitespace checks passed. Focused integration tests passed again after narrowing
   an optional SQL-description field in the test assertion.
 - The bounded follow-up review found no introduced correctness issues.
-- Changes remain uncommitted in the current checkout.
+- Changes are included in the 0.8.0 release.

@@ -66,7 +66,7 @@ These providers usually rely on strategy-based relational helpers instead of nar
 
 Unsupported or expensive shapes should be reported with:
 
-- stable `SQLQL_*` diagnostic code
+- stable `TUPL_*` diagnostic code
 - SQLSTATE-like class
 - concrete reason tied to the rel shape or field policy
 
@@ -91,11 +91,18 @@ Default behavior is `allow + annotate`.
 Still incomplete or intentionally partial:
 
 - computed-expression pushdown across first-party adapters
-- `FROM` subqueries / derived tables
-- correlated subqueries
-- recursive CTEs
-- richer window semantics beyond the current subset
+- provider pushdown of derived tables, correlated subqueries, and recursive CTEs;
+  the runtime supports derived tables, decorrelatable correlated forms, and
+  recursive CTE execution through local operators where needed
+- `RANGE` and `GROUPS` window frames, `LAST_VALUE`, and `NTH_VALUE`; named
+  windows, `ROWS` frames, ranking/aggregate windows, `LAG`, `LEAD`, and
+  `FIRST_VALUE` are implemented
 - provider-specific function families such as regex, JSON operators, and advanced date/time functions
+
+TypeScript `derive` callbacks always execute locally. Their presence in a schema
+does not prevent native execution of queries that do not need them. The planner
+prunes unused computations and pushes supported independent work below the local
+computation stage.
 
 ## Recommended Principle
 

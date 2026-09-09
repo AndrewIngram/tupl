@@ -141,10 +141,14 @@ builder.view(
   },
 );
 
-const executableSchema = createExecutableSchema(builder);
+const executableSchema = createExecutableSchema(builder).unwrap();
 ```
 
-`createExecutableSchema(...)` now accepts either a built schema object or a `SchemaBuilder`. For the DSL flow, `createSchemaBuilder(...)` plus `createExecutableSchema(builder)` is the intended pattern. That step also prepares the runtime artifact once by finalizing the schema, materializing linked enums, and validating provider bindings up front instead of on each query.
+`createExecutableSchema(...)` accepts either a built schema object or a `SchemaBuilder`
+and returns a `Result`. The example unwraps it during setup; applications can
+instead handle the error explicitly. Query methods return a promise of a `Result`
+containing rows. Schema creation finalizes the schema, materializes linked enums,
+and validates provider bindings once, before queries run.
 
 When a view only needs a provider entity as a private source, `scan(...)` can read the `DataEntityHandle` directly. You only need `table(...)` when you want that source to be part of the public facade.
 
@@ -199,7 +203,8 @@ If your database handle is already static for the lifetime of the provider, you 
 - provider `tables` keys match the entities you bind in `table("logicalName", provider.entities.someTable, ...)`
 - scoped columns exist on physical tables
 - facade FK references target facade table/column names
-- any unsupported query shape is either pushed down partially or handled by fallback/local execution
+- supported SQL can run across provider fragments and local operators; syntax or
+  relational shapes the planner cannot represent return an error
 
 ## Derived columns in TypeScript
 

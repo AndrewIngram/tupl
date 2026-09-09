@@ -15,6 +15,10 @@
 
 The facade stays relational (`SELECT` over tables/views), while providers can be relational or non-relational.
 
+Tables and views can also expose derived columns computed by your TypeScript
+functions. Queries can select, filter, join, group, and sort these values alongside
+native columns. Computation runs locally only when the query needs it.
+
 Terminology used in this repo:
 
 - `provider`: the runtime object registered under a name and asked to `canExecute`, `compile`, `execute`, and optionally `describeCompiledPlan`
@@ -125,7 +129,7 @@ builder.view(
   },
 );
 
-const executableSchema = createExecutableSchema(builder);
+const executableSchema = createExecutableSchema(builder).unwrap();
 
 const rows = await executableSchema.query({
   context: { orgId: "org_1", userId: "u1", db },
@@ -148,6 +152,10 @@ const highValueOrders = await executableSchema.query({
 ```
 
 If your runtime handle is static, `db` can still be passed directly instead of using a context callback.
+
+`createExecutableSchema` returns a `Result`; `.unwrap()` above stops setup if the
+schema is invalid. Query calls return a promise of a `Result` containing rows.
+Handle `isErr()`/`isOk()` in application code, or unwrap when failure should throw.
 
 ### Example B: Non-Relational Mapping Pattern
 
@@ -193,8 +201,51 @@ builder.table("productViewCounts", redisProvider.entities.product_view_counts, {
   }),
 });
 
-const executableSchema = createExecutableSchema(builder);
+const executableSchema = createExecutableSchema(builder).unwrap();
 ```
+
+### Derived columns in TypeScript
+
+Use `derive` in a table or view's `columns` callback. It accepts named column
+dependencies and a pure, synchronous function. Derived results can depend on
+other derived results; expose them with the usual typed column builders.
+
+```ts
+const orderSummaries = builder.table("orderSummaries", dbProvider.entities.orders, {
+  columns: ({ col, derive }) => {
+    const totalCents = col.integer("total_cents", { nullable: false });
+    const dollars = derive({ totalCents }, ({ totalCents }) => totalCents / 100);
+    const formatted = derive({ dollars }, ({ dollars }) => `$${dollars.toFixed(2)}`);
+
+    return {
+      id: col.id("id"),
+      totalCents,
+      formattedTotal: col.string(formatted, { nullable: false }),
+    };
+  },
+});
+```
+
+Only returned columns become public. Here `dollars` and `formatted` are private
+intermediates. Shared dependencies are evaluated once per row at their computation
+stage. Callbacks must use only their declared inputs and have no side effects;
+asynchronous callbacks are not supported.
+
+```sql
+-- No derived computation is needed.
+SELECT id, totalCents FROM orderSummaries;
+
+-- Native filtering and pagination can reduce the rows formatted locally.
+SELECT id, formattedTotal FROM orderSummaries
+WHERE totalCents >= 3000 ORDER BY totalCents DESC LIMIT 20;
+```
+
+Filters or joins that use a derived value run after its local computation. The
+planner pushes independent native work to providers where supported and safe.
+`SELECT *` includes public derived columns; `COUNT(*)` skips unused computations.
+Expression-based calculated columns using `expr` remain eligible for provider
+execution. See [the derived-column guide](./docs/building-a-schema.md#derived-columns-in-typescript)
+for shared parsing/rendering, view dependencies, nullability, and execution limits.
 
 ## Limitations
 
@@ -234,6 +285,6 @@ Execution behavior notes:
 - `pnpm typecheck` runs the canonical workspace typecheck across all packages and examples.
 - `pnpm typecheck:root` runs only the root `tsconfig.json` check.
 - `pnpm verify` runs the standard local verification set: lint, workspace typecheck, full test suite, and format.
-- `pnpm verify:ci` runs the closest local approximation of GitHub Actions: lint, workspace typecheck, fast tests, slow playground tests, and `fmt --check`.
+- `pnpm verify:ci` runs the local CI verification set: lint, workspace typecheck, the test suite, and `fmt --check`.
 - [Building a non-relational adapter (Redis-style)](./docs/building-a-non-relational-adapter.md)
 - [Package architecture and allowed dependency directions](./docs/package-architecture.md)

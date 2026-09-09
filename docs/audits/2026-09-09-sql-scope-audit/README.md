@@ -118,4 +118,4 @@ fixture supplies the separate HAVING alias reproductions.
 
 No production code changed during this audit. Standards/security review found no
 confirmed authorization defect. Spec/correctness review found the two P1 issues
-above. Audit artifacts are uncommitted.
+above. Audit artifacts are retained as the historical baseline for the fixes in 0.8.0.

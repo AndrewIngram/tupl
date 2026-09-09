@@ -38,7 +38,7 @@ Use the current checkout and the existing single subagent for independent probes
   three SQL providers. Existing playground pushdown tests remain green.
 - `vp lint`, `vp run -r typecheck`, `vp fmt`, `git diff --check` and uncached
   `pnpm -r exec tsgo --noEmit -p tsconfig.json` passed.
-- Changes remain uncommitted in the current checkout.
+- Changes are included in the 0.8.0 release.
 
 ## Focused security review
 
