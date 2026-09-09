@@ -234,7 +234,82 @@ export function buildSingleQueryPlan<TBinding extends RelationalScanBindingBase>
   };
 }
 
+// Flattening must preserve the order of operations that do not commute. Unsupported
+// compositions remain separate fragments so the runtime can execute their boundary.
+function canFlattenPipeline(node: RelNode) {
+  const outer = new Set<RelNode["kind"]>();
+  const filters: Extract<RelNode, { kind: "filter" }>[] = [];
+  let current = node;
+  while ("input" in current) {
+    const operation = current;
+    if (
+      (operation.kind === "limit_offset" && [...outer].some((kind) => kind !== "project")) ||
+      (operation.kind === "project" &&
+        (outer.has("aggregate") ||
+          outer.has("window") ||
+          (outer.has("filter") &&
+            !filters.every(
+              (filter) =>
+                !filter.expr &&
+                (filter.where ?? []).every((clause) => {
+                  const mapping = operation.columns.find(
+                    (column) => column.output === clause.column,
+                  );
+                  // Expression-capable backends substitute these computed values into WHERE.
+                  // Column renames require explicit rebinding before a pipeline can be flattened.
+                  return mapping !== undefined && !isRelProjectColumnMapping(mapping);
+                }),
+            )))) ||
+      (operation.kind === "aggregate" && outer.has("filter")) ||
+      (operation.kind === "sort" && (outer.has("aggregate") || outer.has("window"))) ||
+      (operation.kind === "window" && outer.has("filter"))
+    )
+      return false;
+    if (operation.kind === "filter") filters.push(operation);
+    outer.add(operation.kind);
+    current = operation.input;
+  }
+  return true;
+}
+
+export function isProjectionInInput(input: RelNode, project: RelationalPipeline["project"]) {
+  if (!project) return false;
+  let current = input;
+  while ("input" in current && current !== project) current = current.input;
+  return current === project;
+}
+
+/** Bind ordering in the sort's original input scope, before flattening projections. */
+export function resolveRelationalOrderBy(
+  sort: RelationalPipeline["sort"],
+  project: RelationalPipeline["project"],
+): Array<Extract<RelNode, { kind: "sort" }>["orderBy"][number] & { projectedOutput?: string }> {
+  if (!sort || !project) return sort?.orderBy ?? [];
+  if (!isProjectionInInput(sort.input, project)) return sort.orderBy;
+  return sort.orderBy.map((term) => {
+    const alias = term.source.alias ?? term.source.table;
+    const name = alias ? `${alias}.${term.source.column}` : term.source.column;
+    const mapping =
+      project.columns.find((column) => column.output === name) ??
+      project.columns.find((column) => column.output === term.source.column);
+    if (!mapping) {
+      throw new UnsupportedRelationalPlanError(
+        `ORDER BY output "${name}" cannot be resolved through this projection.`,
+      );
+    }
+    if (!isRelProjectColumnMapping(mapping)) {
+      return { ...term, projectedOutput: mapping.output };
+    }
+    return { ...term, source: mapping.source };
+  });
+}
+
 export function extractRelPipeline(node: RelNode): RelationalPipeline {
+  if (!canFlattenPipeline(node)) {
+    throw new UnsupportedRelationalPlanError(
+      "Relational operation order requires separate query fragments.",
+    );
+  }
   let current = node;
   const filters: Extract<RelNode, { kind: "filter" }>[] = [];
   let project: Extract<RelNode, { kind: "project" }> | undefined;
@@ -284,6 +359,7 @@ export function extractRelPipeline(node: RelNode): RelationalPipeline {
         );
       case "scan":
       case "join":
+        resolveRelationalOrderBy(sort, project);
         return {
           base: current,
           ...(project ? { project } : {}),
@@ -304,6 +380,7 @@ export function extractRelPipeline(node: RelNode): RelationalPipeline {
 }
 
 export function unwrapSetOpRel(node: RelNode): RelationalSetOpWrapper | null {
+  if (!canFlattenPipeline(node)) return null;
   let current = node;
   let project: Extract<RelNode, { kind: "project" }> | undefined;
   let sort: Extract<RelNode, { kind: "sort" }> | undefined;
@@ -348,6 +425,7 @@ export function unwrapSetOpRel(node: RelNode): RelationalSetOpWrapper | null {
 }
 
 export function unwrapWithBodyRel(node: RelNode): RelationalWithBodyWrapper | null {
+  if (!canFlattenPipeline(node)) return null;
   let current = node;
   const filters: Extract<RelNode, { kind: "filter" }>[] = [];
   let project: Extract<RelNode, { kind: "project" }> | undefined;
@@ -392,6 +470,12 @@ export function unwrapWithBodyRel(node: RelNode): RelationalWithBodyWrapper | nu
       case "correlate":
         return null;
       case "cte_ref":
+        if (
+          !isSupportedRelationalPlan(() => {
+            resolveRelationalOrderBy(sort, project);
+          })
+        )
+          return null;
         return {
           cteRef: current,
           ...(project ? { project } : {}),

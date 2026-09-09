@@ -2,6 +2,8 @@ import { type RelNode } from "@tupl/foundation";
 
 import {
   unwrapSetOpRel,
+  resolveRelationalOrderBy,
+  isProjectionInInput,
   unwrapWithBodyRel,
   type RelationalSetOpWrapper,
   type RelationalSingleQueryPlan,
@@ -260,6 +262,7 @@ async function buildBasicSqlRelationalQuery<
       query = backend.applyWhereClause({
         query,
         clause,
+        inputScope: "source",
         plan,
         aliases: plan.joinPlan.aliases,
         context,
@@ -273,6 +276,9 @@ async function buildBasicSqlRelationalQuery<
       query = backend.applyWhereClause({
         query,
         clause,
+        inputScope: isProjectionInInput(filter.input, plan.pipeline.project)
+          ? "projected"
+          : "source",
         plan,
         aliases: plan.joinPlan.aliases,
         context,
@@ -305,7 +311,9 @@ async function buildBasicSqlRelationalQuery<
       query,
       plan,
       selection,
-      orderBy: plan.pipeline.sort.orderBy.map((term) => resolvePlanOrderTerm(plan, term)),
+      orderBy: resolveRelationalOrderBy(plan.pipeline.sort, plan.pipeline.project).map((term) =>
+        resolvePlanOrderTerm(plan, term),
+      ),
       aliases: plan.joinPlan.aliases,
       context,
       runtime,
@@ -651,8 +659,11 @@ function resolvePlanOrderTerm<
   TBinding extends SqlRelationalScanBinding<TResolvedEntity>,
 >(
   plan: RelationalSingleQueryPlan<TBinding>,
-  term: Extract<RelNode, { kind: "sort" }>["orderBy"][number],
+  term: ReturnType<typeof resolveRelationalOrderBy>[number],
 ): SqlRelationalOrderTerm {
+  if (term.projectedOutput !== undefined) {
+    return { kind: "output", column: term.projectedOutput, direction: term.direction };
+  }
   if (term.source.alias || term.source.table) {
     return {
       kind: "qualified",
@@ -680,6 +691,19 @@ function resolvePlanOrderTerm<
           ...(groupBy.table ? { table: groupBy.table } : {}),
           column: groupBy.column,
         },
+        direction: term.direction,
+      };
+    }
+  }
+
+  if (!plan.pipeline.aggregate) {
+    const bindings = [...plan.joinPlan.aliases.values()].filter((binding) =>
+      binding.scan.select.includes(term.source.column),
+    );
+    if (bindings.length === 1) {
+      return {
+        kind: "qualified",
+        source: { alias: bindings[0]!.alias, column: term.source.column },
         direction: term.direction,
       };
     }
@@ -749,7 +773,7 @@ function buildWithOrder(body: RelationalWithBodyWrapper): SqlRelationalWithOrder
   const scanAlias = body.cteRef.alias ?? body.cteRef.name;
   const windowAliases = new Set((body.window?.functions ?? []).map((fn) => fn.as));
 
-  return (body.sort?.orderBy ?? []).map((term) => {
+  return resolveRelationalOrderBy(body.sort, body.project).map((term) => {
     if (!term.source.alias && !term.source.table && windowAliases.has(term.source.column)) {
       return {
         kind: "output",

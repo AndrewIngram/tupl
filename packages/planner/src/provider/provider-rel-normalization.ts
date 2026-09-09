@@ -4,6 +4,7 @@ import {
   ProviderFragmentBuildError,
   isRelProjectColumnMapping,
   type RelNode,
+  type RelColumnRef,
   type RelProjectNode,
 } from "@tupl/foundation";
 import type { SchemaDefinition } from "@tupl/schema-model";
@@ -271,15 +272,43 @@ function hoistProjectAcrossUnaryChain(project: RelProjectNode): RelNode {
     return project;
   }
 
+  const remappedChain = unaryChain.map((unary) => remapUnaryProjectRefs(unary, current));
+  if (remappedChain.some((unary) => unary === null)) {
+    // Computed sort keys cannot move below their projection. If the outer projection
+    // retains those values, merge below the chain and rename its ordering references.
+    let rebuilt: RelNode = { ...project, input: current.input, columns: mergedColumns };
+    for (let index = unaryChain.length - 1; index >= 0; index -= 1) {
+      const unary = unaryChain[index]!;
+      if (unary.kind === "filter") return project;
+      if (unary.kind === "limit_offset") {
+        rebuilt = { ...unary, input: rebuilt, output: project.output };
+        continue;
+      }
+      const orderBy = [];
+      for (const term of unary.orderBy) {
+        if (term.source.alias || term.source.table) return project;
+        const retained = project.columns.find(
+          (column) =>
+            isRelProjectColumnMapping(column) && column.source.column === term.source.column,
+        );
+        if (!retained) return project;
+        orderBy.push({ ...term, source: { column: retained.output } });
+      }
+      rebuilt = { ...unary, input: rebuilt, orderBy, output: project.output };
+    }
+    return rebuilt;
+  }
+
   let rebuiltInput: RelNode = current.input;
-  for (let index = unaryChain.length - 1; index >= 0; index -= 1) {
-    const unary = unaryChain[index];
+  for (let index = remappedChain.length - 1; index >= 0; index -= 1) {
+    const unary = remappedChain[index];
     if (!unary) {
       continue;
     }
     rebuiltInput = {
       ...unary,
       input: rebuiltInput,
+      output: rebuiltInput.output,
     };
   }
 
@@ -288,6 +317,39 @@ function hoistProjectAcrossUnaryChain(project: RelProjectNode): RelNode {
     input: rebuiltInput,
     columns: mergedColumns,
   };
+}
+
+/** A removed projection also changes the namespace of every operation crossed above it. */
+function remapUnaryProjectRefs(
+  unary: Extract<RelNode, { kind: "filter" | "sort" | "limit_offset" }>,
+  project: RelProjectNode,
+) {
+  const sourceFor = (ref: RelColumnRef) => {
+    const qualifier = ref.alias ?? ref.table;
+    const name = qualifier ? `${qualifier}.${ref.column}` : ref.column;
+    const mapping = project.columns.find((column) => column.output === name);
+    return mapping && isRelProjectColumnMapping(mapping) ? mapping.source : undefined;
+  };
+  if (unary.kind === "limit_offset") return unary;
+  if (unary.kind === "sort") {
+    const orderBy = [];
+    for (const term of unary.orderBy) {
+      const source = sourceFor(term.source);
+      if (!source) return null;
+      orderBy.push({ ...term, source });
+    }
+    return { ...unary, orderBy };
+  }
+  // Expression predicates may contain computed values or subqueries: retain their projection boundary.
+  if (unary.expr) return null;
+  const where = [];
+  for (const clause of unary.where ?? []) {
+    const source = sourceFor({ column: clause.column });
+    if (!source) return null;
+    const qualifier = source.alias ?? source.table;
+    where.push({ ...clause, column: qualifier ? `${qualifier}.${source.column}` : source.column });
+  }
+  return { ...unary, where };
 }
 
 function composeProjectMappings(

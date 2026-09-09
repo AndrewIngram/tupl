@@ -121,13 +121,13 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
       ],
     };
   },
-  applyWhereClause({ query, clause, plan }) {
+  applyWhereClause({ query, clause, plan, inputScope }) {
     const singleQueryPlan = plan as SingleQueryPlan<unknown>;
     return {
       ...query,
       whereClauses: [
         ...query.whereClauses,
-        toSqlConditionFromRelFilterClause(clause, singleQueryPlan),
+        toSqlConditionFromRelFilterClause(clause, singleQueryPlan, inputScope),
       ],
     };
   },
@@ -371,10 +371,12 @@ function buildSelectionRecord<TContext>(
         );
         break;
       case "metric":
-        out[entry.output] = buildAggregateMetricSql(entry.metric, aliases);
+        out[entry.output] = buildAggregateMetricSql(entry.metric, aliases).as(entry.output);
         break;
       case "expr":
-        out[entry.output] = buildSqlExpressionFromRelExpr(entry.expr, aliases);
+        out[entry.output] = sql`${buildSqlExpressionFromRelExpr(entry.expr, aliases)}`.as(
+          entry.output,
+        );
         break;
     }
   }
@@ -420,12 +422,6 @@ function resolveOrderSource<TContext>(
       throw new UnsupportedSingleQueryPlanError(
         `Qualified ORDER BY column "${term.source.column}" is missing an alias.`,
       );
-    }
-    if ("pipeline" in plan && !plan.pipeline.aggregate) {
-      const projected = resolveProjectedSelectionSource(`${alias}.${term.source.column}`, plan);
-      if (projected) {
-        return projected;
-      }
     }
     return resolveColumnRefFromAliasMap(aliases, {
       alias,
@@ -581,8 +577,9 @@ function resolveProjectedSelectionSource<TContext>(
 function resolveFilterSource<TContext>(
   column: string,
   plan: SingleQueryPlan<TContext>,
+  inputScope: "source" | "projected",
 ): AnyColumn | SQL {
-  if (!plan.pipeline.aggregate) {
+  if (inputScope === "projected" && !plan.pipeline.aggregate) {
     const projected = resolveProjectedSelectionSource(column, plan);
     if (projected) {
       return projected;
@@ -595,8 +592,9 @@ function resolveFilterSource<TContext>(
 function toSqlConditionFromRelFilterClause<TContext>(
   clause: ScanFilterClause,
   plan: SingleQueryPlan<TContext>,
+  inputScope: "source" | "projected",
 ): SQL {
-  const source = resolveFilterSource(clause.column, plan);
+  const source = resolveFilterSource(clause.column, plan, inputScope);
   return toSqlConditionFromSource(clause, source);
 }
 

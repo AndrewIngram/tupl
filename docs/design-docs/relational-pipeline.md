@@ -38,6 +38,20 @@ them to a backend. A final projection can rename or omit a metric without changi
 its ordering value. Drizzle, Kysely and Objection render those expressions directly
 in `ORDER BY`; grouped source fields retain their qualified column references.
 
+Sort references belong to the sort node's original input. When sorting follows a
+projection, resolve its output names through that projection before compiling
+aggregate or source expressions. Sorting before a projection retains the original
+input names. Computed output aliases remain tied to their projected expressions.
+
+Flattening into one SQL query must preserve operation order. Filters, aggregates,
+windows and sorts cannot move across an earlier limit, and filters cannot bypass
+a column rename or aggregate that defines their input values. Native computed
+values can be substituted into predicates by expression-capable backends. Source
+predicates must not be resolved against later projection aliases. Basic, set-operation
+and WITH capability checks reject such compositions so the runtime preserves the
+boundary. Planner rewrites that remove a projection must rebind every crossed
+filter and sort; otherwise they keep the projection in place.
+
 ## Fragment planning
 
 - Fragment selection stays maximal-first, but support discovery is bottom-up and memoized.

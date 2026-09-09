@@ -130,6 +130,7 @@ export interface SqlRelationalQueryTranslationBackend<
   applyWhereClause(args: {
     query: TQuery;
     clause: NonNullable<TableScanRequest["where"]>[number];
+    inputScope: "source" | "projected";
     plan: RelationalSingleQueryPlan<TBinding> | RelationalWithBodyWrapper;
     aliases: Map<string, TBinding>;
     context: TContext;
