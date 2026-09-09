@@ -33,6 +33,11 @@ Schema finalization is outside the query planner/runtime loop:
 - `provider:<name>` marks provider-owned physical subtrees.
 - Whole-query pushdown is just the case where a provider owns the root fragment.
 
+SQL compilation resolves aggregate sort keys to metric expressions before handing
+them to a backend. A final projection can rename or omit a metric without changing
+its ordering value. Drizzle, Kysely and Objection render those expressions directly
+in `ORDER BY`; grouped source fields retain their qualified column references.
+
 ## Fragment planning
 
 - Fragment selection stays maximal-first, but support discovery is bottom-up and memoized.

@@ -25,6 +25,7 @@ import type {
   SqlRelationalSelection,
   SqlRelationalWindowSelection,
   SqlRelationalWithSelection,
+  SqlRelationalWithOrderTerm,
 } from "./types";
 import { UnsupportedSqlRelationalPlanError } from "./types";
 
@@ -661,6 +662,12 @@ function resolvePlanOrderTerm<
   }
 
   if (plan.pipeline.aggregate) {
+    const metric = plan.pipeline.aggregate.metrics.find((entry) => entry.as === term.source.column);
+    if (metric) {
+      // The final projection can rename or omit this metric. Order by its value,
+      // not a SELECT alias that may no longer exist in the compiled SQL.
+      return { kind: "metric", metric, direction: term.direction };
+    }
     const groupBy = plan.pipeline.aggregate.groupBy.find((entry, index) => {
       const outputName = plan.pipeline.aggregate!.output[index]?.name ?? entry.column;
       return outputName === term.source.column || entry.column === term.source.column;
@@ -738,7 +745,7 @@ function buildWithSelection(body: RelationalWithBodyWrapper): SqlRelationalWithS
   });
 }
 
-function buildWithOrder(body: RelationalWithBodyWrapper): SqlRelationalOrderTerm[] {
+function buildWithOrder(body: RelationalWithBodyWrapper): SqlRelationalWithOrderTerm[] {
   const scanAlias = body.cteRef.alias ?? body.cteRef.name;
   const windowAliases = new Set((body.window?.functions ?? []).map((fn) => fn.as));
 

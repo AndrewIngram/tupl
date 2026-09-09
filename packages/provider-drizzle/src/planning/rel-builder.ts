@@ -413,6 +413,7 @@ function resolveOrderSource<TContext>(
   plan: SingleQueryPlan<TContext> | object,
   aliases: Map<string, ScanBinding<TContext>>,
 ): AnyColumn | SQL {
+  if (term.kind === "metric") return buildAggregateMetricSql(term.metric, aliases);
   if (term.kind === "qualified") {
     const alias = term.source.alias ?? term.source.table;
     if (!alias) {

@@ -34,6 +34,7 @@ export type KnexLikeQueryBuilder = {
   whereNotNull: (...args: any[]) => KnexLikeQueryBuilder;
   groupBy: (...args: any[]) => KnexLikeQueryBuilder;
   orderBy: (...args: any[]) => KnexLikeQueryBuilder;
+  orderByRaw?: (sql: string, bindings?: readonly unknown[]) => KnexLikeQueryBuilder;
   limit: (...args: any[]) => KnexLikeQueryBuilder;
   offset: (...args: any[]) => KnexLikeQueryBuilder;
   count: (...args: any[]) => KnexLikeQueryBuilder;

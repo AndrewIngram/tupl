@@ -1,6 +1,6 @@
 import type { RelNode } from "@tupl/foundation";
 import {
-  SqlRelationalOrderTerm,
+  SqlRelationalWithOrderTerm,
   SqlRelationalQueryTranslationBackend,
   SqlRelationalSelection,
   UnsupportedSqlRelationalPlanError,
@@ -88,7 +88,12 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
   applyOrderBy({ query, orderBy, aliases }) {
     let next = query;
     for (const term of orderBy) {
-      next = next.orderBy(resolveOrderTerm(term, aliases), term.direction);
+      next = next.orderBy(
+        term.kind === "metric"
+          ? (eb: any) => buildMetricExpression(eb, term.metric, aliases)
+          : resolveOrderTerm(term, aliases),
+        term.direction,
+      );
     }
     return next;
   },
@@ -286,7 +291,7 @@ function buildWindowExpression(
 }
 
 function resolveOrderTerm<TContext>(
-  term: SqlRelationalOrderTerm,
+  term: SqlRelationalWithOrderTerm,
   aliases: Map<string, ScanBinding<TContext>>,
 ): string {
   if (term.kind === "qualified") {
@@ -299,7 +304,7 @@ function resolveOrderTerm<TContext>(
 }
 
 function resolveWithBodyOrderTerm(
-  term: SqlRelationalOrderTerm,
+  term: SqlRelationalWithOrderTerm,
   scanAlias: string,
   windowByAlias: Map<string, Extract<RelNode, { kind: "window" }>["functions"][number]>,
 ): string {

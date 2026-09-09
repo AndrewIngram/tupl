@@ -1,6 +1,7 @@
 import type { RelNode } from "@tupl/foundation";
 import {
-  SqlRelationalOrderTerm,
+  SqlRelationalWithOrderTerm,
+  SqlRelationalMetricOrderTerm,
   SqlRelationalQueryTranslationBackend,
   SqlRelationalSelection,
   UnsupportedSqlRelationalPlanError,
@@ -89,7 +90,10 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
   applyOrderBy({ query: { builder: query }, orderBy, aliases }) {
     let next = query;
     for (const term of orderBy) {
-      next = next.orderBy(resolveOrderTerm(term, aliases), term.direction);
+      next =
+        term.kind === "metric"
+          ? applyMetricOrder(next, term, aliases)
+          : next.orderBy(resolveOrderTerm(term, aliases), term.direction);
     }
     return { builder: next };
   },
@@ -280,7 +284,7 @@ function applyMetricSelection<TContext>(
 }
 
 function resolveOrderTerm<TContext>(
-  term: SqlRelationalOrderTerm,
+  term: SqlRelationalWithOrderTerm,
   aliases: Map<string, ScanBinding<TContext>>,
 ): string {
   if (term.kind === "qualified") {
@@ -290,4 +294,46 @@ function resolveOrderTerm<TContext>(
   }
 
   return term.column;
+}
+
+function applyMetricOrder<TContext>(
+  query: KnexLikeQueryBuilder,
+  term: SqlRelationalMetricOrderTerm,
+  aliases: Map<string, ScanBinding<TContext>>,
+) {
+  if (!query.orderByRaw) {
+    throw new UnsupportedSqlRelationalPlanError(
+      "Knex query builder does not support aggregate ORDER BY expressions.",
+    );
+  }
+  const direction = term.direction === "asc" ? "asc" : "desc";
+  const metric = term.metric;
+  if (metric.fn === "count" && !metric.column) {
+    return query.orderByRaw(`count(*) ${direction}`);
+  }
+  if (!metric.column) {
+    throw new UnsupportedSqlRelationalPlanError(`Aggregate ${metric.fn} requires a column.`);
+  }
+  const source = resolveQualifiedColumnRef(
+    aliases,
+    toRef(metric.column.alias ?? metric.column.table, metric.column.column),
+  );
+  switch (metric.fn) {
+    case "count":
+      return query.orderByRaw(`count(${metric.distinct ? "distinct " : ""}??) ${direction}`, [
+        source,
+      ]);
+    case "sum":
+      return query.orderByRaw(`sum(${metric.distinct ? "distinct " : ""}??) ${direction}`, [
+        source,
+      ]);
+    case "avg":
+      return query.orderByRaw(`avg(${metric.distinct ? "distinct " : ""}??) ${direction}`, [
+        source,
+      ]);
+    case "min":
+      return query.orderByRaw(`min(??) ${direction}`, [source]);
+    case "max":
+      return query.orderByRaw(`max(??) ${direction}`, [source]);
+  }
 }

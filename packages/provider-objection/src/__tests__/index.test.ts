@@ -8,6 +8,7 @@ import { createObjectionProvider, type KnexLike, type KnexLikeQueryBuilder } fro
 interface ObjectionCalls {
   where: unknown[][];
   whereIn: unknown[][];
+  orderByRaw?: unknown[][];
   executeCount: number;
   baseContexts: string[];
 }
@@ -120,6 +121,10 @@ function createMockKnex(
         return builder;
       },
       orderBy() {
+        return builder;
+      },
+      orderByRaw(sql, bindings) {
+        (calls.orderByRaw ??= []).push([sql, bindings]);
         return builder;
       },
       limit(value: number) {
@@ -649,6 +654,7 @@ describe("objection adapter", () => {
     const rows = (await provider.execute(plan, {})).unwrap();
 
     expect(rows).toEqual([{ user_id: "u1", order_count: 2, total_spend: 4500 }]);
+    expect(calls.orderByRaw).toEqual([["sum(??) desc", ["o.total_cents"]]]);
     expect(calls.executeCount).toBe(1);
   });
 

@@ -80,7 +80,17 @@ export interface SqlRelationalOutputOrderTerm {
   column: string;
 }
 
-export type SqlRelationalOrderTerm = SqlRelationalQualifiedOrderTerm | SqlRelationalOutputOrderTerm;
+export interface SqlRelationalMetricOrderTerm {
+  kind: "metric";
+  direction: "asc" | "desc";
+  metric: SqlRelationalMetricSelection["metric"];
+}
+
+export type SqlRelationalWithOrderTerm =
+  | SqlRelationalQualifiedOrderTerm
+  | SqlRelationalOutputOrderTerm;
+
+export type SqlRelationalOrderTerm = SqlRelationalWithOrderTerm | SqlRelationalMetricOrderTerm;
 
 /**
  * Query translation hooks own backend-specific query-builder lowering once provider-kit has chosen
@@ -172,7 +182,7 @@ export interface SqlRelationalQueryTranslationBackend<
     body: RelationalWithBodyWrapper;
     ctes: Array<{ name: string; query: TQuery }>;
     projection: SqlRelationalWithSelection[];
-    orderBy: SqlRelationalOrderTerm[];
+    orderBy: SqlRelationalWithOrderTerm[];
     context: TContext;
     runtime: TRuntime;
   }): MaybePromise<TQuery>;
