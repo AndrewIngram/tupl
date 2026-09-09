@@ -285,9 +285,13 @@ do not bound the size of objects a trusted callback allocates.
 
 Wrapping an inferred object result with `col.json(derive(...))` preserves its
 TypeScript shape for subsequent derived dependencies, including qualified view
-references. This does not add stronger types to unvalidated provider JSON.
+references. If column options supply or may supply a `coerce` callback, the JSON
+shape becomes `unknown`: a coercer can replace the object. Narrow that value
+before reading its fields. This also applies to native columns and view references.
+Unvalidated provider JSON remains unknown.
 
 `EXISTS` and `NOT EXISTS` skip derived values used only in the inner SELECT list.
 Inner predicates and operations that affect existence still demand their inputs.
 Explicit CTE column lists, such as `WITH d(documentId, text) AS (...)`, rename the
 query's outputs by position and must contain one unique name per output column.
+SELECT-local aliases in `HAVING` and `ORDER BY` resolve before this renaming.

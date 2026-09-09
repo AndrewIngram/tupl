@@ -235,13 +235,8 @@ function tryLowerSimpleSelectWithinStructuredLowering(
   return Result.try({
     try: () => {
       const expanded = expandSelectWildcards(ast, schema, cteColumns);
-      const normalizedResult = outputNames
-        ? renameSelectOutputs(expanded, outputNames)
-        : Result.ok(expanded);
-      if (Result.isError(normalizedResult)) throw normalizedResult.error;
-      const normalized = normalizedResult.value;
       const result = tryLowerSimpleSelect(
-        normalized,
+        expanded,
         schema,
         new Set(cteColumns.keys()),
         (subqueryAst) => {
@@ -252,6 +247,7 @@ function tryLowerSimpleSelectWithinStructuredLowering(
           return subqueryResult.value;
         },
         (subqueryAst) => expandSelectWildcards(subqueryAst, schema, cteColumns),
+        outputNames,
       );
       if (Result.isError(result)) {
         throw result.error;
@@ -259,48 +255,6 @@ function tryLowerSimpleSelectWithinStructuredLowering(
       return result.value;
     },
     catch: (error) => toRelLoweringError(error, "lower structured SELECT"),
-  });
-}
-
-/** Output aliases change the enclosing relation's names without losing SELECT-local references. */
-function renameSelectOutputs(ast: SelectAst, outputNames: string[]) {
-  if (!Array.isArray(ast.columns) || ast.columns.length !== outputNames.length)
-    return Result.ok(ast);
-  const positions = new Map<string, number>();
-  ast.columns.forEach((column, index) => {
-    const original =
-      column.as ??
-      ("type" in column.expr && column.expr.type === "column_ref" ? column.expr.column : undefined);
-    if (original !== undefined && !positions.has(original)) positions.set(original, index + 1);
-  });
-  const orderby: NonNullable<SelectAst["orderby"]> = [];
-  for (const term of ast.orderby ?? []) {
-    const expr = term.expr;
-    if (!("type" in expr) || expr.type !== "column_ref" || expr.table) {
-      orderby.push(term);
-      continue;
-    }
-    const position = positions.get(expr.column);
-    if (position !== undefined) {
-      orderby.push({ ...term, expr: { type: "number", value: position } });
-      continue;
-    }
-    // New enclosing aliases must not capture an ORDER BY reference to a source field.
-    const source = ast.from?.length === 1 ? ast.from[0] : undefined;
-    const table = source?.as ?? source?.table;
-    if (!table)
-      return Result.err(
-        new RelLoweringError({
-          operation: "resolve SELECT ordering before output renaming",
-          message: `Cannot resolve ORDER BY column "${expr.column}" in the SELECT scope.`,
-        }),
-      );
-    orderby.push({ ...term, expr: { ...expr, table } });
-  }
-  return Result.ok({
-    ...ast,
-    columns: ast.columns.map((column, index) => ({ ...column, as: outputNames[index]! })),
-    ...(ast.orderby ? { orderby } : {}),
   });
 }
 

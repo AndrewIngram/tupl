@@ -347,6 +347,45 @@ describe("derived boundary regressions", () => {
     }
   });
 
+  it("passes the coerced JSON shape to dependent generators", async () => {
+    const f = await fixture();
+    try {
+      f.builder.table("coercedJson", f.provider.entities.raw, {
+        columns: ({ col, derive }) => {
+          const object = col.json(
+            derive({}, () => ({ name: "original" })),
+            {
+              nullable: false,
+              coerce: () => ({ count: 1 }),
+            },
+          );
+          return {
+            object,
+            total: col.integer(
+              derive({ object }, ({ object }) => {
+                if (
+                  !object ||
+                  typeof object !== "object" ||
+                  !("count" in object) ||
+                  typeof object.count !== "number"
+                ) {
+                  throw new Error("Expected a coerced count");
+                }
+                return object.count;
+              }),
+            ),
+          };
+        },
+      });
+      const schema = unwrap(createExecutableSchema(f.builder));
+      expect(
+        unwrap(await schema.query({ sql: "SELECT object, total FROM coercedJson", context: {} })),
+      ).toEqual(Array.from({ length: 4 }, () => ({ object: { count: 1 }, total: 1 })));
+    } finally {
+      await f.db.destroy();
+    }
+  });
+
   it("coerces private inputs once, before validating callback values", async () => {
     const f = await fixture();
     let coercions = 0;
@@ -657,7 +696,55 @@ describe("audit regressions: existence demand", () => {
 });
 
 describe("audit regressions: CTE aliases", () => {
+  it("rejects unsupported aggregate window ordering with a lowering diagnostic", async () => {
+    const f = await fixture();
+    try {
+      const result = await f.executable.query({
+        sql: "WITH d(r, n) AS (SELECT ROW_NUMBER() OVER (ORDER BY COUNT(*)), COUNT(*) FROM documents) SELECT * FROM d",
+        context: {},
+      });
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) expect(result.error.message).toContain("could not be lowered");
+      expect(f.sql).toEqual([]);
+    } finally {
+      await f.db.destroy();
+    }
+  });
+
   it.each([
+    [
+      "WITH d(r, n) AS (SELECT ROW_NUMBER() OVER (), COUNT(*) FROM documents) SELECT * FROM d",
+      [{ r: 1, n: 4 }],
+    ],
+    [
+      "WITH d(lo, r, hi) AS (SELECT MIN(id), ROW_NUMBER() OVER (), MAX(id) FROM documents) SELECT * FROM d",
+      [{ lo: 1, r: 1, hi: 4 }],
+    ],
+    ["WITH d(x) AS (SELECT COUNT(*) AS n FROM documents HAVING n > 0) SELECT * FROM d", [{ x: 4 }]],
+    [
+      "WITH d(x, y) AS (SELECT status AS s, COUNT(*) AS n FROM documents GROUP BY status HAVING n > 1) SELECT * FROM d",
+      [{ x: "published", y: 3 }],
+    ],
+    [
+      "WITH d(x, y) AS (SELECT text AS s, COUNT(*) AS n FROM documents WHERE status = 'published' GROUP BY text HAVING n > 1 ORDER BY s) SELECT * FROM d",
+      [{ x: "hello", y: 2 }],
+    ],
+    [
+      "WITH d(n, status) AS (SELECT status, COUNT(*) AS n FROM documents GROUP BY status HAVING n > 1) SELECT * FROM d",
+      [{ n: "published", status: 3 }],
+    ],
+    [
+      "WITH d(x) AS (SELECT COUNT(*) AS n FROM documents HAVING n > 0 UNION ALL SELECT COUNT(*) AS total FROM documents HAVING total > 0) SELECT * FROM d",
+      [{ x: 4 }, { x: 4 }],
+    ],
+    [
+      "WITH d(x, y) AS (SELECT a.id, b.id FROM documents a JOIN documents b ON a.status = b.status ORDER BY a.id, b.id LIMIT 1 OFFSET 2) SELECT * FROM d",
+      [{ x: 2, y: 3 }],
+    ],
+    [
+      "WITH d(x, y) AS (SELECT MIN(id) AS n, MAX(id) AS n FROM documents HAVING n = 1) SELECT * FROM d",
+      [{ x: 1, y: 4 }],
+    ],
     [
       "WITH d(id) AS (SELECT text FROM documents WHERE status = 'published' ORDER BY id DESC LIMIT 1) SELECT * FROM d",
       [{ id: "hello" }],

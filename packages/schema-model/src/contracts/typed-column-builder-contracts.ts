@@ -117,10 +117,18 @@ type ReadValue<M> = M extends { readonly __read__?: infer V }
 type ColumnValue<T extends SqlScalarType, O, V = ScalarValue<T>> = O extends { nullable: false }
   ? Exclude<V, null | undefined>
   : V | null;
+// Coercers may replace a JSON value with a different shape, including when options are widened.
+type JsonValueAfterCoercion<V, O> = O extends unknown
+  ? "coerce" extends keyof O
+    ? [Exclude<O["coerce"], undefined>] extends [never]
+      ? V
+      : unknown
+    : V
+  : never;
 type SourceValue<T extends SqlScalarType, O, M> = ColumnValue<
   T,
   O,
-  T extends "json" ? ReadValue<M> : ScalarValue<T>
+  T extends "json" ? JsonValueAfterCoercion<ReadValue<M>, O> : ScalarValue<T>
 >;
 type ReferenceValue<R, K extends PropertyKey> = R extends { columns?: infer C }
   ? K extends keyof C
@@ -150,7 +158,7 @@ type SchemaTypedColumnBuilderMethod<
 > = {
   <
     TSourceColumn extends CompatibleColumnName<TSourceColumns, TColumnMetadata, TType>,
-    const O extends TOptions = TOptions,
+    const O extends TOptions = TOptions & { coerce?: never },
   >(
     sourceColumn: TSourceColumn,
     options?: O,
@@ -166,7 +174,7 @@ type SchemaTypedColumnBuilderMethod<
     TRelColumns extends string,
     TColumn extends TRelColumns,
     R extends SchemaDataEntityHandle<TRelColumns> | SchemaDslRelationRef<TRelColumns>,
-    const O extends TOptions = TOptions,
+    const O extends TOptions = TOptions & { coerce?: never },
   >(
     table: R,
     column: TColumn,
@@ -175,13 +183,15 @@ type SchemaTypedColumnBuilderMethod<
     ColumnValue<
       TType,
       RequiredOptions<O, TRequired>,
-      TType extends "json" ? ReferenceValue<R, TColumn> : ScalarValue<TType>
+      TType extends "json"
+        ? JsonValueAfterCoercion<ReferenceValue<R, TColumn>, O>
+        : ScalarValue<TType>
     >
   >;
   <
     H extends SchemaDerivedValue<ColumnValue<TType, RequiredOptions<O, TRequired>>>,
     const O extends Omit<TOptions, "primaryKey" | "unique" | "enum" | "enumFrom" | "enumMap"> =
-      TOptions,
+      TOptions & { coerce?: never },
   >(
     value: H & DerivedNullability<DerivedValue<NoInfer<H>>, RequiredOptions<NoInfer<O>, TRequired>>,
     options?: O,
@@ -189,7 +199,7 @@ type SchemaTypedColumnBuilderMethod<
     ColumnValue<
       TType,
       RequiredOptions<O, TRequired>,
-      TType extends "json" ? DerivedValue<H> : ScalarValue<TType>
+      TType extends "json" ? JsonValueAfterCoercion<DerivedValue<H>, O> : ScalarValue<TType>
     >
   >;
   <

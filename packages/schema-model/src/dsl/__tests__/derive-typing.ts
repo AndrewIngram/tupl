@@ -136,3 +136,62 @@ builder.view("derivedJsonView", ({ scan }) => scan(derivedJsonTable), {
     };
   },
 });
+
+const coercedJsonTable = builder.table("coercedJson", typedEntity, {
+  columns: ({ col, derive }) => {
+    const original = derive({}, () => ({ title: "original" }));
+    const coerce = () => ({ count: 1 });
+    const body = col.json(original, { nullable: false, coerce });
+    const source = col.json("body", { nullable: false, coerce });
+    const optionalOptions: { nullable: false; coerce?: (value: unknown) => unknown } = {
+      nullable: false,
+    };
+    const optional = col.json(original, optionalOptions);
+    const unionOptions: { nullable: false } | { nullable: false; coerce: () => unknown } =
+      Math.random() > 0.5 ? { nullable: false } : { nullable: false, coerce };
+    const union = col.json(original, unionOptions);
+    const uncoerced = col.json(original);
+    const uncoercedSource = col.json("body");
+    derive({ body, source, optional, union, uncoerced, uncoercedSource }, (values) => {
+      // @ts-expect-error A derived JSON coercer can replace the original object shape.
+      void values.body.title;
+      // @ts-expect-error A native JSON coercer can replace the provider's declared shape.
+      void values.source.title;
+      // @ts-expect-error Optional coercers can change JSON shape when present at runtime.
+      void values.optional.title;
+      // @ts-expect-error Every options union branch must be free of coercion to retain shape.
+      void values.union.title;
+      const title: string | undefined = values.uncoerced?.title;
+      const sourceTitle: string | undefined = values.uncoercedSource?.title;
+      return [title, sourceTitle];
+    });
+    return { body, source };
+  },
+});
+builder.view("coercedJsonView", ({ scan }) => scan(coercedJsonTable), {
+  columns: ({ col, derive }) => {
+    const inherited = col.json(coercedJsonTable, "body", { nullable: false });
+    const nativeInherited = col.json(coercedJsonTable, "source", { nullable: false });
+    const lens = col.json(derivedJsonTable, "body", {
+      nullable: false,
+      coerce: () => ({ count: 1 }),
+    });
+    const options: { nullable: false; coerce?: (value: unknown) => unknown } = { nullable: false };
+    const optionalLens = col.json(derivedJsonTable, "body", options);
+    const nativeLens = col.json(typedTable, "body", { coerce: () => ({ count: 1 }) });
+    derive({ inherited, nativeInherited, lens, optionalLens, nativeLens }, (values) => {
+      // @ts-expect-error Views inherit unknown shape from coerced derived JSON.
+      void values.inherited.title;
+      // @ts-expect-error Views inherit unknown shape from coerced native JSON.
+      void values.nativeInherited.title;
+      // @ts-expect-error View-level coercers can replace the referenced JSON shape.
+      void values.lens.title;
+      // @ts-expect-error Widened view options may include a shape-changing coercer.
+      void values.optionalLens.title;
+      // @ts-expect-error Native JSON lenses also lose shape after coercion.
+      void values.nativeLens.title;
+      return 1;
+    });
+    return { inherited };
+  },
+});

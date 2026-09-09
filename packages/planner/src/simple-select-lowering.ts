@@ -17,6 +17,7 @@ export function tryLowerSimpleSelect(
   cteNames: Set<string>,
   tryLowerSelect: (ast: SelectAst) => RelNode | null,
   expandProjection: (ast: SelectAst) => SelectAst,
+  outputNames?: string[],
 ): BetterResult<RelNode | null, RelLoweringError> {
   return Result.gen(function* () {
     const shape = yield* Result.try({
@@ -27,6 +28,7 @@ export function tryLowerSimpleSelect(
           cteNames,
           tryLowerSelect,
           expandProjection,
+          outputNames,
         );
         if (Result.isError(result)) {
           throw result.error;
@@ -48,7 +50,7 @@ export function tryLowerSimpleSelect(
     }
 
     const finalized = yield* Result.try({
-      try: () => finalizeSimpleSelectRel(current, shape),
+      try: () => finalizeSimpleSelectRel(current, shape, outputNames),
       catch: (error) => toRelLoweringError(error, "finalize simple select lowering"),
     });
 

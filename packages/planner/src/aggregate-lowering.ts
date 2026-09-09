@@ -154,7 +154,7 @@ export function parseAggregateProjections(
   return out;
 }
 
-function isWindowProjection(entry: SelectColumnAst): boolean {
+export function isWindowProjection(entry: SelectColumnAst): boolean {
   const expr = entry.expr as { type?: unknown; over?: unknown };
   if (expr.type !== "function" && expr.type !== "aggr_func") {
     return false;

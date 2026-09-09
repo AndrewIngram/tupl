@@ -76,8 +76,11 @@ These invariants should hold unless a deliberate architecture change updates thi
   Validate public column access before pruning.
 - Preserve explicit CTE column lists in the parser and apply them positionally to
   outputs. Recursive seeds expose these names to the recursive term. Alias count
-  must match output arity, and aliases must be unique. SELECT-local ORDER BY aliases
-  still resolve before the enclosing CTE renames its outputs.
+  must match output arity, and aliases must be unique. Resolve SELECT-local clauses
+  before applying enclosing names in the final projection. Preserve SELECT order
+  when aggregate and window outputs are interleaved. Keep duplicate inner
+  values distinct when explicit enclosing aliases give them unique output names.
 - Derived callback return unions containing Promise-like values are rejected.
   Typed derived JSON retains its inferred shape through column definitions and
-  qualified view references; unvalidated provider JSON stays unknown.
+  qualified view references unless coercion may change that shape. Coerced and
+  unvalidated provider JSON stay unknown.

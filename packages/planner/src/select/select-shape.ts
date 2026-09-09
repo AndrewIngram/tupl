@@ -11,6 +11,7 @@ import type { SchemaDefinition } from "@tupl/schema-model";
 import {
   getAggregateMetricSignature,
   hasAggregateProjection,
+  isWindowProjection,
   lowerHavingExpr,
   parseAggregateProjections,
   parseGroupBy,
@@ -37,6 +38,7 @@ import {
   parseWindowProjections,
   toParsedOrderSource,
 } from "./select-projections";
+import { nextRelId } from "../physical/planner-ids";
 import { parseJoins } from "./select-from-lowering";
 import { parseWhereFilters, validateEnumLiteralFilters } from "../where-lowering";
 
@@ -45,7 +47,7 @@ export interface PreparedSimpleSelect {
   aggregateMode: boolean;
   safeAggregateProjections: ParsedAggregateProjection[];
   safeProjections: SelectProjection[];
-  aggregateWindowProjections: SelectWindowProjection[];
+  aggregateSelectProjections: Array<ParsedAggregateProjection | SelectWindowProjection>;
   aggregateGroupByResolution: {
     groupBy: RelColumnRef[];
     materializations: RelProjectExprMapping[];
@@ -74,6 +76,7 @@ export function prepareSimpleSelectLowering(
   cteNames: Set<string>,
   tryLowerSelect: (ast: SelectAst) => RelNode | null,
   expandProjection: (ast: SelectAst) => SelectAst,
+  enclosingOutputNames?: string[],
 ): BetterResult<PreparedSimpleSelect | null, RelLoweringError> {
   if (ast.type !== "select" || ast.with || ast.set_op || ast._next) {
     return Result.ok(null);
@@ -156,18 +159,6 @@ export function prepareSimpleSelectLowering(
 
   const safeAggregateProjections = aggregateMode ? (aggregateProjections ?? []) : [];
   const safeProjections = aggregateMode ? [] : (projections ?? []);
-  const outputNames = new Set<string>();
-  for (const projection of aggregateMode ? safeAggregateProjections : safeProjections) {
-    if (outputNames.has(projection.output)) {
-      return Result.err(
-        new RelLoweringError({
-          operation: "validate SELECT outputs",
-          message: `Duplicate output column: ${projection.output}. Use explicit projections with unique aliases.`,
-        }),
-      );
-    }
-    outputNames.add(projection.output);
-  }
   const aggregateWindowProjections = aggregateMode
     ? parseAggregateWindowProjections(
         ast.columns,
@@ -178,6 +169,43 @@ export function prepareSimpleSelectLowering(
     : [];
   if (aggregateMode && aggregateWindowProjections == null) {
     return Result.ok(null);
+  }
+  const aggregateSelectProjections: PreparedSimpleSelect["aggregateSelectProjections"] = [];
+  if (aggregateMode && Array.isArray(ast.columns)) {
+    let aggregateIndex = 0;
+    let windowIndex = 0;
+    for (const entry of ast.columns) {
+      const projection = isWindowProjection(entry)
+        ? aggregateWindowProjections?.[windowIndex++]
+        : safeAggregateProjections[aggregateIndex++];
+      // Unsupported window specifications may not produce a parsed projection.
+      if (!projection) return Result.ok(null);
+      aggregateSelectProjections.push(projection);
+    }
+  }
+  const projectionsWithOutputs = aggregateMode ? aggregateSelectProjections : safeProjections;
+  const reservedNames = new Set(projectionsWithOutputs.map((projection) => projection.output));
+  const outputNames = new Set<string>();
+  for (const projection of projectionsWithOutputs) {
+    if (outputNames.has(projection.output) && enclosingOutputNames) {
+      // Distinct enclosing names allow duplicate SELECT outputs. Keep the first alias
+      // visible to SELECT-local clauses and give later values distinct internal names.
+      let internalName = nextRelId("select_value");
+      while (reservedNames.has(internalName)) internalName = nextRelId("select_value");
+      reservedNames.add(internalName);
+      projection.output = internalName;
+      if (projection.kind === "metric") projection.metric.as = internalName;
+      if (projection.kind === "window") projection.function.as = internalName;
+    }
+    if (outputNames.has(projection.output)) {
+      return Result.err(
+        new RelLoweringError({
+          operation: "validate SELECT outputs",
+          message: `Duplicate output column: ${projection.output}. Use explicit projections with unique aliases.`,
+        }),
+      );
+    }
+    outputNames.add(projection.output);
   }
   const groupByTerms = aggregateMode ? parseGroupBy(ast.groupby, bindings, aliasToBinding) : [];
   if (aggregateMode && groupByTerms == null) {
@@ -282,7 +310,7 @@ export function prepareSimpleSelectLowering(
     aggregateMode,
     safeAggregateProjections,
     safeProjections,
-    aggregateWindowProjections: aggregateWindowProjections ?? [],
+    aggregateSelectProjections,
     aggregateGroupByResolution: aggregateGroupByResolutionResult.value,
     effectiveGroupBy,
     allAggregateMetrics,
