@@ -1,5 +1,8 @@
 # Shared package identity
 
+Superseded by [native ESM-only publishing](esm-only-packages.md) in 0.8.0.
+This document records the earlier dual-format implementation.
+
 Status: complete. Resolve the mixed ESM/CommonJS finding from the contract audit.
 
 - Publish one CommonJS implementation for each core package, with ESM runtime and

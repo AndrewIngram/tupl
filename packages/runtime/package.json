@@ -15,42 +15,23 @@
   ],
   "type": "module",
   "sideEffects": false,
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
     ".": {
       "source": "./src/index.ts",
-      "import": {
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
-      },
-      "require": {
-        "types": "./dist/index.d.cts",
-        "default": "./dist/index.cjs"
-      }
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
     },
     "./executor": {
       "source": "./src/runtime/executor.ts",
-      "import": {
-        "types": "./dist/executor.d.mts",
-        "default": "./dist/executor.mjs"
-      },
-      "require": {
-        "types": "./dist/executor.d.cts",
-        "default": "./dist/executor.cjs"
-      }
+      "types": "./dist/executor.d.mts",
+      "import": "./dist/executor.mjs"
     },
     "./session": {
       "source": "./src/runtime/session/index.ts",
-      "import": {
-        "types": "./dist/session.d.mts",
-        "default": "./dist/session.mjs"
-      },
-      "require": {
-        "types": "./dist/session.d.cts",
-        "default": "./dist/session.cjs"
-      }
+      "types": "./dist/session.d.mts",
+      "import": "./dist/session.mjs"
     }
   },
   "publishConfig": {

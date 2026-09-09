@@ -1,5 +1,9 @@
 # Review of contract audit fixes
 
+Packaging follow-up: 0.8.0 now publishes native ESM only. CommonJS and mixed-format
+checks below describe the earlier remediation, not the current package contract.
+See [published entry points](../../package-architecture.md#published-entry-points).
+
 Reviewed commit `3c522b4` against `841528b7636cce40d0d0254fd6ad8330e0ee62ba`.
 Three actionable findings were confirmed. No production files were changed during the review.
 

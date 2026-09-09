@@ -27,6 +27,9 @@ Terminology used in this repo:
 
 Package guidance:
 
+Version 0.8.0 publishes ESM-only packages. Use `import` in an ESM application;
+CommonJS builds and `require` exports are no longer provided.
+
 - application authors should usually stay on `@tupl/schema`
 - adapter authors should usually stay on `@tupl/provider-kit`, `@tupl/provider-kit/shapes`, and `@tupl/provider-kit/testing`
 - planner/runtime packages are for advanced tooling, debugging, and lower-level integrations

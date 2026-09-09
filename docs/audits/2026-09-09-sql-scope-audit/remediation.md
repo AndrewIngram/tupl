@@ -1,5 +1,9 @@
 # Column-scope remediation and generated findings
 
+Packaging follow-up: 0.8.0 now publishes native ESM only. CommonJS and mixed-format
+checks below describe the earlier remediation, not the current package contract.
+See [published entry points](../../package-architecture.md#published-entry-points).
+
 The two original correctness defects are fixed. Expanded fast-check coverage
 also found a related ORDER BY defect and a critical Drizzle SQL-injection defect.
 All four are fixed in this release. The earlier bounded audit's statement

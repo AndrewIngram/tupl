@@ -2,6 +2,8 @@
 
 Application-facing schema authoring and executable-schema APIs for tupl.
 
+Published as ESM only. Use `import`; CommonJS builds are not provided.
+
 Use this package when you need the canonical documented workflow:
 
 - `createSchemaBuilder(...)`

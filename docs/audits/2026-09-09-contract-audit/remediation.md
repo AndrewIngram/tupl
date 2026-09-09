@@ -1,5 +1,9 @@
 # Contract audit remediation, 9 September 2026
 
+Packaging follow-up: 0.8.0 now publishes native ESM only. CommonJS and mixed-format
+checks below describe the earlier remediation, not the current package contract.
+See [published entry points](../../package-architecture.md#published-entry-points).
+
 All six new findings and three previously known defects are fixed in the same checkout.
 The [original report](README.md) and its result files retain the pre-fix baseline.
 

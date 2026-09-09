@@ -15,53 +15,28 @@
   ],
   "type": "module",
   "sideEffects": false,
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
     ".": {
       "source": "./src/index.ts",
-      "import": {
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
-      },
-      "require": {
-        "types": "./dist/index.d.cts",
-        "default": "./dist/index.cjs"
-      }
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
     },
     "./relational-sql": {
       "source": "./src/relational-sql.ts",
-      "import": {
-        "types": "./dist/relational-sql.d.mts",
-        "default": "./dist/relational-sql.mjs"
-      },
-      "require": {
-        "types": "./dist/relational-sql.d.cts",
-        "default": "./dist/relational-sql.cjs"
-      }
+      "types": "./dist/relational-sql.d.mts",
+      "import": "./dist/relational-sql.mjs"
     },
     "./shapes": {
       "source": "./src/provider/shapes/index.ts",
-      "import": {
-        "types": "./dist/shapes.d.mts",
-        "default": "./dist/shapes.mjs"
-      },
-      "require": {
-        "types": "./dist/shapes.d.cts",
-        "default": "./dist/shapes.cjs"
-      }
+      "types": "./dist/shapes.d.mts",
+      "import": "./dist/shapes.mjs"
     },
     "./testing": {
       "source": "./src/testing.ts",
-      "import": {
-        "types": "./dist/testing.d.mts",
-        "default": "./dist/testing.mjs"
-      },
-      "require": {
-        "types": "./dist/testing.d.cts",
-        "default": "./dist/testing.cjs"
-      }
+      "types": "./dist/testing.d.mts",
+      "import": "./dist/testing.mjs"
     }
   },
   "publishConfig": {

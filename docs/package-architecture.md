@@ -71,17 +71,22 @@ work. Provider-kit and provider packages never receive executable callbacks.
 
 ## Published entry points
 
-The six core packages publish one CommonJS runtime implementation, with ESM
-facades forwarding every public root and subpath to it. ESM declaration facades
-also forward to the CommonJS declarations, preserving runtime and type identity
-when dependencies mix import styles. The shared build helper generates facades
-from package export manifests after packaging. The `source` condition supports workspace tooling;
-ordinary Node imports resolve `dist`. Workspace test aliases derive from those
-export declarations so all packages share the same source module instances.
+All ten public packages publish native ESM JavaScript (`.mjs`) and ESM declarations
+(`.d.mts`). Public roots and subpaths expose `import` and `types` entries, with a
+`source` condition for workspace tooling. There are no CommonJS builds or
+forwarding facades. Applications use ESM imports. Shared state stays in the owning
+package's ESM modules, so builders and derived-operation registries retain their
+identity across public entry points.
+
+Workspace test aliases derive from package export declarations and resolve source
+modules. Run tests from the repository root with `vp test`; package builds are
+not prerequisites for that suite.
 
 Run `pnpm test:packed` to build and verify actual tarballs in an isolated consumer.
-It checks every core export, both Node import styles, strict NodeNext consumers,
-and native and derived SQLite queries. Mixed-format checks compare corresponding
-export identities and exchange builders and normalized schemas in both directions.
-Consumer type checks do not skip library declarations. The ESM facades depend on
-CommonJS interoperability; bundlers must support CommonJS dependencies.
+It checks every public export across all ten packages, native and derived SQLite
+queries using both builders and normalized schemas, and strict NodeNext ESM type
+resolution. Core and Objection consumer checks do not skip library declarations.
+An additional import check covers every provider with `skipLibCheck`, because
+Drizzle's dependency declarations include optional drivers and upstream type
+errors. The verifier also rejects CommonJS artifacts or export conditions in
+public packages.
