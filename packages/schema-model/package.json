@@ -1,6 +1,6 @@
 {
   "name": "@tupl/schema-model",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Logical schema DSL, normalization, and validation for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/schema-model#readme",
   "license": "MIT",
@@ -9,23 +9,70 @@
     "url": "git+https://github.com/AndrewIngram/tupl.git",
     "directory": "packages/schema-model"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "type": "module",
   "sideEffects": false,
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "exports": {
-    ".": "./src/index.ts",
-    "./constraints": "./src/constraints.ts",
-    "./ddl": "./src/ddl.ts",
-    "./dsl": "./src/dsl.ts",
-    "./definition": "./src/definition.ts",
-    "./enums": "./src/enums.ts",
-    "./mapping": "./src/mapping/index.ts",
-    "./normalized": "./src/normalized.ts",
-    "./planning": "./src/planning.ts",
-    "./table-planning": "./src/table-planning.ts",
-    "./normalization": "./src/normalization.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./constraints": {
+      "source": "./src/constraints.ts",
+      "types": "./dist/constraints.d.mts",
+      "import": "./dist/constraints.mjs"
+    },
+    "./ddl": {
+      "source": "./src/ddl.ts",
+      "types": "./dist/ddl.d.mts",
+      "import": "./dist/ddl.mjs"
+    },
+    "./dsl": {
+      "source": "./src/dsl.ts",
+      "types": "./dist/dsl.d.mts",
+      "import": "./dist/dsl.mjs"
+    },
+    "./definition": {
+      "source": "./src/definition.ts",
+      "types": "./dist/definition.d.mts",
+      "import": "./dist/definition.mjs"
+    },
+    "./enums": {
+      "source": "./src/enums.ts",
+      "types": "./dist/enums.d.mts",
+      "import": "./dist/enums.mjs"
+    },
+    "./mapping": {
+      "source": "./src/mapping/index.ts",
+      "types": "./dist/mapping.d.mts",
+      "import": "./dist/mapping.mjs"
+    },
+    "./normalized": {
+      "source": "./src/normalized.ts",
+      "types": "./dist/normalized.d.mts",
+      "import": "./dist/normalized.mjs"
+    },
+    "./planning": {
+      "source": "./src/planning.ts",
+      "types": "./dist/planning.d.mts",
+      "import": "./dist/planning.mjs"
+    },
+    "./table-planning": {
+      "source": "./src/table-planning.ts",
+      "types": "./dist/table-planning.d.mts",
+      "import": "./dist/table-planning.mjs"
+    },
+    "./normalization": {
+      "source": "./src/normalization.ts",
+      "types": "./dist/normalization.d.mts",
+      "import": "./dist/normalization.mjs"
+    }
   },
   "publishConfig": {
     "access": "public"
@@ -33,7 +80,8 @@
   "scripts": {
     "build": "vp pack",
     "test": "vp test run",
-    "typecheck": "tsgo --noEmit -p tsconfig.json"
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@tupl/foundation": "workspace:*",

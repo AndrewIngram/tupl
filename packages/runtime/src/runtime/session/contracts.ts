@@ -75,6 +75,8 @@ export interface QueryExecutionPlanScope {
  */
 export interface QueryExecutionPlanStep {
   id: string;
+  /** Relational node measured when this plan step corresponds to executable work. */
+  relNodeId?: string;
   kind: QueryStepKind;
   dependsOn: string[];
   summary: string;
@@ -105,60 +107,142 @@ export type QueryStepStatus = "ready" | "running" | "done" | "failed";
  * Query step state is the latest known runtime state for a single plan step.
  * It is query-session stateful data and may include transient rows when capture is enabled.
  */
-export interface QueryStepState {
+interface QueryStepStateBase {
   id: string;
   kind: QueryStepKind;
-  status: QueryStepStatus;
   summary: string;
   dependsOn: string[];
-  executionIndex?: number;
-  startedAt?: number;
-  endedAt?: number;
-  durationMs?: number;
-  rowCount?: number;
-  inputRowCount?: number;
-  outputRowCount?: number;
-  rows?: QueryRow[];
-  routeUsed?: QueryStepRoute;
   notes?: string[];
-  error?: string;
   diagnostics?: TuplDiagnostic[];
 }
+
+export interface QueryReadyStepState extends QueryStepStateBase {
+  status: "ready";
+  relNodeId?: string;
+  executionId?: never;
+  occurrence?: never;
+  executionIndex?: never;
+  startedAt?: never;
+  endedAt?: never;
+  durationMs?: never;
+  rowCount?: never;
+  inputRowCount?: never;
+  outputRowCount?: never;
+  rows?: never;
+  routeUsed?: never;
+  error?: never;
+}
+
+export interface QueryRunningStepState extends QueryStepStateBase {
+  status: "running";
+  relNodeId: string;
+  executionId: string;
+  occurrence: number;
+  startedAt: number;
+  routeUsed: QueryStepRoute;
+  executionIndex?: never;
+  endedAt?: never;
+  durationMs?: never;
+  rowCount?: never;
+  inputRowCount?: never;
+  outputRowCount?: never;
+  rows?: never;
+  error?: never;
+}
+
+export interface QueryDoneStepState extends QueryStepStateBase {
+  status: "done";
+  relNodeId: string;
+  executionId: string;
+  occurrence: number;
+  executionIndex: number;
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  rowCount: number;
+  outputRowCount: number;
+  computations?: Array<{ id: string; label: string; invocations: number }>;
+  inputRowCount?: number;
+  rows?: QueryRow[];
+  routeUsed: QueryStepRoute;
+  error?: never;
+}
+
+export interface QueryFailedStepState extends QueryStepStateBase {
+  status: "failed";
+  relNodeId: string;
+  executionId: string;
+  occurrence: number;
+  executionIndex: number;
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  routeUsed: QueryStepRoute;
+  error: string;
+  rowCount?: never;
+  inputRowCount?: never;
+  outputRowCount?: never;
+  rows?: never;
+}
+
+export type QueryStepState =
+  | QueryReadyStepState
+  | QueryRunningStepState
+  | QueryDoneStepState
+  | QueryFailedStepState;
 
 /**
  * Query step events are the immutable completion/failure records emitted by a session.
  * Unlike step state they never represent an in-progress step and always include timing data.
  */
-export interface QueryStepEvent {
+interface QueryStepEventBase {
+  /** Static step ID when one exists, otherwise the execution ID. */
   id: string;
+  /** Unique ID for this relational-node invocation. */
+  executionId: string;
+  /** Static plan step ID. Omitted for execution hidden by the static plan. */
+  stepId?: string;
+  relNodeId: string;
+  occurrence: number;
   kind: QueryStepKind;
-  status: "done" | "failed";
   summary: string;
   dependsOn: string[];
   executionIndex: number;
   startedAt: number;
   endedAt: number;
   durationMs: number;
-  rowCount?: number;
-  inputRowCount?: number;
-  outputRowCount?: number;
-  rows?: QueryRow[];
-  routeUsed?: QueryStepRoute;
+  routeUsed: QueryStepRoute;
   notes?: string[];
-  error?: string;
   diagnostics?: TuplDiagnostic[];
 }
+
+export interface QueryDoneStepEvent extends QueryStepEventBase {
+  status: "done";
+  rowCount: number;
+  outputRowCount: number;
+  computations?: Array<{ id: string; label: string; invocations: number }>;
+  inputRowCount?: number;
+  rows?: QueryRow[];
+  error?: never;
+}
+
+export interface QueryFailedStepEvent extends QueryStepEventBase {
+  status: "failed";
+  error: string;
+  rowCount?: never;
+  outputRowCount?: never;
+  inputRowCount?: never;
+  rows?: never;
+}
+
+export type QueryStepEvent = QueryDoneStepEvent | QueryFailedStepEvent;
 
 /**
  * Query session options control how much execution detail is surfaced while a session runs.
  * They do not change planning semantics or provider capability decisions.
  */
 export interface QuerySessionOptions {
-  /** Maximum number of concurrently runnable steps the session may execute. */
-  maxConcurrency?: number;
-  /** Event order is currently plan order only, even when runtime execution overlaps internally. */
-  eventOrder?: "plan";
-  /** Captured rows are opt-in because they can materially increase session memory use. */
+  /** Full row capture applies only to the final root output. */
   captureRows?: "full";
   /** Optional callback invoked for each emitted step event. */
   onEvent?: (event: QueryStepEvent) => void;

@@ -1,4 +1,10 @@
-import type { QueryRow, SchemaDefinition } from "../types";
+import { setOwnProperty } from "@tupl/foundation";
+import type { QueryRow } from "../contracts/query-contracts";
+import type {
+  SchemaDefinition,
+  SchemaValueCoercion,
+  TableColumnDefinition,
+} from "../contracts/schema-contracts";
 
 import { inferRelOutputDefinitions, buildRelOutputCoercion } from "./output-inference";
 
@@ -12,8 +18,8 @@ export function inferAndMapRelOutputRows(
   normalizeRowValue: (
     value: unknown,
     outputName: string,
-    definition?: import("../types").TableColumnDefinition,
-    coerce?: import("../types").SchemaValueCoercion,
+    definition?: TableColumnDefinition,
+    coerce?: SchemaValueCoercion,
   ) => unknown,
 ): QueryRow[] {
   if (rel.output.length === 0) {
@@ -25,11 +31,15 @@ export function inferAndMapRelOutputRows(
     const out: QueryRow = {};
     for (const output of rel.output) {
       const definition = outputDefinitions[output.name];
-      out[output.name] = normalizeRowValue(
-        row[output.name] ?? null,
+      setOwnProperty(
+        out,
         output.name,
-        definition,
-        definition ? buildRelOutputCoercion(definition) : undefined,
+        normalizeRowValue(
+          row[output.name] ?? null,
+          output.name,
+          definition,
+          definition ? buildRelOutputCoercion(definition) : undefined,
+        ),
       );
     }
     return out;

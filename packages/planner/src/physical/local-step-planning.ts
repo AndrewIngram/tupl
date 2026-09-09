@@ -1,3 +1,4 @@
+import { resolveLookupJoinCandidate } from "./lookup-join-candidate";
 import { Result, type Result as BetterResult } from "better-result";
 
 import { type RelNode, type TuplError } from "@tupl/foundation";
@@ -195,6 +196,18 @@ async function planJoinNodeResult<TContext>(
     const left = yield* Result.await(
       planPhysicalNodeResult(node.left, schema, providers, context, state),
     );
+    const lookup = resolveLookupJoinCandidate(node, schema, providers);
+    if (lookup) {
+      return Result.ok(
+        recordPhysicalStep(state, {
+          id: nextPhysicalStepId("lookup_join"),
+          kind: "lookup_join",
+          dependsOn: [left],
+          summary: "Batched keyed lookup into the right provider",
+          ...lookup.description,
+        }),
+      );
+    }
     const right = yield* Result.await(
       planPhysicalNodeResult(node.right, schema, providers, context, state),
     );

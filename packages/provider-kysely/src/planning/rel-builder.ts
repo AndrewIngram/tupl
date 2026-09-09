@@ -1,13 +1,13 @@
 import type { RelNode } from "@tupl/foundation";
 import {
-  SqlRelationalOrderTerm,
+  SqlRelationalWithOrderTerm,
   SqlRelationalQueryTranslationBackend,
   SqlRelationalSelection,
   UnsupportedSqlRelationalPlanError,
 } from "@tupl/provider-kit/relational-sql";
 
 import {
-  applyBase,
+  createScopedSource,
   applyWhereClause,
   resolveQualifiedColumnRef,
   toRef,
@@ -36,10 +36,7 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
   KyselyQueryBuilderLike
 > = {
   async createRootQuery({ runtime, root, context }) {
-    const rootFrom = `${root.table} as ${root.alias}`;
-    let query = runtime.selectFrom(rootFrom);
-    query = await applyBase(query, runtime, root, context, root.alias);
-    return query;
+    return runtime.selectFrom(await createScopedSource(runtime, root, context));
   },
   async applyRegularJoin({ query, join, context, runtime }) {
     const joinMethod =
@@ -58,14 +55,13 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
       );
     }
 
-    const next = (fn as (...args: unknown[]) => KyselyQueryBuilderLike).call(
+    const source = await createScopedSource(runtime, join.right, context);
+    return (fn as (...args: unknown[]) => KyselyQueryBuilderLike).call(
       query,
-      `${join.right.table} as ${join.right.alias}`,
+      source,
       `${join.leftKey.alias}.${join.leftKey.column}`,
       `${join.rightKey.alias}.${join.rightKey.column}`,
     );
-
-    return applyBase(next, runtime, join.right, context, join.right.alias);
   },
   applySemiJoin({ query, leftKey, subquery }) {
     return query.where(`${leftKey.alias}.${leftKey.column}`, "in", subquery);
@@ -92,7 +88,12 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
   applyOrderBy({ query, orderBy, aliases }) {
     let next = query;
     for (const term of orderBy) {
-      next = next.orderBy(resolveOrderTerm(term, aliases), term.direction);
+      next = next.orderBy(
+        term.kind === "metric"
+          ? (eb: any) => buildMetricExpression(eb, term.metric, aliases)
+          : resolveOrderTerm(term, aliases),
+        term.direction,
+      );
     }
     return next;
   },
@@ -190,6 +191,10 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
 
     return query;
   },
+  describeQuery({ query }) {
+    const compiled = query.compile?.();
+    return compiled ? { sql: compiled.sql, bindings: compiled.parameters } : undefined;
+  },
   async executeQuery({ query }) {
     return query.execute();
   },
@@ -286,7 +291,7 @@ function buildWindowExpression(
 }
 
 function resolveOrderTerm<TContext>(
-  term: SqlRelationalOrderTerm,
+  term: SqlRelationalWithOrderTerm,
   aliases: Map<string, ScanBinding<TContext>>,
 ): string {
   if (term.kind === "qualified") {
@@ -299,7 +304,7 @@ function resolveOrderTerm<TContext>(
 }
 
 function resolveWithBodyOrderTerm(
-  term: SqlRelationalOrderTerm,
+  term: SqlRelationalWithOrderTerm,
   scanAlias: string,
   windowByAlias: Map<string, Extract<RelNode, { kind: "window" }>["functions"][number]>,
 ): string {

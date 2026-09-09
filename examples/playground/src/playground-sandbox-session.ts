@@ -16,6 +16,7 @@ interface SandboxSessionState {
   stepStates: Map<string, QueryStepState>;
   result: QueryRow[] | null;
   done: boolean;
+  error: string | null;
   events: QueryStepEvent[];
 }
 
@@ -33,6 +34,7 @@ function createInitialStepStates(plan: QueryExecutionPlan): Map<string, QuerySte
         status: "ready",
         summary: step.summary,
         dependsOn: step.dependsOn,
+        ...(step.relNodeId ? { relNodeId: step.relNodeId } : {}),
         ...(step.diagnostics ? { diagnostics: step.diagnostics } : {}),
       } satisfies QueryStepState,
     ]),
@@ -41,25 +43,16 @@ function createInitialStepStates(plan: QueryExecutionPlan): Map<string, QuerySte
 
 function applyStepEvent(state: SandboxSessionState, event: QueryStepEvent): void {
   state.events.push(event);
-  state.stepStates.set(event.id, {
-    id: event.id,
-    kind: event.kind,
-    status: event.status === "failed" ? "failed" : "done",
-    summary: event.summary,
-    dependsOn: event.dependsOn,
-    executionIndex: event.executionIndex,
-    startedAt: event.startedAt,
-    endedAt: event.endedAt,
-    durationMs: event.durationMs,
-    ...(typeof event.rowCount === "number" ? { rowCount: event.rowCount } : {}),
-    ...(typeof event.inputRowCount === "number" ? { inputRowCount: event.inputRowCount } : {}),
-    ...(typeof event.outputRowCount === "number" ? { outputRowCount: event.outputRowCount } : {}),
-    ...(event.rows ? { rows: event.rows } : {}),
-    ...(event.routeUsed ? { routeUsed: event.routeUsed } : {}),
-    ...(event.notes ? { notes: event.notes } : {}),
-    ...(event.error ? { error: event.error } : {}),
-    ...(event.diagnostics ? { diagnostics: event.diagnostics } : {}),
-  });
+  if (!event.stepId) {
+    return;
+  }
+
+  const current = state.stepStates.get(event.stepId);
+  if (current && current.status !== "ready" && current.occurrence > event.occurrence) {
+    return;
+  }
+
+  state.stepStates.set(event.stepId, { ...event, id: event.stepId });
 }
 
 export function isSandboxQuerySession(session: QuerySession): session is SandboxQuerySession {
@@ -72,6 +65,7 @@ export function createSandboxQuerySession(
   initialEvents: QueryStepEvent[] = [],
   initialResult: QueryRow[] | null = null,
   initialDone = false,
+  initialError: string | null = null,
 ): QuerySession {
   const state: SandboxSessionState = {
     sessionId,
@@ -79,6 +73,7 @@ export function createSandboxQuerySession(
     stepStates: createInitialStepStates(plan),
     result: initialResult,
     done: initialDone,
+    error: initialError,
     events: [],
   };
 
@@ -93,6 +88,9 @@ export function createSandboxQuerySession(
     },
     async next() {
       if (state.done) {
+        if (state.error) {
+          throw new Error(state.error);
+        }
         return {
           done: true,
           result: state.result ?? [],
@@ -105,6 +103,7 @@ export function createSandboxQuerySession(
       if ("done" in next) {
         state.done = true;
         state.result = next.result;
+        state.error = null;
         return next;
       }
 
@@ -112,6 +111,13 @@ export function createSandboxQuerySession(
       return next;
     },
     async runToCompletion() {
+      if (state.done) {
+        if (state.error) {
+          throw new Error(state.error);
+        }
+        return state.result ?? [];
+      }
+
       const snapshot = await requestSandboxWorker("session_run_to_completion", {
         sessionId: state.sessionId,
       });
@@ -120,6 +126,10 @@ export function createSandboxQuerySession(
       }
       state.done = snapshot.done;
       state.result = snapshot.result;
+      state.error = snapshot.error;
+      if (snapshot.error) {
+        throw new Error(snapshot.error);
+      }
       return snapshot.result ?? [];
     },
     getResult() {
@@ -143,6 +153,7 @@ export function applySandboxCompletionSnapshot(
     events: QueryStepEvent[];
     result: QueryRow[] | null;
     done: boolean;
+    error: string | null;
   },
 ): void {
   const state = (session as SandboxQuerySession)[SANDBOX_SESSION_PROXY];
@@ -151,4 +162,5 @@ export function applySandboxCompletionSnapshot(
   }
   state.done = snapshot.done;
   state.result = snapshot.result;
+  state.error = snapshot.error;
 }

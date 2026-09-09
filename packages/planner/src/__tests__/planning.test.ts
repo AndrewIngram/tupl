@@ -1,5 +1,7 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vite-plus/test";
+import type { ProviderAdapter } from "@tupl/provider-kit";
+import type { LookupManyCapableProviderAdapter } from "@tupl/provider-kit/shapes";
 
 import {
   buildLogicalQueryPlanResult,
@@ -9,7 +11,8 @@ import {
   planPhysicalQueryResult,
 } from "@tupl/planner";
 import { buildSchema, buildEntitySchema } from "./support/schema";
-import { finalizeProviders } from "./support/runtime";
+
+type TestContext = Record<string, never>;
 
 function lowerSqlToRel(sql: string, schema: Parameters<typeof lowerSqlToRelResult>[1]) {
   const result = lowerSqlToRelResult(sql, schema);
@@ -264,8 +267,9 @@ describe("query/planning", () => {
       },
     });
 
-    const providers = finalizeProviders({
+    const providers = {
       orders: {
+        name: "orders",
         canExecute() {
           return true;
         },
@@ -279,8 +283,9 @@ describe("query/planning", () => {
         async execute() {
           return Result.ok([]);
         },
-      },
+      } satisfies ProviderAdapter<TestContext>,
       users: {
+        name: "users",
         canExecute() {
           return true;
         },
@@ -297,8 +302,8 @@ describe("query/planning", () => {
         async lookupMany() {
           return Result.ok([]);
         },
-      },
-    });
+      } satisfies ProviderAdapter<TestContext> & LookupManyCapableProviderAdapter<TestContext>,
+    };
 
     const lowered = lowerSqlToRel(
       `
@@ -321,9 +326,9 @@ describe("query/planning", () => {
       `,
     );
 
-    expect(physical.steps.some((step) => step.kind === "lookup_join")).toBe(false);
+    expect(physical.steps.some((step) => step.kind === "lookup_join")).toBe(true);
     expect(physical.steps.some((step) => step.kind === "remote_fragment")).toBe(true);
-    expect(physical.steps.some((step) => step.kind === "local_hash_join")).toBe(true);
+    expect(physical.steps.some((step) => step.kind === "local_hash_join")).toBe(false);
   });
 
   it("lowers FROM subqueries into local relational plans instead of rejecting them", () => {
@@ -445,8 +450,9 @@ describe("query/planning", () => {
       },
     });
 
-    const providers = finalizeProviders({
+    const providers = {
       warehouse: {
+        name: "warehouse",
         canExecute() {
           return true;
         },
@@ -460,8 +466,8 @@ describe("query/planning", () => {
         async execute() {
           return Result.ok([]);
         },
-      },
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const lowered = lowerSqlToRel(
       `
@@ -510,8 +516,9 @@ describe("query/planning", () => {
       },
     });
 
-    const providers = finalizeProviders({
+    const providers = {
       warehouse: {
+        name: "warehouse",
         canExecute(rel) {
           return rel.kind === "scan";
         },
@@ -525,8 +532,8 @@ describe("query/planning", () => {
         async execute() {
           return Result.ok([]);
         },
-      },
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const lowered = lowerSqlToRel(
       `
@@ -572,8 +579,9 @@ describe("query/planning", () => {
     });
 
     const supportChecks: string[] = [];
-    const providers = finalizeProviders({
+    const providers = {
       warehouse: {
+        name: "warehouse",
         canExecute(rel) {
           supportChecks.push(rel.kind);
           return rel.kind === "scan";
@@ -588,8 +596,8 @@ describe("query/planning", () => {
         async execute() {
           return Result.ok([]);
         },
-      },
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const lowered = lowerSqlToRel(
       `
@@ -625,8 +633,9 @@ describe("query/planning", () => {
       },
     });
 
-    const providers = finalizeProviders({
+    const providers = {
       orders: {
+        name: "orders",
         canExecute() {
           return true;
         },
@@ -640,8 +649,9 @@ describe("query/planning", () => {
         async execute() {
           return Result.ok([]);
         },
-      },
+      } satisfies ProviderAdapter<TestContext>,
       users: {
+        name: "users",
         canExecute() {
           return true;
         },
@@ -658,8 +668,8 @@ describe("query/planning", () => {
         async lookupMany() {
           return Result.ok([]);
         },
-      },
-    });
+      } satisfies ProviderAdapter<TestContext> & LookupManyCapableProviderAdapter<TestContext>,
+    };
 
     const lowered = lowerSqlToRel(
       `

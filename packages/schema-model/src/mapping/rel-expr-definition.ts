@@ -6,7 +6,7 @@ import {
   resolveRelRefOutputDefinition,
   withColumnNullability,
 } from "./output-definition-utils";
-import type { SqlScalarType, TableColumnDefinition } from "../types";
+import type { SqlScalarType, TableColumnDefinition } from "../contracts/schema-contracts";
 
 /**
  * Rel expr definitions own inferred output-definition logic for expressions and aggregate metrics.
@@ -44,6 +44,8 @@ export function inferRelExprDefinition(
   inputDefinitions: Record<string, TableColumnDefinition | undefined>,
 ): TableColumnDefinition | undefined {
   switch (expr.kind) {
+    case "local":
+      return undefined;
     case "literal":
       return inferLiteralDefinition(expr.value);
     case "column":

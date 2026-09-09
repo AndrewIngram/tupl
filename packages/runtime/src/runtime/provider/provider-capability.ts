@@ -3,6 +3,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import type { RelNode, TuplError } from "@tupl/foundation";
 import {
   normalizeCapability,
+  resolveRelProviderAdapter,
   type ProviderAdapter,
   type ProviderCapabilityReport,
 } from "@tupl/provider-kit";
@@ -60,7 +61,8 @@ function resolveCapabilityTargetResult<TContext>(
 
   return Result.ok({
     fragment,
-    provider: input.preparedSchema.providers[fragment.provider] ?? null,
+    provider:
+      resolveRelProviderAdapter(rel, fragment.provider, input.preparedSchema.providers) ?? null,
   });
 }
 

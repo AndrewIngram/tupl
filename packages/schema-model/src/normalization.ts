@@ -9,9 +9,10 @@ export {
 } from "./normalization/schema-finalization";
 export {
   getNormalizedColumnBindings,
+  sourceColumnValueExpression,
   getNormalizedColumnSourceMap,
   resolveNormalizedColumnSource,
-} from "./normalization/binding-normalization";
+} from "./normalization/normalized-column-sources";
 export {
   createPhysicalBindingFromEntity,
   createTableDefinitionFromEntity,
@@ -20,3 +21,5 @@ export {
   resolveTableProvider,
   validateProviderBindings,
 } from "./normalization/provider-validation";
+
+export { evaluateLocalOperation } from "./dsl/derive";

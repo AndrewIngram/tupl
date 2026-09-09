@@ -1,24 +1,14 @@
+import { resolveLookupJoinCandidate } from "@tupl/planner";
 import { Result } from "better-result";
 
-import {
-  TuplGuardrailError,
-  type RelJoinNode,
-  type RelNode,
-  type RelScanNode,
-} from "@tupl/foundation";
-import {
-  getDataEntityProvider,
-  unwrapProviderOperationResult,
-  type ProviderAdapter,
-} from "@tupl/provider-kit";
-import { supportsLookupMany } from "@tupl/provider-kit/shapes";
+import { TuplGuardrailError, type RelJoinNode } from "@tupl/foundation";
+import { unwrapProviderOperationResult } from "@tupl/provider-kit";
 import { mapProviderRowsToLogical } from "@tupl/schema-model/mapping";
 import {
   createPhysicalBindingFromEntity,
   createTableDefinitionFromEntity,
   getNormalizedTableBinding,
   resolveNormalizedColumnSource,
-  resolveTableProvider,
 } from "@tupl/schema-model/normalization";
 
 import {
@@ -27,6 +17,13 @@ import {
   type RelExecutionContext,
 } from "./local-execution";
 import { prefixRow, toColumnKey, type InternalRow } from "./row-ops";
+import {
+  appendMaterializedRowResult,
+  appendMaterializedRowsResult,
+  enforceMaterializationCountResult,
+  enforceMaterializationLimitResult,
+} from "../policy";
+import { describeLookupJoinExecution, type RelExecutionObservation } from "./execution-observer";
 
 /**
  * Lookup joins own batched provider-assisted join execution and local hash join fallback.
@@ -35,43 +32,23 @@ export async function maybeExecuteLookupJoinResult<TContext>(
   join: RelJoinNode,
   leftRows: InternalRow[],
   context: RelExecutionContext<TContext>,
+  observation?: RelExecutionObservation,
 ) {
-  if (join.joinType !== "inner" && join.joinType !== "left") {
-    return Result.ok(null);
-  }
-
-  const leftScan = findFirstScan(join.left);
-  const rightScan = findLookupEligibleScan(join.right);
-  if (!leftScan || !rightScan) {
-    return Result.ok(null);
-  }
-  const leftScanAlias = leftScan.alias ?? leftScan.table;
-  const rightScanAlias = rightScan.alias ?? rightScan.table;
-  if ((join.leftKey.alias ?? join.leftKey.table ?? leftScanAlias) !== leftScanAlias) {
-    return Result.ok(null);
-  }
-  if ((join.rightKey.alias ?? join.rightKey.table ?? rightScanAlias) !== rightScanAlias) {
-    return Result.ok(null);
-  }
-
+  const candidate = resolveLookupJoinCandidate(join, context.schema, context.providers);
+  if (!candidate) return Result.ok(null);
+  const { rightScan, rightProvider, description } = candidate;
   const rightBinding = getNormalizedTableBinding(context.schema, rightScan.table);
-  const rightProviderName =
-    rightScan.entity?.provider ?? resolveTableProvider(context.schema, rightScan.table);
-  const rightProviderResult =
-    typeof rightProviderName === "string" ? Result.ok(rightProviderName) : rightProviderName;
-  if (Result.isError(rightProviderResult)) {
-    return Result.ok(null);
-  }
-  const rightProvider =
-    context.providers[rightProviderResult.value] ??
-    (rightScan.entity
-      ? (getDataEntityProvider(rightScan.entity) as ProviderAdapter<TContext> | undefined)
-      : undefined);
-  if (!rightProvider || !supportsLookupMany(rightProvider)) {
-    return Result.ok(null);
-  }
 
-  const leftKey = `${join.leftKey.alias}.${join.leftKey.column}`;
+  observation?.updateDescriptor(
+    describeLookupJoinExecution({
+      leftTable: description.leftTable,
+      leftKey: join.leftKey.column,
+      rightTable: rightScan.table,
+      rightKey: join.rightKey.column,
+    }),
+  );
+
+  const leftKey = toColumnKey(join.leftKey);
   const rightPhysicalBinding =
     rightBinding?.kind === "physical"
       ? rightBinding
@@ -138,6 +115,20 @@ export async function maybeExecuteLookupJoinResult<TContext>(
     if (Result.isError(lookedUpResult)) {
       return lookedUpResult;
     }
+    const lookupLimitResult = enforceMaterializationLimitResult(
+      lookedUpResult.value,
+      context.guardrails,
+    );
+    if (Result.isError(lookupLimitResult)) {
+      return lookupLimitResult;
+    }
+    const combinedLookupLimitResult = enforceMaterializationCountResult(
+      rightRows.length + lookedUpResult.value.length,
+      context.guardrails,
+    );
+    if (Result.isError(combinedLookupLimitResult)) {
+      return combinedLookupLimitResult;
+    }
 
     const mappedRowsResult = tryExecutionStep("map lookup join rows to logical rows", () =>
       mapProviderRowsToLogical(
@@ -158,19 +149,25 @@ export async function maybeExecuteLookupJoinResult<TContext>(
     }
 
     const rightAlias = rightScan.alias ?? rightScan.table;
-    for (const row of mappedRowsResult.value) {
-      rightRows.push(prefixRow(row, rightAlias));
+    const appendResult = appendMaterializedRowsResult(
+      rightRows,
+      mappedRowsResult.value.map((row) => prefixRow(row, rightAlias)),
+      context.guardrails,
+    );
+    if (Result.isError(appendResult)) {
+      return appendResult;
     }
   }
 
-  return Result.ok(applyLocalHashJoin(join, leftRows, rightRows));
+  return applyLocalHashJoinResult(join, leftRows, rightRows, context.guardrails);
 }
 
-export function applyLocalHashJoin(
+export function applyLocalHashJoinResult(
   join: RelJoinNode,
   leftRows: InternalRow[],
   rightRows: InternalRow[],
-): InternalRow[] {
+  guardrails: { maxExecutionRows: number },
+) {
   const leftKey = toColumnKey(join.leftKey);
   const rightKey = toColumnKey(join.rightKey);
 
@@ -195,83 +192,50 @@ export function applyLocalHashJoin(
 
     if (join.joinType === "semi") {
       if (matches.length > 0) {
-        joined.push({ ...leftRow });
+        const appendResult = appendMaterializedRowResult(joined, { ...leftRow }, guardrails);
+        if (Result.isError(appendResult)) {
+          return appendResult;
+        }
       }
       continue;
     }
 
     if (matches.length === 0) {
       if (join.joinType === "left" || join.joinType === "full") {
-        joined.push({ ...leftRow });
+        const appendResult = appendMaterializedRowResult(joined, { ...leftRow }, guardrails);
+        if (Result.isError(appendResult)) {
+          return appendResult;
+        }
       }
       continue;
     }
 
     for (const match of matches) {
       matchedRightRows.add(match);
-      joined.push({
-        ...leftRow,
-        ...match,
-      });
+      const appendResult = appendMaterializedRowResult(
+        joined,
+        {
+          ...leftRow,
+          ...match,
+        },
+        guardrails,
+      );
+      if (Result.isError(appendResult)) {
+        return appendResult;
+      }
     }
   }
 
   if (join.joinType === "right" || join.joinType === "full") {
     for (const rightRow of rightRows) {
       if (!matchedRightRows.has(rightRow)) {
-        joined.push({ ...rightRow });
+        const appendResult = appendMaterializedRowResult(joined, { ...rightRow }, guardrails);
+        if (Result.isError(appendResult)) {
+          return appendResult;
+        }
       }
     }
   }
 
-  return joined;
-}
-
-function findLookupEligibleScan(node: RelNode): RelScanNode | null {
-  switch (node.kind) {
-    case "scan":
-      return node;
-    case "values":
-    case "cte_ref":
-      return null;
-    case "filter":
-    case "project":
-    case "sort":
-    case "limit_offset":
-      return findLookupEligibleScan(node.input);
-    case "aggregate":
-    case "window":
-    case "correlate":
-    case "join":
-    case "set_op":
-    case "repeat_union":
-    case "with":
-      return null;
-  }
-}
-
-function findFirstScan(node: RelNode): RelScanNode | null {
-  switch (node.kind) {
-    case "scan":
-      return node;
-    case "values":
-    case "cte_ref":
-      return null;
-    case "filter":
-    case "project":
-    case "aggregate":
-    case "window":
-    case "sort":
-    case "limit_offset":
-      return findFirstScan(node.input);
-    case "correlate":
-      return findFirstScan(node.left) ?? findFirstScan(node.right);
-    case "join":
-    case "set_op":
-      return findFirstScan(node.left) ?? findFirstScan(node.right);
-    case "repeat_union":
-      return findFirstScan(node.seed) ?? findFirstScan(node.iterative);
-    case "with":
-      return findFirstScan(node.body);
-  }
+  return Result.ok(joined);
 }

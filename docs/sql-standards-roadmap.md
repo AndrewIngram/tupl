@@ -13,6 +13,7 @@ Planning remains internal; users write SQL, not plans.
 Implemented:
 
 - `SELECT ... FROM ...`
+- `SELECT *`, `alias.*`, and mixed wildcard/expression projections over public tables, views, joins, CTEs, and derived tables
 - `INNER JOIN ... ON a = b` (equality joins)
 - `LEFT JOIN ... ON a = b`
 - `RIGHT JOIN ... ON a = b`
@@ -24,12 +25,14 @@ Implemented:
 - `GROUP BY` + aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
 - `GROUP BY` ordinals (including computed select-list expressions via local fallback)
 - `COUNT(DISTINCT col)`
-- `HAVING` with aggregate expressions
+- `HAVING` with aggregate expressions, grouped source columns, and SELECT aliases;
+  ambiguous unqualified input names are rejected
 - `SELECT DISTINCT`
 - Set operations: `UNION ALL`, `UNION`, `INTERSECT`, `EXCEPT`
 - Subqueries in predicates: `IN (SELECT ...)`, `EXISTS (SELECT ...)`
 - Scalar subqueries in `WHERE` and `SELECT`
-- Non-recursive `WITH` CTEs
+- Non-recursive and recursive `WITH` CTEs, including declared output column lists
+- Derived tables in `FROM` and correlated subqueries in the decorrelatable subset
 - First local scalar-expression layer for read queries:
   - arithmetic `+`, `-`, `*`, `/`, `%`
   - string concat
@@ -41,17 +44,19 @@ Implemented:
 - Core window functions:
   - ranking: `ROW_NUMBER`, `RANK`, `DENSE_RANK`
   - aggregate windows: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
-  - `PARTITION BY` + `ORDER BY` with default frame behavior
+  - value/navigation: `LAG`, `LEAD`, `FIRST_VALUE`
+  - `PARTITION BY` + `ORDER BY`, named windows, and explicit `ROWS` frames
+- Synchronous TypeScript-derived table/view columns with shared dependencies and
+  demand-driven local computation; see [the schema guide](building-a-schema.md#derived-columns-in-typescript)
 - Provider capability helper vocabulary and route-family diagnostics for pushdown/rejection decisions
 - Structured fallback diagnostics with SQLSTATE-like classes
 - Query/runtime fallback policy controls for unsupported or expensive provider pushdown
 - Rel-first provider compilation with local fallback when a provider rejects a subtree
 - Optional keyed lookup helpers for targeted execution optimizations
-- Dependency-aware parallel execution for independent branches:
-  - set-op branches
-  - independent CTE branches
-  - eligible source scan stages
-- Opt-in step execution sessions via `executableSchema.createSession(...)`
+- Opt-in query sessions via `createExecutableSchemaSession(...)` from `@tupl/runtime/session`
+  - Pull-based observations of actual execution in completion order
+  - One retained execution result or failure per session
+  - No session concurrency scheduler; local branches execute in executor order
 - Schema constraint metadata: `PRIMARY KEY`, `UNIQUE`, `FOREIGN KEY`
 - Structured `CHECK` metadata (`kind: "in"`) and enum-derived checks
 - Optional query-time constraint validation modes: `off`, `warn`, `error`
@@ -61,6 +66,7 @@ Implemented:
 Unsupported:
 
 - Computed-expression pushdown is still partial and adapter-specific
+- `RANGE`/`GROUPS` window frames and `LAST_VALUE`/`NTH_VALUE`
 - Cost-based physical planning
 - Some provider-specific advanced rel pushdown shapes
 - Writes (`INSERT`, `UPDATE`, `DELETE`)
@@ -74,8 +80,16 @@ Target direction:
 - Defer index metadata and index-driven planning until constraint semantics are fully settled.
 - Continue expanding feature support milestone by milestone.
 - Keep performance pragmatic: semi-optimal pushdown and batching where possible, without pursuing full database-style optimization.
-- Reintroduce optional capability/pushdown policy hints only as explicit performance controls (future).
-  Legacy `filterable`/`sortable` and query reject/fallback policy knobs were removed from the core API and may return later only as opt-in performance hints.
+- Use runtime fallback policy and materialization limits as explicit execution
+  controls. Provider `canExecute` decisions define the supported pushdown shapes.
+
+## Wildcard projections and output names
+
+Projection wildcards expand in place before aggregate and window analysis. Bare `*` uses FROM/JOIN order, then each relation's declared public column order. `alias.*` uses the visible relation alias. Public calculated columns participate; private physical columns do not. CTEs and derived tables use their SELECT output order, and recursive references use the seed's output shape.
+
+Rows are objects keyed by output name. Duplicate output names are rejected for wildcard and explicit projections before provider execution. For example, when both joined relations expose `id`, use `SELECT u.*, o.id AS order_id` instead of `SELECT *`. No automatic qualified names are generated. Unaliased expressions use the existing default name, so multiple expressions may need explicit aliases too.
+
+`COUNT(*)` keeps its aggregate meaning. Expanded projections must satisfy normal GROUP BY rules. Set-operation branches must have equal column counts after expansion; subsequent branches use the first branch's output names by position.
 
 ## Milestones
 
@@ -171,8 +185,7 @@ Performance is important but not the primary goal.
 | Set ops (`UNION`/`INTERSECT`/`EXCEPT`)   | done                | done    | done     | none new                    |
 | Derived tables and correlated subqueries | done                | done    | done     | none new                    |
 | Window functions (current supported set) | done                | done    | done     | none new                    |
-| Branch-level parallel execution          | n/a                 | done    | done     | none new                    |
-| Step-by-step query session API           | n/a                 | done    | done     | none new                    |
+| Query execution observation API          | n/a                 | done    | done     | none new                    |
 | Constraint runtime validation            | n/a                 | n/a     | done     | none new                    |
 | Writes (`INSERT/UPDATE/DELETE`)          | explicit no-support | n/a     | n/a      | none                        |
 
@@ -187,6 +200,6 @@ Each milestone is complete only when all are true:
 
 Compliance test locations:
 
-- `test/compliance/*-parity.test.ts`: curated sqllogictest-style parity scenarios split by capability.
-- `test/compliance/standards-gaps.todo.test.ts`: explicit standards-gap TODOs for not-yet-supported SQL features.
+- `packages/runtime/src/__tests__/compliance/*-parity.test.ts`: SQLite parity scenarios split by capability.
+- `test/__tests__/column-scope.property.test.ts`: generated name-resolution checks across providers, dialects, and native/local execution.
 - `docs/parser-known-issues.md`: in-house parser behavior notes and known gaps.

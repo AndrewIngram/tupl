@@ -183,7 +183,7 @@ builder.table("orders", provider.entities.orders, {
   },
 });
 
-const executableSchema = createExecutableSchema(builder);
+const executableSchema = createExecutableSchema(builder).unwrap();
 ```
 
 If your provider already returns typed `entities`, use those handles directly rather than building entity handles by hand.

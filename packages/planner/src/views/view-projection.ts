@@ -1,7 +1,10 @@
 import type { RelExpr, RelNode } from "@tupl/foundation";
 import { isNormalizedSourceColumnBinding } from "@tupl/schema-model/mapping";
 import type { NormalizedColumnBinding } from "@tupl/schema-model/normalized";
-import { getNormalizedColumnBindings } from "@tupl/schema-model/normalization";
+import {
+  getNormalizedColumnBindings,
+  sourceColumnValueExpression,
+} from "@tupl/schema-model/normalization";
 
 import { nextRelId } from "../physical/planner-ids";
 import type { ViewAliasColumnMap } from "../planner-types";
@@ -19,6 +22,15 @@ export function buildPlannerViewProjection(
   const columnBindings = getNormalizedColumnBindings(binding);
   const columns = Object.entries(columnBindings).map(([output, columnBinding]) => {
     if (isNormalizedSourceColumnBinding(columnBinding)) {
+      if (columnBinding.coerce)
+        return {
+          kind: "expr" as const,
+          expr: sourceColumnValueExpression(columnBinding, {
+            kind: "column",
+            ref: resolveViewSourceRef(columnBinding.source, aliases),
+          }),
+          output: `${alias}.${output}`,
+        };
       return {
         kind: "column" as const,
         source: resolveViewSourceRef(columnBinding.source, aliases),
@@ -48,7 +60,7 @@ export function needsPlannerViewProjection(
 ): boolean {
   const columnBindings = getNormalizedColumnBindings(binding);
   return Object.values(columnBindings).some(
-    (columnBinding) => !isNormalizedSourceColumnBinding(columnBinding),
+    (columnBinding) => !isNormalizedSourceColumnBinding(columnBinding) || !!columnBinding.coerce,
   );
 }
 
@@ -60,10 +72,10 @@ function rewriteViewBindingExprForPlanner(
   switch (expr.kind) {
     case "literal":
       return expr;
+    case "local":
     case "function":
       return {
-        kind: "function",
-        name: expr.name,
+        ...expr,
         args: expr.args.map((arg) =>
           rewriteViewBindingExprForPlanner(arg, columnBindings, aliases),
         ),

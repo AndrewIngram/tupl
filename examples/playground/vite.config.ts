@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type Plugin } from "vite-plus";
 import react from "@vitejs/plugin-react";
 
 import { localPackageAliases } from "../../scripts/vite/localPackageAliases.js";

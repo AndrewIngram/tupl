@@ -3,21 +3,10 @@ import { resolveColumnFromFilterColumn, resolveColumnRef } from "@tupl/provider-
 
 import type {
   KyselyDatabaseLike,
-  KyselyProviderEntityConfig,
   KyselyQueryBuilderLike,
   ResolvedEntityConfig,
   ScanBinding,
 } from "../types";
-
-type BaseBinding<TContext> =
-  | {
-      entity: string;
-      config: KyselyProviderEntityConfig<TContext>;
-    }
-  | {
-      entity: string;
-      resolved: ResolvedEntityConfig<TContext>;
-    };
 
 export function toRef(
   alias: string | undefined,
@@ -29,25 +18,28 @@ export function toRef(
   return { column };
 }
 
-export async function applyBase<TContext>(
-  query: KyselyQueryBuilderLike,
+/** The only physical-source constructor, shared by relational reads and lookups. */
+export async function createScopedSource<TContext>(
   db: KyselyDatabaseLike,
-  binding: BaseBinding<TContext>,
+  binding: {
+    entity: string;
+    table: string;
+    alias: string;
+    resolved: ResolvedEntityConfig<TContext>;
+  },
   context: TContext,
-  alias: string,
-): Promise<KyselyQueryBuilderLike> {
-  const config = "resolved" in binding ? binding.resolved.config : binding.config;
-  if (!config.base) {
-    return query;
-  }
-
-  return config.base({
+) {
+  const from = `${binding.table} as ${binding.alias}`;
+  const base = binding.resolved.config.base;
+  if (!base) return from;
+  const query = await base({
     db,
-    query,
+    query: db.selectFrom(from),
     context,
     entity: binding.entity,
-    alias,
+    alias: binding.alias,
   });
+  return query.selectAll().as(binding.alias);
 }
 
 export function applyWhereClause<TContext>(

@@ -1,7 +1,6 @@
 import type { RelExpr, RelNode } from "@tupl/foundation";
 
 import type { Binding } from "./planner-types";
-import { resolveColumnRef } from "./sql-expr-lowering";
 import { lowerHavingAggregateRef } from "./aggregate/having-aggregate-refs";
 import { lowerHavingBinaryExpr, lowerHavingFunctionExpr } from "./aggregate/having-function-exprs";
 
@@ -14,6 +13,7 @@ export function lowerHavingExpr(
   aliasToBinding: Map<string, Binding>,
   aggregateMetricAliases: Map<string, string>,
   hiddenMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"],
+  resolveColumn: (raw: unknown) => RelExpr | null,
 ): RelExpr | null {
   if (!raw || typeof raw !== "object") {
     return null;
@@ -31,6 +31,15 @@ export function lowerHavingExpr(
     ast?: unknown;
   };
 
+  const lower = (value: unknown): RelExpr | null =>
+    lowerHavingExpr(
+      value,
+      bindings,
+      aliasToBinding,
+      aggregateMetricAliases,
+      hiddenMetrics,
+      resolveColumn,
+    );
   switch (expr.type) {
     case "string":
       return { kind: "literal", value: typeof expr.value === "string" ? expr.value : "" };
@@ -40,18 +49,8 @@ export function lowerHavingExpr(
       return typeof expr.value === "boolean" ? { kind: "literal", value: expr.value } : null;
     case "null":
       return { kind: "literal", value: null };
-    case "column_ref": {
-      const resolved = resolveColumnRef(expr, bindings, aliasToBinding);
-      if (!resolved) {
-        return null;
-      }
-      return {
-        kind: "column",
-        ref: {
-          column: resolved.column,
-        },
-      };
-    }
+    case "column_ref":
+      return resolveColumn(raw);
     case "aggr_func":
       return lowerHavingAggregateRef(
         expr,
@@ -61,23 +60,10 @@ export function lowerHavingExpr(
         hiddenMetrics,
       );
     case "binary_expr":
-      return lowerHavingBinaryExpr(
-        expr,
-        bindings,
-        aliasToBinding,
-        aggregateMetricAliases,
-        hiddenMetrics,
-        lowerHavingExpr,
-      );
+      return lowerHavingBinaryExpr(expr, lower);
+    case "local":
     case "function":
-      return lowerHavingFunctionExpr(
-        expr,
-        bindings,
-        aliasToBinding,
-        aggregateMetricAliases,
-        hiddenMetrics,
-        lowerHavingExpr,
-      );
+      return lowerHavingFunctionExpr(expr, lower);
     default:
       if ("ast" in expr) {
         return null;

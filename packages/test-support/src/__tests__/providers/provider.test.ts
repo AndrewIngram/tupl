@@ -3,16 +3,18 @@ import { describe, expect, it } from "vite-plus/test";
 import type { RelNode } from "@tupl/foundation";
 
 import {
+  bindProviderEntities,
   buildCapabilityReport,
   createDataEntityHandle,
   createRelationalProviderAdapter,
   type FragmentProviderAdapter,
   getDataEntityProvider,
   type QueryRow,
-  type ProviderAdapter,
   type ScanFilterClause,
   type TableScanRequest,
 } from "@tupl/provider-kit";
+import { createExecutableSchema, type ExecutableSchema } from "@tupl/runtime";
+import { createExecutableSchemaSession } from "@tupl/runtime/session";
 import type {
   LookupManyCapableProviderAdapter,
   ProviderLookupManyRequest,
@@ -21,14 +23,82 @@ import {
   getNormalizedTableBinding,
   validateProviderBindings,
 } from "@tupl/schema-model/normalization";
-import {
-  createExecutableSchemaFromProviders,
-  createSessionFromExecutableSchema,
-} from "@tupl/test-support/runtime";
+import { createSchemaBuilder } from "@tupl/schema-model";
 import { buildSchema, buildEntitySchema } from "@tupl/test-support/schema";
 
-type TestProvider = Omit<FragmentProviderAdapter, "name"> &
-  Partial<LookupManyCapableProviderAdapter>;
+type TestProvider = FragmentProviderAdapter & Partial<LookupManyCapableProviderAdapter>;
+
+function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
+
+async function queryRows<TContext>(
+  executableSchema: ExecutableSchema<TContext>,
+  input: Parameters<ExecutableSchema<TContext>["query"]>[0],
+) {
+  return unwrapResult(await executableSchema.query(input));
+}
+
+function createExecutableTableSchema(
+  provider: TestProvider,
+  tables: Record<
+    string,
+    {
+      columns: Record<string, import("@tupl/schema-model").TableColumnDefinition>;
+      constraints?: import("@tupl/schema-model").TableConstraints;
+    }
+  >,
+) {
+  bindProviderEntities(provider);
+  const builder = createSchemaBuilder<Record<string, never>>();
+  for (const [tableName, table] of Object.entries(tables)) {
+    const entity = provider.entities?.[tableName];
+    if (!entity) {
+      throw new Error(`Test provider ${provider.name} is missing entity ${tableName}.`);
+    }
+    builder.table(tableName, entity, {
+      columns: table.columns,
+      ...(table.constraints ? { constraints: table.constraints } : {}),
+    });
+  }
+
+  return unwrapResult(createExecutableSchema(builder));
+}
+
+function createExecutableMultiProviderSchema(
+  providers: Record<string, TestProvider>,
+  tables: Record<
+    string,
+    {
+      provider: string;
+      columns: Record<string, import("@tupl/schema-model").TableColumnDefinition>;
+      constraints?: import("@tupl/schema-model").TableConstraints;
+    }
+  >,
+) {
+  for (const provider of Object.values(providers)) {
+    bindProviderEntities(provider);
+  }
+
+  const builder = createSchemaBuilder<Record<string, never>>();
+  for (const [tableName, table] of Object.entries(tables)) {
+    const provider = providers[table.provider];
+    const entity = provider?.entities?.[tableName];
+    if (!provider || !entity) {
+      throw new Error(`Test provider ${table.provider} is missing entity ${tableName}.`);
+    }
+    builder.table(tableName, entity, {
+      columns: table.columns,
+      ...(table.constraints ? { constraints: table.constraints } : {}),
+    });
+  }
+
+  return unwrapResult(createExecutableSchema(builder));
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -490,22 +560,15 @@ describe("query/provider runtime", () => {
   });
 
   it("routes same-provider queries through rel fragments", async () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          org_id: "text",
-          total_cents: "integer",
-        },
-      },
-    });
-
     let canExecuteCalls = 0;
     let executeCalls = 0;
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
+    const executableSchema = createExecutableTableSchema(
+      {
+        name: "warehouse",
+        entities: {
+          orders: createDataEntityHandle({ entity: "orders", provider: "warehouse" }),
+        },
         canExecute(rel: RelNode) {
           canExecuteCalls += 1;
           return rel.kind === "scan";
@@ -522,9 +585,18 @@ describe("query/provider runtime", () => {
           return Result.ok([{ id: "o2" }]);
         },
       } satisfies TestProvider,
-    });
+      {
+        orders: {
+          columns: {
+            id: "text",
+            org_id: "text",
+            total_cents: "integer",
+          },
+        },
+      },
+    );
 
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT id
@@ -541,20 +613,14 @@ describe("query/provider runtime", () => {
   });
 
   it("executes same-provider rel fragment when provider supports rel pushdown", async () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          org_id: "text",
-        },
-      },
-    });
-
     let sawRelCompile = false;
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
+    const executableSchema = createExecutableTableSchema(
+      {
+        name: "warehouse",
+        entities: {
+          orders: createDataEntityHandle({ entity: "orders", provider: "warehouse" }),
+        },
         canExecute(_rel: RelNode) {
           return true;
         },
@@ -570,9 +636,17 @@ describe("query/provider runtime", () => {
           return Result.ok([{ id: "o1" }]);
         },
       } satisfies TestProvider,
-    });
+      {
+        orders: {
+          columns: {
+            id: "text",
+            org_id: "text",
+          },
+        },
+      },
+    );
 
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT id
@@ -591,8 +665,29 @@ describe("query/provider runtime", () => {
       provider: "warehouse",
     });
 
+    let capturedRel: unknown = null;
+
+    const provider = bindProviderEntities({
+      name: "warehouse",
+      entities: { orders: ordersEntity },
+      canExecute(_rel: RelNode) {
+        return true;
+      },
+      async compile(rel: RelNode) {
+        capturedRel = rel;
+
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: rel,
+        });
+      },
+      async execute() {
+        return Result.ok([{ id: "o1" }]);
+      },
+    } satisfies TestProvider);
     const schema = buildSchema((builder) => {
-      builder.table("my_orders", ordersEntity, {
+      builder.table("my_orders", provider.entities.orders, {
         columns: {
           id: { source: "id" },
           totalCents: { source: "total_cents" },
@@ -609,36 +704,15 @@ describe("query/provider runtime", () => {
           },
         },
       });
-      builder.table("orders", ordersEntity, {
+      builder.table("orders", provider.entities.orders, {
         columns: {
           status: { source: "status", type: "text", enum: ["pending", "paid", "shipped"] as const },
         },
       });
     });
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-    let capturedRel: unknown = null;
-
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(_rel: RelNode) {
-          return true;
-        },
-        async compile(rel: RelNode) {
-          capturedRel = rel;
-
-          return Result.ok({
-            provider: "warehouse",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute() {
-          return Result.ok([{ id: "o1" }]);
-        },
-      } satisfies TestProvider,
-    });
-
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT id
@@ -682,8 +756,33 @@ describe("query/provider runtime", () => {
       },
     });
 
+    let capturedScan: TableScanRequest | null = null;
+    const provider = bindProviderEntities({
+      name: "warehouse",
+      entities: { orders: ordersEntity },
+      canExecute(rel: RelNode) {
+        return rel.kind === "scan";
+      },
+      async compile(rel: RelNode) {
+        capturedScan = toScanRequest(rel);
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: rel,
+        });
+      },
+      async execute() {
+        return Result.ok([
+          {
+            id: "o1",
+            total_cents: 1500,
+            created_at: new Date("2026-02-03T10:00:00.000Z"),
+          },
+        ]);
+      },
+    } satisfies TestProvider);
     const schema = buildSchema((builder) => {
-      builder.table("my_orders", ordersEntity, {
+      builder.table("my_orders", provider.entities.orders, {
         columns: ({ col }) => ({
           id: col.id("id"),
           totalCents: col.integer("totalCents"),
@@ -691,34 +790,9 @@ describe("query/provider runtime", () => {
         }),
       });
     });
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-    let capturedScan: TableScanRequest | null = null;
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          capturedScan = toScanRequest(rel);
-          return Result.ok({
-            provider: "warehouse",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute() {
-          return Result.ok([
-            {
-              id: "o1",
-              total_cents: 1500,
-              created_at: new Date("2026-02-03T10:00:00.000Z"),
-            },
-          ]);
-        },
-      } satisfies TestProvider,
-    });
-
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: "SELECT id, totalCents, createdAt FROM my_orders",
     });
@@ -739,23 +813,6 @@ describe("query/provider runtime", () => {
   });
 
   it("uses lookupMany for cross-provider lookup join paths", async () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "orders_provider",
-        columns: {
-          id: "text",
-          user_id: "text",
-        },
-      },
-      users: {
-        provider: "users_provider",
-        columns: {
-          id: "text",
-          email: "text",
-        },
-      },
-    });
-
     const ordersRows: QueryRow[] = [
       { id: "o1", user_id: "u1" },
       { id: "o2", user_id: "u2" },
@@ -767,65 +824,91 @@ describe("query/provider runtime", () => {
 
     let lookupCalls = 0;
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      orders_provider: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
+    const executableSchema = createExecutableMultiProviderSchema(
+      {
+        orders_provider: {
+          name: "orders_provider",
+          entities: {
+            orders: createDataEntityHandle({ entity: "orders", provider: "orders_provider" }),
+          },
+          canExecute(rel: RelNode) {
+            return rel.kind === "scan";
+          },
+          async compile(rel: RelNode) {
+            return Result.ok({
+              provider: "orders_provider",
+              kind: "rel",
+              payload: rel,
+            });
+          },
+          async execute(plan) {
+            const rel = plan.payload as RelNode;
+            const request = toScanRequest(rel);
+            if (!request) {
+              return Result.ok([]);
+            }
+            return Result.ok(scanRows(ordersRows, request));
+          },
+        } satisfies TestProvider,
+        users_provider: {
+          name: "users_provider",
+          entities: {
+            users: createDataEntityHandle({ entity: "users", provider: "users_provider" }),
+          },
+          canExecute(rel: RelNode) {
+            return rel.kind === "scan";
+          },
+          async compile(rel: RelNode) {
+            return Result.ok({
+              provider: "users_provider",
+              kind: "rel",
+              payload: rel,
+            });
+          },
+          async execute(plan) {
+            const rel = plan.payload as RelNode;
+            const request = toScanRequest(rel);
+            if (!request) {
+              return Result.ok([]);
+            }
+            return Result.ok(scanRows(usersRows, request));
+          },
+          async lookupMany(request: ProviderLookupManyRequest) {
+            lookupCalls += 1;
+            const keys = new Set(request.keys);
+            return Result.ok(
+              usersRows
+                .filter((row) => keys.has(row[request.key]))
+                .map((row) => {
+                  const out: QueryRow = {};
+                  for (const column of request.select) {
+                    out[column] = row[column] ?? null;
+                  }
+                  return out;
+                }),
+            );
+          },
+        } satisfies TestProvider,
+      },
+      {
+        orders: {
+          provider: "orders_provider",
+          columns: {
+            id: "text",
+            user_id: "text",
+          },
         },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "orders_provider",
-            kind: "rel",
-            payload: rel,
-          });
+        users: {
+          provider: "users_provider",
+          columns: {
+            id: "text",
+            email: "text",
+          },
         },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
-          return Result.ok(scanRows(ordersRows, request));
-        },
-      } satisfies TestProvider,
-      users_provider: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "users_provider",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
-          return Result.ok(scanRows(usersRows, request));
-        },
-        async lookupMany(request: ProviderLookupManyRequest) {
-          lookupCalls += 1;
-          const keys = new Set(request.keys);
-          return Result.ok(
-            usersRows
-              .filter((row) => keys.has(row[request.key]))
-              .map((row) => {
-                const out: QueryRow = {};
-                for (const column of request.select) {
-                  out[column] = row[column] ?? null;
-                }
-                return out;
-              }),
-          );
-        },
-      } satisfies TestProvider,
-    });
+      },
+    );
 
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT o.id, u.email
@@ -843,23 +926,6 @@ describe("query/provider runtime", () => {
   });
 
   it("enforces lookup batching guardrails", async () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "orders_provider",
-        columns: {
-          id: "text",
-          user_id: "text",
-        },
-      },
-      users: {
-        provider: "users_provider",
-        columns: {
-          id: "text",
-          email: "text",
-        },
-      },
-    });
-
     const ordersRows: QueryRow[] = [
       { id: "o1", user_id: "u1" },
       { id: "o2", user_id: "u2" },
@@ -872,152 +938,190 @@ describe("query/provider runtime", () => {
       { id: "u3", email: "c@example.com" },
     ];
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      orders_provider: {
-        canExecute() {
-          return true;
+    const executableSchema = createExecutableMultiProviderSchema(
+      {
+        orders_provider: {
+          name: "orders_provider",
+          entities: {
+            orders: createDataEntityHandle({ entity: "orders", provider: "orders_provider" }),
+          },
+          canExecute() {
+            return true;
+          },
+          async compile(rel: RelNode) {
+            return Result.ok({
+              provider: "orders_provider",
+              kind: "rel",
+              payload: rel,
+            });
+          },
+          async execute(plan) {
+            const rel = plan.payload as RelNode;
+            const request = toScanRequest(rel);
+            if (!request) {
+              return Result.ok([]);
+            }
+            return Result.ok(scanRows(ordersRows, request));
+          },
+        } satisfies TestProvider,
+        users_provider: {
+          name: "users_provider",
+          entities: {
+            users: createDataEntityHandle({ entity: "users", provider: "users_provider" }),
+          },
+          canExecute() {
+            return true;
+          },
+          async compile(rel: RelNode) {
+            return Result.ok({
+              provider: "users_provider",
+              kind: "rel",
+              payload: rel,
+            });
+          },
+          async execute(plan) {
+            const rel = plan.payload as RelNode;
+            const request = toScanRequest(rel);
+            if (!request) {
+              return Result.ok([]);
+            }
+            return Result.ok(scanRows(usersRows, request));
+          },
+          async lookupMany(request: ProviderLookupManyRequest) {
+            const keys = new Set(request.keys);
+            return Result.ok(usersRows.filter((row) => keys.has(row.id)));
+          },
+        } satisfies TestProvider,
+      },
+      {
+        orders: {
+          provider: "orders_provider",
+          columns: {
+            id: "text",
+            user_id: "text",
+          },
         },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "orders_provider",
-            kind: "rel",
-            payload: rel,
-          });
+        users: {
+          provider: "users_provider",
+          columns: {
+            id: "text",
+            email: "text",
+          },
         },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
-          return Result.ok(scanRows(ordersRows, request));
-        },
-      } satisfies TestProvider,
-      users_provider: {
-        canExecute() {
-          return true;
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "users_provider",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
-          return Result.ok(scanRows(usersRows, request));
-        },
-        async lookupMany(request: ProviderLookupManyRequest) {
-          const keys = new Set(request.keys);
-          return Result.ok(usersRows.filter((row) => keys.has(row.id)));
-        },
-      } satisfies TestProvider,
-    });
+      },
+    );
 
-    await expect(
-      executableSchema.query({
-        context: {},
-        sql: `
-          SELECT o.id, u.email
-          FROM orders o
-          JOIN users u ON o.user_id = u.id
-          ORDER BY o.id ASC
-        `,
-        queryGuardrails: {
-          maxLookupKeysPerBatch: 1,
-          maxLookupBatches: 1,
-        },
-      }),
-    ).rejects.toThrow("maxLookupBatches guardrail");
+    const result = await executableSchema.query({
+      context: {},
+      sql: `
+        SELECT o.id, u.email
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+        ORDER BY o.id ASC
+      `,
+      queryGuardrails: {
+        maxLookupKeysPerBatch: 1,
+        maxLookupBatches: 1,
+      },
+    });
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected lookup batch guardrail query to fail.");
+    }
+    expect(result.error.message).toContain("maxLookupBatches guardrail");
   });
 
   it("preserves LEFT JOIN null semantics on lookup joins", async () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "orders_provider",
-        columns: {
-          id: "text",
-          user_id: "text",
-        },
-      },
-      users: {
-        provider: "users_provider",
-        columns: {
-          id: "text",
-          email: "text",
-        },
-      },
-    });
-
     const ordersRows: QueryRow[] = [
       { id: "o1", user_id: "u1" },
       { id: "o2", user_id: "u_missing" },
     ];
     const usersRows: QueryRow[] = [{ id: "u1", email: "ada@example.com" }];
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      orders_provider: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
+    const executableSchema = createExecutableMultiProviderSchema(
+      {
+        orders_provider: {
+          name: "orders_provider",
+          entities: {
+            orders: createDataEntityHandle({ entity: "orders", provider: "orders_provider" }),
+          },
+          canExecute(rel: RelNode) {
+            return rel.kind === "scan";
+          },
+          async compile(rel: RelNode) {
+            return Result.ok({
+              provider: "orders_provider",
+              kind: "rel",
+              payload: rel,
+            });
+          },
+          async execute(plan) {
+            const rel = plan.payload as RelNode;
+            const request = toScanRequest(rel);
+            if (!request) {
+              return Result.ok([]);
+            }
+            return Result.ok(scanRows(ordersRows, request));
+          },
+        } satisfies TestProvider,
+        users_provider: {
+          name: "users_provider",
+          entities: {
+            users: createDataEntityHandle({ entity: "users", provider: "users_provider" }),
+          },
+          canExecute(rel: RelNode) {
+            return rel.kind === "scan";
+          },
+          async compile(rel: RelNode) {
+            return Result.ok({
+              provider: "users_provider",
+              kind: "rel",
+              payload: rel,
+            });
+          },
+          async execute(plan) {
+            const rel = plan.payload as RelNode;
+            const request = toScanRequest(rel);
+            if (!request) {
+              return Result.ok([]);
+            }
+            return Result.ok(scanRows(usersRows, request));
+          },
+          async lookupMany(request: ProviderLookupManyRequest) {
+            const keys = new Set(request.keys);
+            return Result.ok(
+              usersRows
+                .filter((row) => keys.has(row[request.key]))
+                .map((row) => {
+                  const out: QueryRow = {};
+                  for (const column of request.select) {
+                    out[column] = row[column] ?? null;
+                  }
+                  return out;
+                }),
+            );
+          },
+        } satisfies TestProvider,
+      },
+      {
+        orders: {
+          provider: "orders_provider",
+          columns: {
+            id: "text",
+            user_id: "text",
+          },
         },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "orders_provider",
-            kind: "rel",
-            payload: rel,
-          });
+        users: {
+          provider: "users_provider",
+          columns: {
+            id: "text",
+            email: "text",
+          },
         },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
-          return Result.ok(scanRows(ordersRows, request));
-        },
-      } satisfies TestProvider,
-      users_provider: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "users_provider",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
-          return Result.ok(scanRows(usersRows, request));
-        },
-        async lookupMany(request: ProviderLookupManyRequest) {
-          const keys = new Set(request.keys);
-          return Result.ok(
-            usersRows
-              .filter((row) => keys.has(row[request.key]))
-              .map((row) => {
-                const out: QueryRow = {};
-                for (const column of request.select) {
-                  out[column] = row[column] ?? null;
-                }
-                return out;
-              }),
-          );
-        },
-      } satisfies TestProvider,
-    });
+      },
+    );
 
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT o.id, u.email
@@ -1039,8 +1143,40 @@ describe("query/provider runtime", () => {
       provider: "warehouse",
     });
 
+    const provider = bindProviderEntities({
+      name: "warehouse",
+      entities: { orders: ordersEntity },
+      canExecute(rel: RelNode) {
+        return rel.kind === "scan";
+      },
+      async compile(rel: RelNode) {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: rel,
+        });
+      },
+      async execute(plan) {
+        const rel = plan.payload as RelNode;
+        const request = toScanRequest(rel);
+        if (!request) {
+          return Result.ok([]);
+        }
+
+        return Result.ok(
+          scanRows(
+            [
+              { id: "o1", total_cents: 1500 },
+              { id: "o1", total_cents: 500 },
+              { id: "o2", total_cents: 700 },
+            ],
+            request,
+          ),
+        );
+      },
+    } satisfies TestProvider);
     const schema = buildSchema((builder) => {
-      builder.table("my_orders", ordersEntity, {
+      builder.table("my_orders", provider.entities.orders, {
         columns: {
           id: { source: "id", type: "text", nullable: false },
           total_cents: { source: "total_cents", type: "integer", nullable: false },
@@ -1066,41 +1202,9 @@ describe("query/provider runtime", () => {
         },
       );
     });
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
-
-          return Result.ok(
-            scanRows(
-              [
-                { id: "o1", total_cents: 1500 },
-                { id: "o1", total_cents: 500 },
-                { id: "o2", total_cents: 700 },
-              ],
-              request,
-            ),
-          );
-        },
-      } satisfies TestProvider,
-    });
-
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT order_id, spend
@@ -1113,6 +1217,12 @@ describe("query/provider runtime", () => {
       { order_id: "o1", spend: 2000 },
       { order_id: "o2", spend: 700 },
     ]);
+    expect(
+      await queryRows(executableSchema, {
+        context: {},
+        sql: "SELECT * FROM order_spend ORDER BY order_id ASC",
+      }),
+    ).toEqual(rows);
   });
 
   it("executes calculated columns on physical tables with select, filter, and order by", async () => {
@@ -1125,8 +1235,40 @@ describe("query/provider runtime", () => {
       },
     });
 
+    const provider = bindProviderEntities({
+      name: "warehouse",
+      entities: { orders: ordersEntity },
+      canExecute(rel: RelNode) {
+        return rel.kind === "scan";
+      },
+      async compile(rel: RelNode) {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: rel,
+        });
+      },
+      async execute(plan) {
+        const rel = plan.payload as RelNode;
+        const request = toScanRequest(rel);
+        if (!request) {
+          return Result.ok([]);
+        }
+
+        return Result.ok(
+          scanRows(
+            [
+              { id: "o1", total_cents: 1200 },
+              { id: "o2", total_cents: 3200 },
+              { id: "o3", total_cents: 2100 },
+            ],
+            request,
+          ),
+        );
+      },
+    } satisfies TestProvider);
     const schema = buildSchema((builder) => {
-      builder.table("myOrders", ordersEntity, {
+      builder.table("myOrders", provider.entities.orders, {
         columns: ({ col, expr }) => ({
           id: col.id("id"),
           totalCents: col.integer("totalCents"),
@@ -1139,48 +1281,15 @@ describe("query/provider runtime", () => {
         }),
       });
     });
-
     expect(getNormalizedTableBinding(schema, "myOrders")).toMatchObject({
       kind: "physical",
       columnBindings: {
         totalDollars: { kind: "expr" },
       },
     });
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
-
-          return Result.ok(
-            scanRows(
-              [
-                { id: "o1", total_cents: 1200 },
-                { id: "o2", total_cents: 3200 },
-                { id: "o3", total_cents: 2100 },
-              ],
-              request,
-            ),
-          );
-        },
-      } satisfies TestProvider,
-    });
-
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT id, totalDollars, isLargeOrder
@@ -1195,6 +1304,21 @@ describe("query/provider runtime", () => {
       { id: "o3", totalDollars: 21, isLargeOrder: true },
       { id: "o1", totalDollars: 12, isLargeOrder: false },
     ]);
+    const wildcardRows = await queryRows(executableSchema, {
+      context: {},
+      sql: "SELECT o.* FROM myOrders o ORDER BY totalDollars DESC",
+    });
+    expect(wildcardRows).toEqual([
+      { id: "o2", totalCents: 3200, totalDollars: 32, isLargeOrder: true },
+      { id: "o3", totalCents: 2100, totalDollars: 21, isLargeOrder: true },
+      { id: "o1", totalCents: 1200, totalDollars: 12, isLargeOrder: false },
+    ]);
+    expect(Object.keys(wildcardRows[0]!)).toEqual([
+      "id",
+      "totalCents",
+      "totalDollars",
+      "isLargeOrder",
+    ]);
   });
 
   it("coerces pushed-down calculated table outputs back to declared logical types", async () => {
@@ -1207,8 +1331,31 @@ describe("query/provider runtime", () => {
       },
     });
 
+    const provider = bindProviderEntities({
+      name: "warehouse",
+      entities: { orders: ordersEntity },
+      canExecute(_rel: RelNode) {
+        return true;
+      },
+      async compile(rel: RelNode) {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: rel,
+        });
+      },
+      async execute() {
+        return Result.ok([
+          {
+            id: "o1",
+            totalDollars: "250",
+            isLargeOrder: false,
+          },
+        ]);
+      },
+    } satisfies TestProvider);
     const schema = buildSchema((builder) => {
-      builder.table("myOrders", ordersEntity, {
+      builder.table("myOrders", provider.entities.orders, {
         columns: ({ col, expr }) => ({
           id: col.id("id"),
           totalCents: col.integer("totalCents"),
@@ -1221,32 +1368,9 @@ describe("query/provider runtime", () => {
         }),
       });
     });
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(_rel: RelNode) {
-          return true;
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute() {
-          return Result.ok([
-            {
-              id: "o1",
-              totalDollars: "250",
-              isLargeOrder: false,
-            },
-          ]);
-        },
-      } satisfies TestProvider,
-    });
-
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT id, totalDollars, isLargeOrder
@@ -1267,26 +1391,16 @@ describe("query/provider runtime", () => {
   });
 
   it("coerces pushed-down aggregate and window outputs back to numeric query types", async () => {
-    const schema = buildEntitySchema({
-      my_orders: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          vendor_id: "text",
-          total_cents: { type: "integer", nullable: false },
+    const executableSchema = createExecutableTableSchema(
+      {
+        name: "warehouse",
+        entities: {
+          my_orders: createDataEntityHandle({ entity: "my_orders", provider: "warehouse" }),
+          vendors_for_org: createDataEntityHandle({
+            entity: "vendors_for_org",
+            provider: "warehouse",
+          }),
         },
-      },
-      vendors_for_org: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          name: "text",
-        },
-      },
-    });
-
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
         canExecute(_rel: RelNode) {
           return true;
         },
@@ -1307,9 +1421,24 @@ describe("query/provider runtime", () => {
           ]);
         },
       } satisfies TestProvider,
-    });
+      {
+        my_orders: {
+          columns: {
+            id: "text",
+            vendor_id: "text",
+            total_cents: { type: "integer", nullable: false },
+          },
+        },
+        vendors_for_org: {
+          columns: {
+            id: "text",
+            name: "text",
+          },
+        },
+      },
+    );
 
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         WITH vendor_totals AS (
@@ -1342,6 +1471,7 @@ describe("query/provider runtime", () => {
 
   it("executes views that scan data entities directly without intermediate facade tables", async () => {
     const warehouseProvider = {
+      name: "warehouse",
       canExecute(rel: RelNode) {
         return rel.kind === "scan";
       },
@@ -1391,7 +1521,7 @@ describe("query/provider runtime", () => {
     const ordersEntity = createDataEntityHandle({
       entity: "orders_raw",
       provider: "warehouse",
-      providerInstance: warehouseProvider as unknown as ProviderAdapter,
+      providerInstance: warehouseProvider,
       columns: {
         id: { source: "id", type: "text", nullable: false },
         vendorId: { source: "vendor_id", type: "text", nullable: false },
@@ -1401,7 +1531,7 @@ describe("query/provider runtime", () => {
     const vendorsEntity = createDataEntityHandle({
       entity: "vendors_raw",
       provider: "warehouse",
-      providerInstance: warehouseProvider as unknown as ProviderAdapter,
+      providerInstance: warehouseProvider,
       columns: {
         id: { source: "id", type: "text", nullable: false },
         name: { source: "name", type: "text", nullable: false },
@@ -1435,11 +1565,9 @@ describe("query/provider runtime", () => {
       );
     });
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: warehouseProvider,
-    });
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT vendorName, spendCents
@@ -1455,9 +1583,44 @@ describe("query/provider runtime", () => {
   });
 
   it("executes composed views that scan other views", async () => {
+    const warehouseProvider = {
+      name: "warehouse",
+      canExecute(rel: RelNode) {
+        return rel.kind === "scan";
+      },
+      async compile(rel: RelNode) {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: rel,
+        });
+      },
+      async execute(plan) {
+        const rel = plan.payload as RelNode;
+        const request = toScanRequest(rel);
+        if (!request) {
+          return Result.ok([]);
+        }
+
+        const rowsByTable: Record<string, QueryRow[]> = {
+          order_items_raw: [
+            { order_id: "o1", product_id: "p1", quantity: 2, line_total_cents: 3600 },
+            { order_id: "o1", product_id: "p2", quantity: 1, line_total_cents: 1200 },
+          ],
+          products_raw: [
+            { id: "p1", name: "Edge Router" },
+            { id: "p2", name: "Backup Service" },
+          ],
+          product_access_raw: [{ product_id: "p1" }, { product_id: "p2" }],
+        };
+
+        return Result.ok(scanRows(rowsByTable[request.table] ?? [], request));
+      },
+    } satisfies TestProvider;
     const orderItemsEntity = createDataEntityHandle({
       entity: "order_items_raw",
       provider: "warehouse",
+      providerInstance: warehouseProvider,
       columns: {
         orderId: { source: "order_id", type: "text", nullable: false },
         productId: { source: "product_id", type: "text", nullable: false },
@@ -1468,6 +1631,7 @@ describe("query/provider runtime", () => {
     const productsEntity = createDataEntityHandle({
       entity: "products_raw",
       provider: "warehouse",
+      providerInstance: warehouseProvider,
       columns: {
         id: { source: "id", type: "text", nullable: false, primaryKey: true },
         name: { source: "name", type: "text", nullable: false },
@@ -1476,6 +1640,7 @@ describe("query/provider runtime", () => {
     const accessEntity = createDataEntityHandle({
       entity: "product_access_raw",
       provider: "warehouse",
+      providerInstance: warehouseProvider,
       columns: {
         productId: { source: "product_id", type: "text", nullable: false },
       },
@@ -1544,43 +1709,9 @@ describe("query/provider runtime", () => {
       );
     });
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-          const rowsByTable: Record<string, QueryRow[]> = {
-            order_items_raw: [
-              { order_id: "o1", product_id: "p1", quantity: 2, line_total_cents: 3600 },
-              { order_id: "o1", product_id: "p2", quantity: 1, line_total_cents: 1200 },
-            ],
-            products_raw: [
-              { id: "p1", name: "Edge Router" },
-              { id: "p2", name: "Backup Service" },
-            ],
-            product_access_raw: [{ product_id: "p1" }, { product_id: "p2" }],
-          };
-
-          return Result.ok(scanRows(rowsByTable[request.table] ?? [], request));
-        },
-      } satisfies TestProvider,
-    });
-
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT orderId, productName, unitPriceCents
@@ -1596,9 +1727,45 @@ describe("query/provider runtime", () => {
   });
 
   it("executes aggregate views built from derived views", async () => {
+    const warehouseProvider = {
+      name: "warehouse",
+      canExecute(rel: RelNode) {
+        return rel.kind === "scan";
+      },
+      async compile(rel: RelNode) {
+        return Result.ok({
+          provider: "warehouse",
+          kind: "rel",
+          payload: rel,
+        });
+      },
+      async execute(plan) {
+        const rel = plan.payload as RelNode;
+        const request = toScanRequest(rel);
+        if (!request) {
+          return Result.ok([]);
+        }
+
+        const rowsByTable: Record<string, QueryRow[]> = {
+          order_items_raw: [
+            { order_id: "o1", product_id: "p1", quantity: 2, line_total_cents: 3600 },
+            { order_id: "o2", product_id: "p1", quantity: 1, line_total_cents: 1800 },
+            { order_id: "o3", product_id: "p2", quantity: 1, line_total_cents: 1200 },
+          ],
+          products_raw: [
+            { id: "p1", name: "Edge Router" },
+            { id: "p2", name: "Backup Service" },
+          ],
+          product_access_raw: [{ product_id: "p1" }, { product_id: "p2" }],
+        };
+
+        return Result.ok(scanRows(rowsByTable[request.table] ?? [], request));
+      },
+    } satisfies TestProvider;
     const orderItemsEntity = createDataEntityHandle({
       entity: "order_items_raw",
       provider: "warehouse",
+      providerInstance: warehouseProvider,
       columns: {
         orderId: { source: "order_id", type: "text", nullable: false },
         productId: { source: "product_id", type: "text", nullable: false },
@@ -1609,6 +1776,7 @@ describe("query/provider runtime", () => {
     const productsEntity = createDataEntityHandle({
       entity: "products_raw",
       provider: "warehouse",
+      providerInstance: warehouseProvider,
       columns: {
         id: { source: "id", type: "text", nullable: false, primaryKey: true },
         name: { source: "name", type: "text", nullable: false },
@@ -1617,6 +1785,7 @@ describe("query/provider runtime", () => {
     const accessEntity = createDataEntityHandle({
       entity: "product_access_raw",
       provider: "warehouse",
+      providerInstance: warehouseProvider,
       columns: {
         productId: { source: "product_id", type: "text", nullable: false },
       },
@@ -1706,44 +1875,9 @@ describe("query/provider runtime", () => {
       );
     });
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-          const rowsByTable: Record<string, QueryRow[]> = {
-            order_items_raw: [
-              { order_id: "o1", product_id: "p1", quantity: 2, line_total_cents: 3600 },
-              { order_id: "o2", product_id: "p1", quantity: 1, line_total_cents: 1800 },
-              { order_id: "o3", product_id: "p2", quantity: 1, line_total_cents: 1200 },
-            ],
-            products_raw: [
-              { id: "p1", name: "Edge Router" },
-              { id: "p2", name: "Backup Service" },
-            ],
-            product_access_raw: [{ product_id: "p1" }, { product_id: "p2" }],
-          };
-
-          return Result.ok(scanRows(rowsByTable[request.table] ?? [], request));
-        },
-      } satisfies TestProvider,
-    });
-
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT productName, unitsSold, revenueCents
@@ -1759,9 +1893,52 @@ describe("query/provider runtime", () => {
   });
 
   it("executes local cross-provider views", async () => {
+    const warehouseProvider = {
+      name: "warehouse",
+      canExecute(rel: RelNode) {
+        return rel.kind === "scan";
+      },
+      async compile(rel: RelNode) {
+        return Result.ok({ provider: "warehouse", kind: "rel", payload: rel });
+      },
+      async execute(plan) {
+        const rel = plan.payload as RelNode;
+        const request = toScanRequest(rel);
+        if (!request) {
+          return Result.ok([]);
+        }
+        return Result.ok(
+          scanRows(
+            [
+              { id: "p1", name: "Edge Router" },
+              { id: "p2", name: "Backup Service" },
+            ],
+            request,
+          ),
+        );
+      },
+    } satisfies TestProvider;
+    const kvProvider = {
+      name: "kv",
+      canExecute(rel: RelNode) {
+        return rel.kind === "scan";
+      },
+      async compile(rel: RelNode) {
+        return Result.ok({ provider: "kv", kind: "rel", payload: rel });
+      },
+      async execute(plan) {
+        const rel = plan.payload as RelNode;
+        const request = toScanRequest(rel);
+        if (!request) {
+          return Result.ok([]);
+        }
+        return Result.ok(scanRows([{ product_id: "p1", view_count: 12 }], request));
+      },
+    } satisfies TestProvider;
     const productsEntity = createDataEntityHandle({
       entity: "products_raw",
       provider: "warehouse",
+      providerInstance: warehouseProvider,
       columns: {
         id: { source: "id", type: "text", nullable: false, primaryKey: true },
         name: { source: "name", type: "text", nullable: false },
@@ -1770,6 +1947,7 @@ describe("query/provider runtime", () => {
     const viewCountsEntity = createDataEntityHandle({
       entity: "product_view_counts",
       provider: "kv",
+      providerInstance: kvProvider,
       columns: {
         productId: { source: "product_id", type: "text", nullable: false },
         viewCount: { source: "view_count", type: "integer", nullable: false },
@@ -1809,60 +1987,9 @@ describe("query/provider runtime", () => {
       );
     });
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-          return Result.ok(
-            scanRows(
-              [
-                { id: "p1", name: "Edge Router" },
-                { id: "p2", name: "Backup Service" },
-              ],
-              request,
-            ),
-          );
-        },
-      } satisfies TestProvider,
-      kv: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "kv",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          const request = toScanRequest(rel);
-          if (!request) {
-            return Result.ok([]);
-          }
-
-          return Result.ok(scanRows([{ product_id: "p1", view_count: 12 }], request));
-        },
-      } satisfies TestProvider,
-    });
-
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT productName, viewCount
@@ -1878,9 +2005,63 @@ describe("query/provider runtime", () => {
   });
 
   it("pushes down single-provider view scans before cross-provider lookup joins", async () => {
+    let warehouseRelExecutions = 0;
+    let warehouseScanExecutions = 0;
+    let kvLookupCalls = 0;
+    let kvScanExecutions = 0;
+    const warehouseProvider: TestProvider = {
+      name: "warehouse",
+      canExecute() {
+        return true;
+      },
+      async compile(rel: RelNode) {
+        return Result.ok({ provider: "warehouse", kind: "rel", payload: rel });
+      },
+      async execute(plan) {
+        const rel = plan.payload as RelNode;
+        warehouseRelExecutions += 1;
+        const products = [
+          { id: "p1", name: "Edge Router" },
+          { id: "p2", name: "Backup Service" },
+        ];
+        return Result.ok(
+          products.map((product) =>
+            Object.fromEntries(
+              rel.output.map((output) => {
+                if (output.name.endsWith(".id") || output.name === "id") {
+                  return [output.name, product.id] as const;
+                }
+                if (output.name.endsWith(".name") || output.name === "name") {
+                  return [output.name, product.name] as const;
+                }
+                return [output.name, null] as const;
+              }),
+            ),
+          ),
+        );
+      },
+    };
+    const kvProvider: TestProvider = {
+      name: "kv",
+      canExecute(rel: RelNode) {
+        return rel.kind === "scan";
+      },
+      async compile(rel: RelNode) {
+        return Result.ok({ provider: "kv", kind: "rel", payload: rel });
+      },
+      async execute() {
+        kvScanExecutions += 1;
+        return Result.ok([]);
+      },
+      async lookupMany(request: ProviderLookupManyRequest) {
+        kvLookupCalls += 1;
+        return Result.ok(request.keys.includes("p1") ? [{ product_id: "p1", view_count: 12 }] : []);
+      },
+    };
     const productsEntity = createDataEntityHandle({
       entity: "products_raw",
       provider: "warehouse",
+      providerInstance: warehouseProvider,
       columns: {
         id: { source: "id", type: "text", nullable: false, primaryKey: true },
         name: { source: "name", type: "text", nullable: false },
@@ -1889,6 +2070,7 @@ describe("query/provider runtime", () => {
     const productAccessEntity = createDataEntityHandle({
       entity: "product_access_raw",
       provider: "warehouse",
+      providerInstance: warehouseProvider,
       columns: {
         product_id: { source: "product_id", type: "text", nullable: false },
       },
@@ -1896,6 +2078,7 @@ describe("query/provider runtime", () => {
     const viewCountsEntity = createDataEntityHandle({
       entity: "product_view_counts",
       provider: "kv",
+      providerInstance: kvProvider,
       columns: {
         product_id: { source: "product_id", type: "text", nullable: false },
         view_count: { source: "view_count", type: "integer", nullable: false },
@@ -1941,73 +2124,14 @@ describe("query/provider runtime", () => {
       });
     });
 
-    let warehouseRelExecutions = 0;
-    let warehouseScanExecutions = 0;
-    let kvLookupCalls = 0;
-    let kvScanExecutions = 0;
+    warehouseProvider.entities = {
+      products: productsEntity,
+      productAccess: productAccessEntity,
+    };
+    kvProvider.entities = { productViewCounts: viewCountsEntity };
+    const executableSchema = unwrapResult(createExecutableSchema(schema));
 
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute(_rel: RelNode) {
-          return true;
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute(plan) {
-          const rel = plan.payload as RelNode;
-          warehouseRelExecutions += 1;
-          const products = [
-            { id: "p1", name: "Edge Router" },
-            { id: "p2", name: "Backup Service" },
-          ];
-
-          return Result.ok(
-            products.map((product) =>
-              Object.fromEntries(
-                rel.output.map((output) => {
-                  if (output.name.endsWith(".id") || output.name === "id") {
-                    return [output.name, product.id] as const;
-                  }
-                  if (output.name.endsWith(".name") || output.name === "name") {
-                    return [output.name, product.name] as const;
-                  }
-                  return [output.name, null] as const;
-                }),
-              ),
-            ),
-          );
-        },
-      } satisfies TestProvider,
-      kv: {
-        canExecute(rel: RelNode) {
-          return rel.kind === "scan";
-        },
-        async compile(rel: RelNode) {
-          return Result.ok({
-            provider: "kv",
-            kind: "rel",
-            payload: rel,
-          });
-        },
-        async execute() {
-          kvScanExecutions += 1;
-          return Result.ok([]);
-        },
-        async lookupMany(request: ProviderLookupManyRequest) {
-          kvLookupCalls += 1;
-          return Result.ok(
-            request.keys.includes("p1") ? [{ product_id: "p1", view_count: 12 }] : [],
-          );
-        },
-      } satisfies TestProvider,
-    });
-
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT p.name, v.view_count
@@ -2026,15 +2150,17 @@ describe("query/provider runtime", () => {
     expect(kvLookupCalls).toBe(1);
     expect(kvScanExecutions).toBe(0);
 
-    const session = createSessionFromExecutableSchema(executableSchema, {
-      context: {},
-      sql: `
-        SELECT p.name, v.view_count
-        FROM active_products p
-        LEFT JOIN product_view_counts v ON v.product_id = p.id
-        ORDER BY v.view_count DESC, p.name
-      `,
-    });
+    const session = unwrapResult(
+      createExecutableSchemaSession(executableSchema, {
+        context: {},
+        sql: `
+          SELECT p.name, v.view_count
+          FROM active_products p
+          LEFT JOIN product_view_counts v ON v.product_id = p.id
+          ORDER BY v.view_count DESC, p.name
+        `,
+      }),
+    );
     const plan = session.getPlan();
     expect(plan.steps.filter((step) => step.kind === "remote_fragment")).toHaveLength(1);
     expect(plan.steps.some((step) => step.kind === "lookup_join")).toBe(true);
@@ -2042,17 +2168,12 @@ describe("query/provider runtime", () => {
   });
 
   it("exposes scan stages in session plans", () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
+    const executableSchema = createExecutableTableSchema(
+      {
+        name: "warehouse",
+        entities: {
+          orders: createDataEntityHandle({ entity: "orders", provider: "warehouse" }),
         },
-      },
-    });
-
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -2072,12 +2193,19 @@ describe("query/provider runtime", () => {
           return Result.ok(scanRows([{ id: "o1" }], request));
         },
       } satisfies TestProvider,
-    });
+      {
+        orders: {
+          columns: { id: "text" },
+        },
+      },
+    );
 
-    const session = createSessionFromExecutableSchema(executableSchema, {
-      context: {},
-      sql: "SELECT id FROM orders",
-    });
+    const session = unwrapResult(
+      createExecutableSchemaSession(executableSchema, {
+        context: {},
+        sql: "SELECT id FROM orders",
+      }),
+    );
 
     const plan = session.getPlan();
     expect(plan.steps.length).toBeGreaterThan(0);
@@ -2085,25 +2213,13 @@ describe("query/provider runtime", () => {
   });
 
   it("includes fallback diagnostics in explain output for unsupported rel pushdown", async () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          user_id: "text",
+    const executableSchema = createExecutableTableSchema(
+      {
+        name: "warehouse",
+        entities: {
+          orders: createDataEntityHandle({ entity: "orders", provider: "warehouse" }),
+          users: createDataEntityHandle({ entity: "users", provider: "warehouse" }),
         },
-      },
-      users: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          email: "text",
-        },
-      },
-    });
-
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -2130,16 +2246,32 @@ describe("query/provider runtime", () => {
           );
         },
       } satisfies TestProvider,
-    });
+      {
+        orders: {
+          columns: {
+            id: "text",
+            user_id: "text",
+          },
+        },
+        users: {
+          columns: {
+            id: "text",
+            email: "text",
+          },
+        },
+      },
+    );
 
-    const explained = await executableSchema.explain({
-      context: {},
-      sql: `
-        SELECT o.id, u.email
-        FROM orders o
-        JOIN users u ON o.user_id = u.id
-      `,
-    });
+    const explained = unwrapResult(
+      await executableSchema.explain({
+        context: {},
+        sql: `
+          SELECT o.id, u.email
+          FROM orders o
+          JOIN users u ON o.user_id = u.id
+        `,
+      }),
+    );
 
     expect(explained.diagnostics).toEqual(
       expect.arrayContaining([
@@ -2256,25 +2388,13 @@ describe("query/provider runtime", () => {
   });
 
   it("rejects fallback when query policy forbids provider fallback", async () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          user_id: "text",
+    const executableSchema = createExecutableTableSchema(
+      {
+        name: "warehouse",
+        entities: {
+          orders: createDataEntityHandle({ entity: "orders", provider: "warehouse" }),
+          users: createDataEntityHandle({ entity: "users", provider: "warehouse" }),
         },
-      },
-      users: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          email: "text",
-        },
-      },
-    });
-
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -2294,21 +2414,32 @@ describe("query/provider runtime", () => {
           return Result.ok(scanRows([], request));
         },
       } satisfies TestProvider,
-    });
-
-    await expect(
-      executableSchema.query({
-        context: {},
-        fallbackPolicy: {
-          allowFallback: false,
+      {
+        orders: {
+          columns: { id: "text", user_id: "text" },
         },
-        sql: `
+        users: {
+          columns: { id: "text", email: "text" },
+        },
+      },
+    );
+
+    const result = await executableSchema.query({
+      context: {},
+      fallbackPolicy: {
+        allowFallback: false,
+      },
+      sql: `
         SELECT o.id, u.email
         FROM orders o
         JOIN users u ON o.user_id = u.id
       `,
-      }),
-    ).rejects.toMatchObject({
+    });
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected fallback-disabled query to fail.");
+    }
+    expect(result.error).toMatchObject({
       _tag: "TuplDiagnosticError",
       diagnostics: expect.any(Array),
       name: "TuplDiagnosticError",
@@ -2316,17 +2447,12 @@ describe("query/provider runtime", () => {
   });
 
   it("surfaces tagged timeout errors through the Promise query API", async () => {
-    const schema = buildEntitySchema({
-      users: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
+    const executableSchema = createExecutableTableSchema(
+      {
+        name: "warehouse",
+        entities: {
+          users: createDataEntityHandle({ entity: "users", provider: "warehouse" }),
         },
-      },
-    });
-
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -2347,17 +2473,25 @@ describe("query/provider runtime", () => {
           return Result.ok(scanRows([{ id: "u1" }], request));
         },
       } satisfies TestProvider,
-    });
-
-    await expect(
-      executableSchema.query({
-        context: {},
-        queryGuardrails: {
-          timeoutMs: 5,
+      {
+        users: {
+          columns: { id: "text" },
         },
-        sql: "SELECT id FROM users",
-      }),
-    ).rejects.toMatchObject({
+      },
+    );
+
+    const result = await executableSchema.query({
+      context: {},
+      queryGuardrails: {
+        timeoutMs: 5,
+      },
+      sql: "SELECT id FROM users",
+    });
+    expect(Result.isError(result)).toBe(true);
+    if (Result.isOk(result)) {
+      throw new Error("Expected timed-out query to fail.");
+    }
+    expect(result.error).toMatchObject({
       _tag: "TuplTimeoutError",
       name: "TuplTimeoutError",
       message: "Query timed out after 5ms.",
@@ -2390,19 +2524,12 @@ describe("query/provider runtime", () => {
   });
 
   it("executes scalar expressions and missing operators locally when scan pushdown is the only provider capability", async () => {
-    const schema = buildEntitySchema({
-      users: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          email: "text",
-          score: { type: "integer" },
+    const executableSchema = createExecutableTableSchema(
+      {
+        name: "warehouse",
+        entities: {
+          users: createDataEntityHandle({ entity: "users", provider: "warehouse" }),
         },
-      },
-    });
-
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
         canExecute(rel: RelNode) {
           return rel.kind === "scan";
         },
@@ -2431,9 +2558,18 @@ describe("query/provider runtime", () => {
           );
         },
       } satisfies TestProvider,
-    });
+      {
+        users: {
+          columns: {
+            id: "text",
+            email: "text",
+            score: { type: "integer" },
+          },
+        },
+      },
+    );
 
-    const rows = await executableSchema.query({
+    const rows = await queryRows(executableSchema, {
       context: {},
       sql: `
         SELECT

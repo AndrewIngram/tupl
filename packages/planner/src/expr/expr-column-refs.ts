@@ -60,6 +60,7 @@ export function collectRelExprRefs(expr: RelExpr): RelColumnRef[] {
       case "column":
         refs.push(current.ref);
         return;
+      case "local":
       case "function":
         for (const arg of current.args) {
           visit(arg);

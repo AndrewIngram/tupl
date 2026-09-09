@@ -6,6 +6,8 @@
 export {
   UnsupportedSqlRelationalPlanError,
   type SqlRelationalOrderTerm,
+  type SqlRelationalMetricOrderTerm,
+  type SqlRelationalWithOrderTerm,
   type SqlRelationalCompileStrategy,
   type SqlRelationalQueryTranslationBackend,
   type SqlRelationalResolvedEntity,

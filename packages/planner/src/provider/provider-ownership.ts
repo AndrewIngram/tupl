@@ -9,6 +9,12 @@ import { getNormalizedTableBinding, resolveTableProvider } from "@tupl/schema-mo
  * fragments because their rows are produced or materialized locally.
  */
 export function isLocalOnlyProviderBarrierNode(node: RelNode): boolean {
+  if (
+    node.kind === "project" &&
+    node.columns.some((column) => "expr" in column && containsLocalExpression(column.expr))
+  )
+    return true;
+  if (node.kind === "filter" && node.expr && containsLocalExpression(node.expr)) return true;
   switch (node.kind) {
     case "values":
     case "cte_ref":
@@ -94,4 +100,21 @@ export function resolveSingleProvider(node: RelNode, schema: SchemaDefinition): 
   }
 
   return [...providers][0] ?? null;
+}
+
+export function containsLocalExpression(expr: import("@tupl/foundation").RelExpr): boolean {
+  return (
+    expr.kind === "local" ||
+    (expr.kind === "function" && expr.args.some(containsLocalExpression)) ||
+    (expr.kind === "subquery" && containsLocalNode(expr.rel))
+  );
+}
+
+function containsLocalNode(node: RelNode): boolean {
+  if (isLocalOnlyProviderBarrierNode(node)) return true;
+  if ("input" in node) return containsLocalNode(node.input);
+  if ("left" in node) return containsLocalNode(node.left) || containsLocalNode(node.right);
+  if (node.kind === "with")
+    return node.ctes.some((cte) => containsLocalNode(cte.query)) || containsLocalNode(node.body);
+  return false;
 }

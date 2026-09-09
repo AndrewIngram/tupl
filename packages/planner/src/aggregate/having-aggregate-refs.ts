@@ -27,6 +27,8 @@ export function lowerHavingAggregateRef(
   let alias = aggregateMetricAliases.get(signature);
   if (!alias) {
     alias = `__having_metric_${aggregateMetricAliases.size + 1}`;
+    const used = new Set(aggregateMetricAliases.values());
+    while (used.has(alias)) alias += "_";
     aggregateMetricAliases.set(signature, alias);
     hiddenMetrics.push({
       ...metric,

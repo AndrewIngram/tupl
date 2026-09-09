@@ -13,12 +13,14 @@ import type {
   NormalizedColumnBinding,
   NormalizedPhysicalTableBinding,
   NormalizedSourceColumnBinding,
-  QueryRow,
+} from "../contracts/normalized-contracts";
+import type { QueryRow } from "../contracts/query-contracts";
+import type {
   SchemaDefinition,
   SchemaValueCoercion,
   TableColumnDefinition,
   TableDefinition,
-} from "../types";
+} from "../contracts/schema-contracts";
 
 /**
  * Mapping owns provider-row coercion and logical-row projection against normalized bindings.

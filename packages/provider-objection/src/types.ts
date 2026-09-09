@@ -8,6 +8,11 @@ import type {
 import type { SqlRelationalScanBinding } from "@tupl/provider-kit/relational-sql";
 
 export type KnexLikeQueryBuilder = {
+  toSQL?: () => {
+    sql: string;
+    bindings?: readonly unknown[];
+    toNative?: () => { sql: string; bindings: readonly unknown[] };
+  };
   clone?: (...args: any[]) => KnexLikeQueryBuilder;
   as?: (...args: any[]) => KnexLikeQueryBuilder;
   clearSelect?: (...args: any[]) => KnexLikeQueryBuilder;
@@ -16,18 +21,20 @@ export type KnexLikeQueryBuilder = {
   innerJoin?: (...args: any[]) => KnexLikeQueryBuilder;
   leftJoin?: (...args: any[]) => KnexLikeQueryBuilder;
   rightJoin?: (...args: any[]) => KnexLikeQueryBuilder;
-  fullJoin?: (...args: any[]) => KnexLikeQueryBuilder;
+  fullOuterJoin?: (...args: any[]) => KnexLikeQueryBuilder;
   with?: (...args: any[]) => KnexLikeQueryBuilder;
   union?: (...args: any[]) => KnexLikeQueryBuilder;
   unionAll?: (...args: any[]) => KnexLikeQueryBuilder;
   intersect?: (...args: any[]) => KnexLikeQueryBuilder;
   except?: (...args: any[]) => KnexLikeQueryBuilder;
   where: (...args: any[]) => KnexLikeQueryBuilder;
+  whereRaw: (...args: any[]) => KnexLikeQueryBuilder;
   whereIn: (...args: any[]) => KnexLikeQueryBuilder;
   whereNull: (...args: any[]) => KnexLikeQueryBuilder;
   whereNotNull: (...args: any[]) => KnexLikeQueryBuilder;
   groupBy: (...args: any[]) => KnexLikeQueryBuilder;
   orderBy: (...args: any[]) => KnexLikeQueryBuilder;
+  orderByRaw?: (sql: string, bindings?: readonly unknown[]) => KnexLikeQueryBuilder;
   limit: (...args: any[]) => KnexLikeQueryBuilder;
   offset: (...args: any[]) => KnexLikeQueryBuilder;
   count: (...args: any[]) => KnexLikeQueryBuilder;

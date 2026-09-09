@@ -1,7 +1,7 @@
 import type { RelNode } from "@tupl/foundation";
 
 import { createTableDefinitionFromEntity } from "../normalization";
-import type { SchemaDefinition, TableColumnDefinition } from "../types";
+import type { SchemaDefinition, TableColumnDefinition } from "../contracts/schema-contracts";
 
 /**
  * Scan output definitions own output-column inference for scans and CTE scan lookups.

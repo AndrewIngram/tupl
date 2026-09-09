@@ -1,27 +1,30 @@
+import { createDerive } from "./derive";
 import type { RelNode } from "@tupl/foundation";
 
-import type {
-  SchemaBuilder,
-  SchemaDefinition,
-  TableMethodsForSchema,
-  TableMethodsMap,
-} from "../types";
+import type { SchemaBuilder } from "../contracts/schema-builder-contracts";
+import type { SchemaDefinition } from "../contracts/schema-contracts";
+import type { TableMethodsForSchema, TableMethodsMap } from "../contracts/query-contracts";
 import type {
   TablePlanningMethodsForSchema,
   TablePlanningMethodsMap,
 } from "../contracts/table-planning-contracts";
 import {
-  buildColumnExprHelpers as buildColumnExprHelpersInternal,
-  buildSchemaColumnsColHelper as buildSchemaColumnsColHelperInternal,
   createSchemaDslTableToken,
   isSchemaDataEntityHandle as isSchemaDataEntityHandleInternal,
-} from "./builder-helpers";
+} from "./dsl-tokens";
+import {
+  buildColumnExprHelpers as buildColumnExprHelpersInternal,
+  buildSchemaColumnsColHelper as buildSchemaColumnsColHelperInternal,
+} from "./dsl-column-exprs";
 import {
   schemaBuilderState,
   type RegisteredSchemaDefinition,
   type SchemaBuilderState,
 } from "./builder-state";
-import type { SchemaDslViewRelHelpers, SchemaViewRelNodeInput } from "../contracts/dsl-contracts";
+import type {
+  SchemaDslViewRelHelpers,
+  SchemaViewRelNodeInput,
+} from "../contracts/schema-view-contracts";
 import { buildRegisteredSchemaDefinition } from "../normalization";
 
 /**
@@ -59,10 +62,12 @@ export function createSchemaBuilder<TContext>(): SchemaBuilder<TContext> {
       );
     }
 
+    const columnOwner = Symbol("columns");
     const columns =
       typeof input.columns === "function"
         ? input.columns({
-            col: buildSchemaColumnsColHelperInternal(),
+            derive: createDerive(columnOwner),
+            col: buildSchemaColumnsColHelperInternal(columnOwner),
             expr: buildColumnExprHelpersInternal(),
           })
         : input.columns;
@@ -96,10 +101,12 @@ export function createSchemaBuilder<TContext>(): SchemaBuilder<TContext> {
               context: TContext,
             ) => SchemaViewRelNodeInput<string> | RelNode
           )(helpers, context);
+    const columnOwner = Symbol("columns");
     const columns =
       typeof input.columns === "function"
         ? input.columns({
-            col: buildSchemaColumnsColHelperInternal(),
+            derive: createDerive(columnOwner),
+            col: buildSchemaColumnsColHelperInternal(columnOwner),
             expr: buildColumnExprHelpersInternal(),
           })
         : input.columns;

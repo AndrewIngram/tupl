@@ -43,6 +43,12 @@ Cross-module rules:
 - Internal cross-package test infrastructure lives in the private `@tupl/test-support` workspace package.
 - External provider authors should use `@tupl/provider-kit/testing` instead of importing repo-only helpers.
 
+The workspace boundary tests parse TypeScript imports and re-exports, including
+type imports, literal dynamic imports, and relative references across packages.
+Public forwarding-module exceptions come from package export declarations.
+Internal re-export-only modules must give way to direct imports from the owning
+module. File length and historical filenames do not define package ownership.
+
 Consumer guidance:
 
 - Provider implementations should prefer `@tupl/provider-kit`, `@tupl/provider-kit/shapes`, and `@tupl/provider-kit/testing` for ordinary adapter work.
@@ -56,3 +62,31 @@ Consumer guidance:
 - Provider conformance belongs on `@tupl/provider-kit/testing`; internal test fixtures do not.
 - Application docs and examples should prefer `@tupl/schema` and first-party provider packages.
 - Maintainers should use [`maintainer-bug-map.md`](./maintainer-bug-map.md) as the starting point for bug triage across provider, planner, and runtime layers.
+
+Local computation ownership follows the same layering: foundation defines the
+`local` expression and operation descriptor; schema-model owns typed handles,
+dependency normalization, and the callback registry; planner owns demand pruning
+and stage placement; runtime evaluates registered operations and records actual
+work. Provider-kit and provider packages never receive executable callbacks.
+
+## Published entry points
+
+All ten public packages publish native ESM JavaScript (`.mjs`) and ESM declarations
+(`.d.mts`). Public roots and subpaths expose `import` and `types` entries, with a
+`source` condition for workspace tooling. There are no CommonJS builds or
+forwarding facades. Applications use ESM imports. Shared state stays in the owning
+package's ESM modules, so builders and derived-operation registries retain their
+identity across public entry points.
+
+Workspace test aliases derive from package export declarations and resolve source
+modules. Run tests from the repository root with `vp test`; package builds are
+not prerequisites for that suite.
+
+Run `pnpm test:packed` to build and verify actual tarballs in an isolated consumer.
+It checks every public export across all ten packages, native and derived SQLite
+queries using both builders and normalized schemas, and strict NodeNext ESM type
+resolution. Core and Objection consumer checks do not skip library declarations.
+An additional import check covers every provider with `skipLibCheck`, because
+Drizzle's dependency declarations include optional drivers and upstream type
+errors. The verifier also rejects CommonJS artifacts or export conditions in
+public packages.

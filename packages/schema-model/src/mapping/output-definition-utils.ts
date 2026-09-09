@@ -1,7 +1,11 @@
 import type { RelColumnRef } from "@tupl/foundation";
 
 import { resolveColumnDefinition } from "../definition";
-import type { SchemaValueCoercion, SqlScalarType, TableColumnDefinition } from "../types";
+import type {
+  SchemaValueCoercion,
+  SqlScalarType,
+  TableColumnDefinition,
+} from "../contracts/schema-contracts";
 
 /**
  * Output definition utilities own shared column-definition helpers for inferred relational outputs.
@@ -47,10 +51,10 @@ export function resolveRelRefOutputDefinition(
   ref: RelColumnRef,
 ): TableColumnDefinition | undefined {
   const qualified = toRelOutputKey(ref);
-  if (qualified && qualified in definitions) {
+  if (qualified && Object.hasOwn(definitions, qualified)) {
     return definitions[qualified];
   }
-  if (!ref.alias && !ref.table && ref.column in definitions) {
+  if (!ref.alias && !ref.table && Object.hasOwn(definitions, ref.column)) {
     return definitions[ref.column];
   }
 

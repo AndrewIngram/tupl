@@ -1,4 +1,4 @@
-import type { RelColumnRef, RelNode } from "@tupl/foundation";
+import type { RelNode } from "@tupl/foundation";
 
 import { nextRelId } from "../physical/planner-ids";
 import type { PreparedSimpleSelect } from "./select-shape";
@@ -7,7 +7,11 @@ import { appendProjectExpressions } from "./select-projections";
 /**
  * Select projection lowering owns aggregate/window/sort wrapping and the final SELECT projection.
  */
-export function finalizeSimpleSelectRel(current: RelNode, shape: PreparedSimpleSelect): RelNode {
+export function finalizeSimpleSelectRel(
+  current: RelNode,
+  shape: PreparedSimpleSelect,
+  outputNames?: string[],
+): RelNode {
   let next = current;
 
   if (shape.aggregateMode && shape.aggregateGroupByResolution.materializations.length > 0) {
@@ -23,7 +27,7 @@ export function finalizeSimpleSelectRel(current: RelNode, shape: PreparedSimpleS
       groupBy: shape.effectiveGroupBy,
       metrics: shape.allAggregateMetrics,
       output: [
-        ...shape.effectiveGroupBy.map((ref: RelColumnRef) => ({ name: ref.column })),
+        ...shape.aggregateGroupOutputs.map((name) => ({ name })),
         ...shape.allAggregateMetrics.map((metric) => ({ name: metric.as })),
       ],
     };
@@ -88,21 +92,41 @@ export function finalizeSimpleSelectRel(current: RelNode, shape: PreparedSimpleS
     };
   }
 
-  return buildFinalProject(next, shape);
+  const project = buildFinalProject(next, shape);
+  // Enclosing names apply only after SELECT-local HAVING, windows and ordering resolve.
+  if (!outputNames || outputNames.length !== project.columns.length) return project;
+  return {
+    ...project,
+    columns: project.columns.map((column, index) => ({ ...column, output: outputNames[index]! })),
+    output: project.output.map((column, index) => ({ ...column, name: outputNames[index]! })),
+  };
 }
 
-function buildFinalProject(current: RelNode, shape: PreparedSimpleSelect): RelNode {
+function buildFinalProject(
+  current: RelNode,
+  shape: PreparedSimpleSelect,
+): Extract<RelNode, { kind: "project" }> {
   return {
     id: nextRelId("project"),
     kind: "project",
     convention: "local",
     input: current,
     columns: shape.aggregateMode
-      ? [...shape.safeAggregateProjections, ...shape.aggregateWindowProjections].map((projection) =>
+      ? shape.aggregateSelectProjections.map((projection) =>
           projection.kind === "group" && projection.source
             ? {
                 kind: "column" as const,
-                source: { column: projection.source.column },
+                source: {
+                  column:
+                    shape.aggregateGroupOutputs[
+                      shape.effectiveGroupBy.findIndex(
+                        (ref) =>
+                          ref.column === projection.source!.column &&
+                          (ref.alias ?? ref.table) ===
+                            (projection.source!.alias ?? projection.source!.table),
+                      )
+                    ]!,
+                },
                 output: projection.output,
               }
             : projection.kind === "metric"
@@ -145,11 +169,10 @@ function buildFinalProject(current: RelNode, shape: PreparedSimpleSelect): RelNo
               }),
           output: projection.output,
         })),
-    output: (shape.aggregateMode
-      ? [...shape.safeAggregateProjections, ...shape.aggregateWindowProjections]
-      : shape.safeProjections
-    ).map((projection) => ({
-      name: projection.output,
-    })),
+    output: (shape.aggregateMode ? shape.aggregateSelectProjections : shape.safeProjections).map(
+      (projection) => ({
+        name: projection.output,
+      }),
+    ),
   };
 }

@@ -80,11 +80,23 @@ export interface SqlRelationalOutputOrderTerm {
   column: string;
 }
 
-export type SqlRelationalOrderTerm = SqlRelationalQualifiedOrderTerm | SqlRelationalOutputOrderTerm;
+export interface SqlRelationalMetricOrderTerm {
+  kind: "metric";
+  direction: "asc" | "desc";
+  metric: SqlRelationalMetricSelection["metric"];
+}
+
+export type SqlRelationalWithOrderTerm =
+  | SqlRelationalQualifiedOrderTerm
+  | SqlRelationalOutputOrderTerm;
+
+export type SqlRelationalOrderTerm = SqlRelationalWithOrderTerm | SqlRelationalMetricOrderTerm;
 
 /**
  * Query translation hooks own backend-specific query-builder lowering once provider-kit has chosen
  * a rel strategy and assembled the backend-neutral single-query shape.
+ * TQuery must not be thenable: wrap executable builders in an object so awaiting
+ * translation hooks cannot execute an unfinished query.
  */
 export interface SqlRelationalQueryTranslationBackend<
   TContext,
@@ -118,6 +130,7 @@ export interface SqlRelationalQueryTranslationBackend<
   applyWhereClause(args: {
     query: TQuery;
     clause: NonNullable<TableScanRequest["where"]>[number];
+    inputScope: "source" | "projected";
     plan: RelationalSingleQueryPlan<TBinding> | RelationalWithBodyWrapper;
     aliases: Map<string, TBinding>;
     context: TContext;
@@ -170,10 +183,15 @@ export interface SqlRelationalQueryTranslationBackend<
     body: RelationalWithBodyWrapper;
     ctes: Array<{ name: string; query: TQuery }>;
     projection: SqlRelationalWithSelection[];
-    orderBy: SqlRelationalOrderTerm[];
+    orderBy: SqlRelationalWithOrderTerm[];
     context: TContext;
     runtime: TRuntime;
   }): MaybePromise<TQuery>;
+  /** Compile an inspection statement without executing it. Bindings may contain scoped values. */
+  describeQuery?(args: {
+    query: TQuery;
+    context: TContext;
+  }): MaybePromise<{ sql: string; bindings: readonly unknown[] } | undefined>;
   executeQuery(args: { query: TQuery; context: TContext; runtime: TRuntime }): Promise<QueryRow[]>;
 }
 

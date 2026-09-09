@@ -1,5 +1,6 @@
 import { resolveColumnDefinition } from "../definition";
-import type { NormalizedColumnBinding, SchemaValueCoercion, TableColumnDefinition } from "../types";
+import type { NormalizedColumnBinding } from "../contracts/normalized-contracts";
+import type { SchemaValueCoercion, TableColumnDefinition } from "../contracts/schema-contracts";
 
 /**
  * Row coercion owns provider scalar normalization and normalized-binding validation.

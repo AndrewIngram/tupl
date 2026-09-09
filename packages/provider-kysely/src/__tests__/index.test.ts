@@ -44,6 +44,12 @@ function createMockKyselyDb(
       let projections: Array<{ source: string; output: string }> = [];
 
       const builder: any = {
+        selectAll() {
+          return builder;
+        },
+        as() {
+          return root;
+        },
         innerJoin(right: unknown) {
           const rightKey = String(right);
           calls.joins.push(rightKey);

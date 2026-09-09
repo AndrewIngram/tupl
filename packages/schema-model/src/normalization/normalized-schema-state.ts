@@ -1,4 +1,5 @@
-import type { NormalizedTableBinding, SchemaDefinition } from "../types";
+import type { NormalizedTableBinding } from "../contracts/normalized-contracts";
+import type { SchemaDefinition } from "../contracts/schema-contracts";
 
 /**
  * Normalized schema state owns the hidden binding map attached only to schemas built or finalized

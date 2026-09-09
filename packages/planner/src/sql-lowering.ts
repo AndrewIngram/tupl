@@ -40,7 +40,7 @@ function lowerSqlAstToRel(
   schema: SchemaDefinition,
 ): BetterResult<RelLoweringResult, RelLoweringError> {
   return Result.gen(function* () {
-    const structured = yield* tryLowerStructuredSelect(ast, schema, new Set<string>());
+    const structured = yield* tryLowerStructuredSelect(ast, schema, new Map<string, string[]>());
     if (structured) {
       yield* validateRelAgainstSchema(structured, schema);
       return Result.ok({

@@ -1,6 +1,6 @@
 import { Result, type Result as BetterResult } from "better-result";
 
-import { type RelLoweringError, type RelNode } from "@tupl/foundation";
+import { RelLoweringError, type RelNode } from "@tupl/foundation";
 import type { CteAst, FromEntryAst, SelectAst } from "./sqlite-parser/ast";
 import type { SchemaDefinition } from "@tupl/schema-model";
 import { nextRelId } from "./physical/planner-ids";
@@ -8,7 +8,8 @@ import { collectTablesFromSelectAst } from "./sql-expr-lowering";
 import { toRelLoweringError } from "./planner-errors";
 import { tryLowerSimpleSelect } from "./simple-select-lowering";
 import { parseRelColumnRef } from "./select/select-from-lowering";
-import { parseSetOp } from "./select/set-op-lowering";
+import { expandSelectWildcards } from "./select/select-wildcards";
+import { applyCompoundModifiers, parseSetOp } from "./select/set-op-lowering";
 
 /**
  * Structured select lowering owns select/set-op/CTE lowering into relational nodes.
@@ -16,11 +17,28 @@ import { parseSetOp } from "./select/set-op-lowering";
 export function tryLowerStructuredSelect(
   ast: SelectAst,
   schema: SchemaDefinition,
-  cteNames: Set<string>,
+  cteColumns: Map<string, string[]>,
+  outputNames?: string[],
 ): BetterResult<RelNode | null, RelLoweringError> {
+  return lowerStructuredSelect(ast, schema, cteColumns, outputNames).map(
+    (result) => result?.node ?? null,
+  );
+}
+
+interface LoweredSelect {
+  node: RelNode;
+  ast: SelectAst;
+}
+
+function lowerStructuredSelect(
+  ast: SelectAst,
+  schema: SchemaDefinition,
+  cteColumns: Map<string, string[]>,
+  outputNames?: string[],
+): BetterResult<LoweredSelect | null, RelLoweringError> {
   return Result.gen(function* () {
     const normalizedAst = rewriteDerivedTables(ast);
-    const scopedCteNames = new Set(cteNames);
+    const scopedCteColumns = new Map(cteColumns);
     const loweredCtes: Array<{ name: string; query: RelNode }> = [];
     const withClauses = Array.isArray(normalizedAst.with) ? normalizedAst.with : [];
 
@@ -38,34 +56,55 @@ export function tryLowerStructuredSelect(
       if (!cteName || !cteAst || typeof cteAst !== "object") {
         return Result.ok(null);
       }
-      const visibleCteNames = new Set(scopedCteNames);
-      if (clause.recursive) {
-        visibleCteNames.add(cteName);
+      if (clause.columns && new Set(clause.columns).size !== clause.columns.length) {
+        return Result.err(
+          new RelLoweringError({
+            operation: "lower CTE column aliases",
+            message: `CTE "${cteName}" column aliases must be unique.`,
+          }),
+        );
       }
+      const visibleCteColumns = new Map(scopedCteColumns);
       const loweredCte = yield* clause.recursive && isRecursiveCteBody(cteAst as SelectAst, cteName)
-        ? lowerRecursiveCte(cteName, cteAst as SelectAst, schema, visibleCteNames)
-        : tryLowerStructuredSelect(cteAst as SelectAst, schema, visibleCteNames);
+        ? lowerRecursiveCte(cteName, cteAst as SelectAst, schema, visibleCteColumns, clause.columns)
+        : tryLowerStructuredSelect(cteAst as SelectAst, schema, visibleCteColumns, clause.columns);
       if (!loweredCte) {
         return Result.ok(null);
       }
+      if (clause.columns && clause.columns.length !== loweredCte.output.length) {
+        return Result.err(
+          new RelLoweringError({
+            operation: "lower CTE column aliases",
+            message: `CTE "${cteName}" declares ${clause.columns.length} column aliases but returns ${loweredCte.output.length} columns.`,
+          }),
+        );
+      }
       loweredCtes.push({ name: cteName, query: loweredCte });
-      scopedCteNames.add(cteName);
+      scopedCteColumns.set(
+        cteName,
+        loweredCte.output.map((column) => column.name),
+      );
     }
 
     const hasSetOp = typeof normalizedAst.set_op === "string" && !!normalizedAst._next;
     if (!hasSetOp) {
       const { with: _ignoredWith, ...withoutWith } = normalizedAst;
+      const expandedAst = yield* Result.try({
+        try: () => expandSelectWildcards(withoutWith, schema, scopedCteColumns),
+        catch: (error) => toRelLoweringError(error, "expand SELECT wildcard"),
+      });
       const simple = yield* tryLowerSimpleSelectWithinStructuredLowering(
-        withoutWith as SelectAst,
+        expandedAst,
         schema,
-        scopedCteNames,
+        scopedCteColumns,
+        outputNames,
       );
       if (!simple) {
         return Result.ok(null);
       }
 
       if (loweredCtes.length === 0) {
-        return Result.ok(simple);
+        return Result.ok({ node: simple, ast: expandedAst });
       }
 
       const withNode: RelNode = {
@@ -77,21 +116,33 @@ export function tryLowerStructuredSelect(
         output: simple.output,
       };
 
-      return Result.ok(withNode);
+      return Result.ok({ node: withNode, ast: expandedAst });
     }
 
     const { with: _ignoredWith, ...withoutWith } = normalizedAst;
     let currentAst: SelectAst = withoutWith as SelectAst;
-    const { set_op: _ignoredSetOp, _next: _ignoredNext, ...currentBaseAst } = currentAst;
-    let currentNode = yield* tryLowerSimpleSelectWithinStructuredLowering(
-      currentBaseAst as SelectAst,
+    const {
+      set_op: _ignoredSetOp,
+      _next: _ignoredNext,
+      orderby: _compoundOrder,
+      limit: _compoundLimit,
+      ...currentBaseAst
+    } = currentAst;
+    const firstBranchAst = yield* Result.try({
+      try: () => expandSelectWildcards(currentBaseAst, schema, scopedCteColumns),
+      catch: (error) => toRelLoweringError(error, "expand SELECT wildcard"),
+    });
+    let currentNode: RelNode | null = yield* tryLowerSimpleSelectWithinStructuredLowering(
+      firstBranchAst,
       schema,
-      scopedCteNames,
+      scopedCteColumns,
+      outputNames,
     );
     if (!currentNode) {
       return Result.ok(null);
     }
 
+    const branches = [firstBranchAst];
     while (typeof currentAst.set_op === "string" && currentAst._next) {
       const op = parseSetOp(currentAst.set_op);
       if (!op) {
@@ -99,24 +150,24 @@ export function tryLowerStructuredSelect(
       }
 
       const {
-        with: _ignoredRightWith,
         set_op: _ignoredRightSetOp,
         _next: _ignoredRightNext,
         ...rightBaseAst
       } = currentAst._next;
-      const aliasedRightBaseAst = applyOutputAliases(
-        rightBaseAst as SelectAst,
-        currentNode.output.map((column) => column.name),
-      );
-      const rightBase = yield* tryLowerSimpleSelectWithinStructuredLowering(
-        aliasedRightBaseAst,
+      const rightBase: LoweredSelect | null = yield* lowerStructuredSelect(
+        rightBaseAst,
         schema,
-        scopedCteNames,
+        scopedCteColumns,
+        currentNode.output.map((column) => column.name),
       );
       if (!rightBase) {
         return Result.ok(null);
       }
-      const alignedRightBase = alignRelOutputShape(rightBase, currentNode.output);
+      branches.push(rightBase.ast);
+      const alignedRightBase: RelNode = yield* alignRelOutputShape(
+        rightBase.node,
+        currentNode.output,
+      );
 
       currentNode = {
         id: nextRelId("set_op"),
@@ -131,8 +182,16 @@ export function tryLowerStructuredSelect(
       currentAst = currentAst._next;
     }
 
+    currentNode = yield* applyCompoundModifiers(currentNode, normalizedAst, branches);
+    if (outputNames && outputNames.length === currentNode.output.length) {
+      currentNode = yield* alignRelOutputShape(
+        currentNode,
+        outputNames.map((name) => ({ name })),
+      );
+    }
+
     if (loweredCtes.length === 0) {
-      return Result.ok(currentNode);
+      return Result.ok({ node: currentNode, ast: firstBranchAst });
     }
 
     const withNode: RelNode = {
@@ -144,7 +203,7 @@ export function tryLowerStructuredSelect(
       output: currentNode.output,
     };
 
-    return Result.ok(withNode);
+    return Result.ok({ node: withNode, ast: firstBranchAst });
   });
 }
 
@@ -154,12 +213,20 @@ function lowerRecursiveCte(
   cteName: string,
   ast: SelectAst,
   schema: SchemaDefinition,
-  cteNames: Set<string>,
+  cteColumns: Map<string, string[]>,
+  outputNames?: string[],
 ): BetterResult<RelNode | null, RelLoweringError> {
   return Result.gen(function* () {
     if (!ast.set_op || !ast._next) {
       return Result.ok(null);
     }
+    if (ast.orderby?.length || ast.limit)
+      return Result.err(
+        new RelLoweringError({
+          operation: "lower recursive CTE",
+          message: "ORDER BY and LIMIT inside a recursive CTE are not supported.",
+        }),
+      );
 
     const op = parseSetOp(ast.set_op);
     if (op !== "union" && op !== "union_all") {
@@ -170,25 +237,29 @@ function lowerRecursiveCte(
     const seed = yield* tryLowerSimpleSelectWithinStructuredLowering(
       seedAst as SelectAst,
       schema,
-      cteNames,
+      cteColumns,
+      outputNames,
     );
     if (!seed) {
       return Result.ok(null);
     }
 
-    const recursiveAst = applyOutputAliases(
-      rewriteDerivedTables(ast._next) as SelectAst,
+    const recursiveScope = new Map(cteColumns);
+    recursiveScope.set(
+      cteName,
       seed.output.map((column) => column.name),
     );
-    const recursiveTerm = yield* tryLowerSimpleSelectWithinStructuredLowering(
+    const recursiveAst = rewriteDerivedTables(ast._next);
+    const recursiveTerm = yield* tryLowerStructuredSelect(
       recursiveAst,
       schema,
-      cteNames,
+      recursiveScope,
+      seed.output.map((column) => column.name),
     );
     if (!recursiveTerm) {
       return Result.ok(null);
     }
-    const alignedRecursiveTerm = alignRelOutputShape(recursiveTerm, seed.output);
+    const alignedRecursiveTerm = yield* alignRelOutputShape(recursiveTerm, seed.output);
 
     const repeatUnionNode: RelNode = {
       id: nextRelId("repeat_union"),
@@ -208,17 +279,26 @@ function lowerRecursiveCte(
 function tryLowerSimpleSelectWithinStructuredLowering(
   ast: SelectAst,
   schema: SchemaDefinition,
-  cteNames: Set<string>,
+  cteColumns: Map<string, string[]>,
+  outputNames?: string[],
 ): BetterResult<RelNode | null, RelLoweringError> {
   return Result.try({
     try: () => {
-      const result = tryLowerSimpleSelect(ast, schema, cteNames, (subqueryAst) => {
-        const subqueryResult = tryLowerStructuredSelect(subqueryAst, schema, cteNames);
-        if (Result.isError(subqueryResult)) {
-          throw subqueryResult.error;
-        }
-        return subqueryResult.value;
-      });
+      const expanded = expandSelectWildcards(ast, schema, cteColumns);
+      const result = tryLowerSimpleSelect(
+        expanded,
+        schema,
+        new Set(cteColumns.keys()),
+        (subqueryAst) => {
+          const subqueryResult = tryLowerStructuredSelect(subqueryAst, schema, cteColumns);
+          if (Result.isError(subqueryResult)) {
+            throw subqueryResult.error;
+          }
+          return subqueryResult.value;
+        },
+        (subqueryAst) => expandSelectWildcards(subqueryAst, schema, cteColumns),
+        outputNames,
+      );
       if (Result.isError(result)) {
         throw result.error;
       }
@@ -228,15 +308,23 @@ function tryLowerSimpleSelectWithinStructuredLowering(
   });
 }
 
-function alignRelOutputShape(rel: RelNode, output: RelNode["output"]): RelNode {
-  if (
-    rel.output.length === output.length &&
-    rel.output.every((column, index) => column.name === output[index]?.name)
-  ) {
-    return rel;
+function alignRelOutputShape(
+  rel: RelNode,
+  output: RelNode["output"],
+): BetterResult<RelNode, RelLoweringError> {
+  if (rel.output.length !== output.length) {
+    return Result.err(
+      new RelLoweringError({
+        operation: "align set operation",
+        message: "Set operation branches must have the same number of columns",
+      }),
+    );
+  }
+  if (rel.output.every((column, index) => column.name === output[index]?.name)) {
+    return Result.ok(rel);
   }
 
-  return {
+  return Result.ok({
     id: nextRelId("project"),
     kind: "project",
     convention: "local",
@@ -247,7 +335,7 @@ function alignRelOutputShape(rel: RelNode, output: RelNode["output"]): RelNode {
       output: column.name,
     })),
     output,
-  };
+  });
 }
 
 function isRecursiveCteBody(ast: SelectAst, cteName: string): boolean {
@@ -268,20 +356,6 @@ function isRecursiveCteBody(ast: SelectAst, cteName: string): boolean {
   };
 
   return visit(ast._next);
-}
-
-function applyOutputAliases(ast: SelectAst, outputNames: string[]): SelectAst {
-  if (!Array.isArray(ast.columns) || ast.columns.length !== outputNames.length) {
-    return ast;
-  }
-
-  return {
-    ...ast,
-    columns: ast.columns.map((column, index) => {
-      const alias = outputNames[index];
-      return alias ? { ...column, as: alias } : { ...column };
-    }),
-  };
 }
 
 function rewriteDerivedTables(ast: SelectAst): SelectAst {

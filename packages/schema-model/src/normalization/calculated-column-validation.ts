@@ -2,7 +2,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import type { TuplSchemaNormalizationError } from "@tupl/foundation";
 
 import { createSchemaNormalizationError } from "../schema-errors";
-import type { NormalizedColumnBinding } from "../types";
+import type { NormalizedColumnBinding } from "../contracts/normalized-contracts";
 import { collectUnqualifiedExprColumns } from "./view-normalization";
 
 /**

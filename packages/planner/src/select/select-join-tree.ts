@@ -145,11 +145,59 @@ export function buildSimpleSelectJoinTree(
         input: antiJoin,
         expr: {
           kind: "function" as const,
-          name: "is_null",
+          name: "and",
           args: [
             {
-              kind: "column" as const,
-              ref: qualifiedRightKey,
+              kind: "function" as const,
+              name: "is_null",
+              args: [{ kind: "column" as const, ref: qualifiedRightKey }],
+            },
+            // NOT IN is unknown when either side is NULL, except for an empty right side.
+            {
+              kind: "function" as const,
+              name: "or",
+              args: [
+                {
+                  kind: "function" as const,
+                  name: "is_not_null",
+                  args: [{ kind: "column" as const, ref: leftKey }],
+                },
+                {
+                  kind: "function" as const,
+                  name: "not",
+                  args: [
+                    {
+                      kind: "subquery" as const,
+                      id: nextRelId("anti_empty"),
+                      mode: "exists" as const,
+                      rel: subqueryRel,
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              kind: "function" as const,
+              name: "not",
+              args: [
+                {
+                  kind: "subquery" as const,
+                  id: nextRelId("anti_null"),
+                  mode: "exists" as const,
+                  rel: {
+                    id: nextRelId("filter"),
+                    kind: "filter" as const,
+                    convention: "local" as const,
+                    input: subqueryRel,
+                    output: subqueryRel.output,
+                    expr: {
+                      kind: "function" as const,
+                      name: "is_null",
+                      args: [{ kind: "column" as const, ref: rightKey }],
+                    },
+                  },
+                },
+              ],
             },
           ],
         },

@@ -170,22 +170,11 @@ export function resolveNonAggregateOrderBy(
 export function resolveAggregateOrderBy(
   orderByTerms: ParsedOrderByTerm[],
   projections: ParsedAggregateProjection[],
+  groupOutputsBySource: Map<string, string>,
 ): BetterResult<ResolvedOrderTerm[], RelLoweringError> {
   const projectionsByOutput = new Map(
     projections.map((projection) => [projection.output, projection] as const),
   );
-  const groupOutputsBySource = new Map<string, string>();
-
-  for (const projection of projections) {
-    if (projection.kind !== "group" || !projection.source) {
-      continue;
-    }
-    groupOutputsBySource.set(
-      `${projection.source.alias ?? ""}.${projection.source.column}`,
-      projection.source.column,
-    );
-  }
-
   const resolveProjectionSource = (
     projection: ParsedAggregateProjection,
     ordinal?: number,
@@ -204,15 +193,28 @@ export function resolveAggregateOrderBy(
         }),
       );
     }
-    return Result.ok({ column: projection.source.column });
+    return Result.ok({
+      column:
+        groupOutputsBySource.get(
+          `${projection.source.alias ?? projection.source.table ?? ""}.${projection.source.column}`,
+        ) ?? projection.source.column,
+    });
   };
 
   const resolvedTerms: ResolvedOrderTerm[] = [];
   for (const term of orderByTerms) {
     if (term.kind === "ref") {
       const key = `${term.source.alias ?? ""}.${term.source.column}`;
+      const output = groupOutputsBySource.get(key);
+      if (!output)
+        return Result.err(
+          new RelLoweringError({
+            operation: "resolve aggregate ORDER BY",
+            message: `ORDER BY source is not a grouped column: ${key}`,
+          }),
+        );
       resolvedTerms.push({
-        source: { column: groupOutputsBySource.get(key) ?? term.source.column },
+        source: { column: output },
         direction: term.direction,
       });
       continue;

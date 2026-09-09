@@ -8,7 +8,7 @@ import type {
   SchemaDslTableToken,
 } from "../contracts/schema-contracts";
 import { createSchemaNormalizationError } from "../schema-errors";
-import type { SchemaViewRelNode, SchemaViewRelNodeInput } from "../types";
+import type { SchemaViewRelNode, SchemaViewRelNodeInput } from "../contracts/schema-view-contracts";
 
 /**
  * View normalization owns normalization of DSL view definitions into schema-facing view contracts.
@@ -172,6 +172,7 @@ export function collectUnqualifiedExprColumns(expr: RelExpr): Set<string> {
       case "literal":
       case "subquery":
         return;
+      case "local":
       case "function":
         current.args.forEach(visit);
         return;

@@ -23,14 +23,9 @@ import {
   type ConstraintValidationOptions,
   createExecutableSchema,
   type ExecutableSchema,
-  type ExplainResult,
   type QueryGuardrails,
 } from "@tupl/runtime";
-import {
-  createExecutableSchemaSession,
-  type ExecutableSchemaSessionInput,
-  type QuerySessionOptions,
-} from "@tupl/runtime/session";
+import { createExecutableSchemaSession, type QuerySessionOptions } from "@tupl/runtime/session";
 import {
   createSchemaBuilder,
   toSqlDDL,
@@ -44,11 +39,8 @@ import {
   type TableLookupRequest,
   type TableScanRequest,
 } from "@tupl/schema-model";
-import type { SchemaColumnLensDefinition } from "@tupl/schema-model/dsl";
 import type { TablePlanningMethodsMap } from "@tupl/schema-model/table-planning";
-import { isNormalizedSourceColumnBinding } from "@tupl/schema-model/mapping";
-import type { NormalizedColumnBinding, TableName } from "@tupl/schema-model/normalized";
-import { getNormalizedTableBinding } from "@tupl/schema-model/normalization";
+import type { TableName } from "@tupl/schema-model/normalized";
 import type {
   AggregatePlanDecision,
   LookupPlanDecision,
@@ -64,66 +56,11 @@ import { aggregateArrayRows, scanArrayRows } from "./methods";
  * Runtime test support owns shared execution harnesses and parity helpers for internal tests.
  * It is stable only inside this workspace and must not be imported by product source.
  */
-type ProviderInput<TContext> = {
-  name?: string;
-  entities?: Record<string, unknown>;
-  fallbackPolicy?: unknown;
-  canExecute(rel: RelNode, context: TContext): unknown;
-  estimate?(rel: RelNode, context: TContext): unknown;
-  compile?(rel: RelNode, context: TContext): unknown;
-  describeCompiledPlan?(plan: unknown, context: TContext): unknown;
-  execute?(plan: unknown, context: TContext): unknown;
-} & Partial<LookupManyCapableProviderAdapter<TContext>>;
-
-type TestExecutableSchema<TContext, TSchema extends SchemaDefinition> = Omit<
-  ExecutableSchema<TContext, TSchema>,
-  "query" | "explain"
-> & {
-  query(input: Parameters<ExecutableSchema<TContext, TSchema>["query"]>[0]): Promise<QueryRow[]>;
-  queryResult: ExecutableSchema<TContext, TSchema>["query"];
-  explain(
-    input: Parameters<ExecutableSchema<TContext, TSchema>["explain"]>[0],
-  ): Promise<ExplainResult>;
-  explainResult: ExecutableSchema<TContext, TSchema>["explain"];
-};
-
-function augmentExecutableSchema<TContext, TSchema extends SchemaDefinition>(
-  executableSchema: ExecutableSchema<TContext, TSchema>,
-): TestExecutableSchema<TContext, TSchema> {
-  const queryResult = executableSchema.query.bind(executableSchema);
-  const explainResult = executableSchema.explain.bind(executableSchema);
-
-  return Object.assign(executableSchema, {
-    query(input: Parameters<typeof queryResult>[0]) {
-      return queryResult(input).then(unwrapResult);
-    },
-    queryResult,
-    explain(input: Parameters<typeof explainResult>[0]) {
-      return explainResult(input).then(unwrapResult);
-    },
-    explainResult,
-  }) as TestExecutableSchema<TContext, TSchema>;
-}
-
 function unwrapResult<T, E>(result: import("better-result").Result<T, E>) {
   if (Result.isError(result)) {
     throw result.error;
   }
   return result.value;
-}
-
-export function finalizeProviders<TContext>(
-  providers: Record<string, ProviderInput<TContext>>,
-): Record<string, ProviderAdapter<TContext>> {
-  for (const [providerName, adapter] of Object.entries(providers)) {
-    const boundAdapter = adapter as ProviderAdapter<TContext>;
-    if (!boundAdapter.name) {
-      boundAdapter.name = providerName;
-    }
-    bindProviderEntities(boundAdapter);
-  }
-
-  return providers as Record<string, ProviderAdapter<TContext>>;
 }
 
 function toEntityColumns(
@@ -134,28 +71,6 @@ function toEntityColumns(
       columnName,
       toEntityColumnMetadata(columnName, definition),
     ]),
-  );
-}
-
-function toEntityColumnsFromBindings(
-  bindings: Record<string, NormalizedColumnBinding>,
-  fallbackDefinitions?: Record<string, TableColumnDefinition>,
-): DataEntityColumnMap<string> {
-  return Object.fromEntries(
-    Object.entries(bindings).flatMap(([columnName, binding]) =>
-      isNormalizedSourceColumnBinding(binding)
-        ? [
-            [
-              columnName,
-              toEntityColumnMetadata(
-                columnName,
-                binding.definition ?? fallbackDefinitions?.[columnName],
-                binding.source,
-              ),
-            ] as const,
-          ]
-        : [],
-    ),
   );
 }
 
@@ -183,217 +98,6 @@ function toEntityColumnMetadata(
     ...(definition.physicalType ? { physicalType: definition.physicalType } : {}),
     ...(definition.physicalDialect ? { physicalDialect: definition.physicalDialect } : {}),
   };
-}
-
-function toLensDefinition(
-  columnName: string,
-  definition: TableColumnDefinition,
-): SchemaColumnLensDefinition {
-  return toLensDefinitionFromSource(definition, columnName);
-}
-
-function toLensDefinitionFromSource(
-  definition: TableColumnDefinition,
-  source: string,
-): SchemaColumnLensDefinition {
-  if (typeof definition === "string") {
-    return {
-      source,
-      type: definition,
-    };
-  }
-
-  const lens: SchemaColumnLensDefinition = {
-    source,
-  };
-  lens.type = definition.type;
-  if (definition.nullable != null) {
-    lens.nullable = definition.nullable;
-  }
-  if (definition.primaryKey != null) {
-    lens.primaryKey = definition.primaryKey;
-  }
-  if (definition.unique != null) {
-    lens.unique = definition.unique;
-  }
-  if (definition.enum) {
-    lens.enum = definition.enum;
-  }
-  if (definition.enumFrom) {
-    lens.enumFrom = definition.enumFrom;
-  }
-  if (definition.enumMap) {
-    lens.enumMap = definition.enumMap;
-  }
-  if (definition.physicalType) {
-    lens.physicalType = definition.physicalType;
-  }
-  if (definition.physicalDialect) {
-    lens.physicalDialect = definition.physicalDialect;
-  }
-  if (definition.foreignKey) {
-    lens.foreignKey = definition.foreignKey;
-  }
-  if (definition.description) {
-    lens.description = definition.description;
-  }
-  return lens;
-}
-
-function getCalculatedColumnMethodName(definition: TableColumnDefinition): string {
-  const type = typeof definition === "string" ? definition : definition.type;
-  return type === "text" ? "string" : type;
-}
-
-function getCalculatedColumnOptions(
-  binding: Extract<NormalizedColumnBinding, { kind: "expr" }>,
-  definition: TableColumnDefinition,
-) {
-  if (typeof definition === "string") {
-    return binding.coerce ? { coerce: binding.coerce } : {};
-  }
-
-  return {
-    ...(definition.nullable != null ? { nullable: definition.nullable } : {}),
-    ...(definition.physicalType ? { physicalType: definition.physicalType } : {}),
-    ...(definition.physicalDialect ? { physicalDialect: definition.physicalDialect } : {}),
-    ...(definition.foreignKey ? { foreignKey: definition.foreignKey } : {}),
-    ...(definition.description ? { description: definition.description } : {}),
-    ...(binding.coerce ? { coerce: binding.coerce } : {}),
-  };
-}
-
-export function createExecutableSchemaFromProviders<TContext, TSchema extends SchemaDefinition>(
-  schema: TSchema,
-  providers: Record<string, ProviderInput<TContext>>,
-) {
-  const providerEntries = Object.entries(providers);
-  const singleProviderName = providerEntries.length === 1 ? providerEntries[0]?.[0] : undefined;
-
-  for (const [providerName, adapter] of providerEntries) {
-    const boundAdapter = adapter as ProviderAdapter<TContext>;
-    if (!boundAdapter.name) {
-      boundAdapter.name = providerName;
-    }
-    boundAdapter.entities ??= {};
-  }
-
-  const builder = createSchemaBuilder<TContext>();
-
-  for (const [tableName, tableDefinition] of Object.entries(schema.tables)) {
-    const binding = getNormalizedTableBinding(schema, tableName);
-    if (binding?.kind === "view") {
-      builder.view(
-        tableName,
-        ((context: TContext) => binding.rel(context)) as any,
-        {
-          columns: () =>
-            Object.fromEntries(
-              Object.entries(binding.columnBindings).flatMap(([columnName, columnBinding]) =>
-                isNormalizedSourceColumnBinding(columnBinding)
-                  ? [
-                      [
-                        columnName,
-                        {
-                          source: columnBinding.source,
-                          ...(typeof columnBinding.definition === "string"
-                            ? { type: columnBinding.definition }
-                            : (columnBinding.definition ?? {})),
-                          ...(columnBinding.coerce ? { coerce: columnBinding.coerce } : {}),
-                        },
-                      ] as const,
-                    ]
-                  : [],
-              ),
-            ),
-          ...("constraints" in tableDefinition && tableDefinition.constraints
-            ? { constraints: tableDefinition.constraints }
-            : {}),
-        } as any,
-      );
-      continue;
-    }
-
-    const providerName = binding?.provider ?? tableDefinition.provider ?? singleProviderName;
-    if (!providerName) {
-      throw new Error(
-        `Table ${tableName} must declare table.provider when more than one provider is involved.`,
-      );
-    }
-
-    const adapter = providers[providerName];
-    if (!adapter) {
-      throw new Error(`No provider registered for table ${tableName}: ${providerName}`);
-    }
-    const boundAdapter = adapter as ProviderAdapter<TContext>;
-
-    if (!boundAdapter.entities?.[tableName]) {
-      boundAdapter.entities ??= {};
-      boundAdapter.entities[tableName] = createDataEntityHandle({
-        entity: binding?.kind === "physical" ? binding.entity : tableName,
-        provider: providerName,
-        providerInstance: boundAdapter,
-        columns:
-          binding?.kind === "physical"
-            ? toEntityColumnsFromBindings(binding.columnBindings, tableDefinition.columns)
-            : toEntityColumns(tableDefinition.columns),
-      });
-    }
-
-    bindProviderEntities(boundAdapter);
-
-    builder.table(tableName, boundAdapter.entities[tableName], {
-      columns: ({ col }) =>
-        Object.fromEntries(
-          binding?.kind === "physical"
-            ? Object.entries(binding.columnBindings).map(([columnName, columnBinding]) => {
-                if (isNormalizedSourceColumnBinding(columnBinding)) {
-                  return [
-                    columnName,
-                    {
-                      ...toLensDefinitionFromSource(
-                        columnBinding.definition ?? tableDefinition.columns[columnName] ?? "text",
-                        columnBinding.source,
-                      ),
-                      ...(columnBinding.coerce ? { coerce: columnBinding.coerce } : {}),
-                    },
-                  ] as const;
-                }
-
-                if (columnBinding.kind !== "expr") {
-                  throw new Error(`Unsupported column binding kind for ${tableName}.${columnName}`);
-                }
-
-                const definition =
-                  columnBinding.definition ?? tableDefinition.columns[columnName] ?? "text";
-                const methodName = getCalculatedColumnMethodName(definition);
-                const calcMethod = (
-                  col as unknown as Record<string, (expr: any, options?: any) => unknown>
-                )[methodName];
-                if (typeof calcMethod !== "function") {
-                  throw new Error(
-                    `Unsupported calculated column type for ${tableName}.${columnName}`,
-                  );
-                }
-
-                return [
-                  columnName,
-                  calcMethod(
-                    columnBinding.expr,
-                    getCalculatedColumnOptions(columnBinding, definition),
-                  ),
-                ] as const;
-              })
-            : Object.entries(tableDefinition.columns).map(([columnName, definition]) => [
-                columnName,
-                toLensDefinition(columnName, definition),
-              ]),
-        ) as Record<string, any>,
-      ...(tableDefinition.constraints ? { constraints: tableDefinition.constraints } : {}),
-    });
-  }
-
-  return augmentExecutableSchema(unwrapResult(createExecutableSchema(builder)));
 }
 
 export function createMethodsProvider<TContext>(
@@ -514,7 +218,7 @@ export function createExecutableMethodsSchema<TContext, TSchema extends SchemaDe
     });
   }
 
-  return augmentExecutableSchema(unwrapResult(createExecutableSchema(builder)));
+  return unwrapResult(createExecutableSchema(builder));
 }
 
 function extractMethodsExecutableRel(rel: RelNode):
@@ -890,7 +594,7 @@ async function executePlannedAggregate<TContext>(
   return aggregateArrayRows(scannedRows, request);
 }
 
-export function queryWithMethods<TContext>(input: {
+export async function queryWithMethods<TContext>(input: {
   schema: SchemaDefinition;
   methods: TablePlanningMethodsMap<TContext>;
   context: TContext;
@@ -898,12 +602,14 @@ export function queryWithMethods<TContext>(input: {
   queryGuardrails?: Partial<QueryGuardrails>;
   constraintValidation?: ConstraintValidationOptions;
 }): Promise<QueryRow[]> {
-  return createExecutableMethodsSchema(input.schema, input.methods).query({
-    context: input.context,
-    sql: input.sql,
-    ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),
-    ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
-  });
+  return unwrapResult(
+    await createExecutableMethodsSchema(input.schema, input.methods).query({
+      context: input.context,
+      sql: input.sql,
+      ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),
+      ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
+    }),
+  );
 }
 
 function toPlannedAggregateRequest(request: TableAggregateRequest): PlannedAggregateRequest {
@@ -1037,28 +743,13 @@ export function createMethodsSession<TContext>(input: {
   options?: QuerySessionOptions;
 }) {
   return unwrapResult(
-    createExecutableSchemaSession(
-      createExecutableMethodsSchema(
-        input.schema,
-        input.methods,
-      ) as unknown as ExecutableSchema<TContext>,
-      {
-        context: input.context,
-        sql: input.sql,
-        ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),
-        ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
-        ...(input.options ? { options: input.options } : {}),
-      },
-    ),
-  );
-}
-
-export function createSessionFromExecutableSchema<TContext>(
-  executableSchema: ExecutableSchema<TContext> | TestExecutableSchema<TContext, SchemaDefinition>,
-  input: ExecutableSchemaSessionInput<TContext>,
-) {
-  return unwrapResult(
-    createExecutableSchemaSession(executableSchema as ExecutableSchema<TContext>, input),
+    createExecutableSchemaSession(createExecutableMethodsSchema(input.schema, input.methods), {
+      context: input.context,
+      sql: input.sql,
+      ...(input.queryGuardrails ? { queryGuardrails: input.queryGuardrails } : {}),
+      ...(input.constraintValidation ? { constraintValidation: input.constraintValidation } : {}),
+      ...(input.options ? { options: input.options } : {}),
+    }),
   );
 }
 
@@ -1068,7 +759,7 @@ export type RowsByTable<TSchema extends SchemaDefinition> = {
 
 export interface QueryHarness<TSchema extends SchemaDefinition, TContext> {
   schema: TSchema;
-  executableSchema: ReturnType<typeof createExecutableSchemaFromProviders<TContext, TSchema>>;
+  executableSchema: ExecutableSchema<TContext>;
   runTupl: (sql: string, context: TContext) => Promise<QueryRow[]>;
   runSqlite: (sql: string) => QueryRow[];
   runAgainstBoth: (
@@ -1091,17 +782,17 @@ export function createQueryHarness<
   const controlDb = createControlDatabase(schema, options.rowsByTable);
 
   const providers = options.providers ?? {
-    memory: createMemoryProvider<TContext>(rowsByTable),
+    memory: createMemoryProvider<TContext>(schema, rowsByTable),
   };
-  const executableSchema = createExecutableSchemaFromProviders(schema, providers);
+  const executableSchema = createExecutablePhysicalSchema(schema, providers);
 
   return {
     schema,
     executableSchema,
-    runTupl: (sql, context) => executableSchema.query({ context, sql }),
+    runTupl: async (sql, context) => unwrapResult(await executableSchema.query({ context, sql })),
     runSqlite: (sql) => controlDb.prepare(sql).all() as QueryRow[],
     runAgainstBoth: async (sql, context) => {
-      const actual = await executableSchema.query({ context, sql });
+      const actual = unwrapResult(await executableSchema.query({ context, sql }));
 
       const expected = controlDb.prepare(sql).all() as QueryRow[];
       return { actual, expected };
@@ -1110,6 +801,39 @@ export function createQueryHarness<
       controlDb.close();
     },
   };
+}
+
+function createExecutablePhysicalSchema<TContext>(
+  schema: SchemaDefinition,
+  providers: ProvidersMap<TContext>,
+): ExecutableSchema<TContext> {
+  const builder = createSchemaBuilder<TContext>();
+  const providerNames = Object.keys(providers);
+  const soleProviderName = providerNames.length === 1 ? providerNames[0] : undefined;
+
+  for (const [tableName, table] of Object.entries(schema.tables)) {
+    const providerName = table.provider ?? soleProviderName;
+    if (!providerName) {
+      throw new Error(`Table ${tableName} must name its provider in a multi-provider harness.`);
+    }
+
+    const provider = providers[providerName];
+    if (!provider) {
+      throw new Error(`No provider named ${providerName} was registered for table ${tableName}.`);
+    }
+
+    const entity = provider.entities?.[tableName];
+    if (!entity) {
+      throw new Error(`Provider ${providerName} does not expose an entity named ${tableName}.`);
+    }
+
+    builder.table(tableName, entity, {
+      columns: table.columns,
+      ...(table.constraints ? { constraints: table.constraints } : {}),
+    });
+  }
+
+  return unwrapResult(createExecutableSchema(builder));
 }
 
 export async function withQueryHarness<
@@ -1179,10 +903,21 @@ function normalizeSqliteValue(value: unknown): unknown {
 }
 
 function createMemoryProvider<TContext>(
+  schema: SchemaDefinition,
   rowsByTable: Record<string, QueryRow[]>,
 ): ProviderAdapter<TContext> & LookupManyCapableProviderAdapter<TContext> {
-  return {
+  const adapter = {
     name: "memory",
+    entities: Object.fromEntries(
+      Object.entries(schema.tables).map(([tableName, table]) => [
+        tableName,
+        createDataEntityHandle({
+          entity: tableName,
+          provider: "memory",
+          columns: toEntityColumns(table.columns),
+        }),
+      ]),
+    ),
     canExecute(rel) {
       return (
         extractSimpleRelScanRequest(rel) !== null ||
@@ -1223,13 +958,15 @@ function createMemoryProvider<TContext>(
             op: "in",
             column: request.key,
             values: request.keys,
-          } as ScanFilterClause,
+          },
         ],
       };
 
       return Result.ok(scanRows(rowsByTable[request.table] ?? [], scanRequest));
     },
-  };
+  } satisfies ProviderAdapter<TContext> & LookupManyCapableProviderAdapter<TContext>;
+
+  return bindProviderEntities(adapter);
 }
 
 function scanRows(rows: QueryRow[], request: TableScanRequest): QueryRow[] {

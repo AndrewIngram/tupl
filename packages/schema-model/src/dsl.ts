@@ -8,9 +8,11 @@ export type {
   DslViewDefinition,
   SchemaCalculatedColumnDefinition,
   SchemaColumnLensDefinition,
-  SchemaDslViewRelHelpers,
-  SchemaTypedColumnBuilder,
   SchemaTypedColumnDefinition,
+} from "./contracts/table-definition-contracts";
+export type { SchemaTypedColumnBuilder } from "./contracts/typed-column-builder-contracts";
+export type {
+  SchemaDslViewRelHelpers,
   SchemaViewAggregateMetric,
   SchemaViewAggregateNode,
   SchemaViewEqExpr,
@@ -18,5 +20,7 @@ export type {
   SchemaViewRelNode,
   SchemaViewRelNodeInput,
   SchemaViewScanNode,
-} from "./contracts/dsl-contracts";
+} from "./contracts/schema-view-contracts";
 export type { SchemaColRefToken, SchemaDslTableToken } from "./contracts/schema-contracts";
+
+export type { SchemaDerivedValue, SchemaValueHandle } from "./dsl/derive";

@@ -1,62 +1,78 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vite-plus/test";
 
-import { createExecutableSchemaFromProviders } from "@tupl/test-support/runtime";
+import {
+  bindProviderEntities,
+  createDataEntityHandle,
+  type ProviderAdapter,
+} from "@tupl/provider-kit";
+import { createSchemaBuilder } from "@tupl/schema-model";
 import { buildEntitySchema } from "@tupl/test-support/schema";
-import { prepareRuntimeSchemaResult } from "../runtime/executable-schema";
+import { createExecutableSchema, prepareRuntimeSchemaResult } from "../runtime/executable-schema";
 import { explainInternalResult } from "../runtime/query-runner";
+
+function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) {
+    throw result.error;
+  }
+
+  return result.value;
+}
 
 describe("runtime/explain", () => {
   it("returns staged explain artifacts for translation introspection", async () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          user_id: "text",
-        },
+    const provider = bindProviderEntities({
+      name: "warehouse",
+      entities: {
+        orders: createDataEntityHandle({ entity: "orders", provider: "warehouse" }),
+        users: createDataEntityHandle({ entity: "users", provider: "warehouse" }),
       },
-      users: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-          email: "text",
-        },
+      canExecute() {
+        return true;
       },
-    });
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute() {
-          return true;
-        },
-        async compile(fragment) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: fragment.kind,
-            payload: fragment,
-          });
-        },
-        describeCompiledPlan(plan: { kind: string }) {
-          return {
-            kind: "test_plan",
-            summary: `compiled ${plan.kind}`,
-            operations: [{ kind: "rel", target: "warehouse" }],
-          };
-        },
-        async execute() {
-          return Result.ok([]);
-        },
+      async compile(fragment) {
+        return Result.ok({
+          provider: "warehouse",
+          kind: fragment.kind,
+          payload: fragment,
+        });
+      },
+      describeCompiledPlan(plan: { kind: string }) {
+        return {
+          kind: "test_plan",
+          summary: `compiled ${plan.kind}`,
+          operations: [{ kind: "rel", target: "warehouse" }],
+        };
+      },
+      async execute() {
+        return Result.ok([]);
+      },
+    } satisfies ProviderAdapter<Record<string, never>>);
+    const builder = createSchemaBuilder<Record<string, never>>();
+    builder.table("orders", provider.entities.orders, {
+      columns: {
+        id: "text",
+        user_id: "text",
       },
     });
+    builder.table("users", provider.entities.users, {
+      columns: {
+        id: "text",
+        email: "text",
+      },
+    });
+    const executableSchema = unwrapResult(createExecutableSchema(builder));
 
-    const explained = await executableSchema.explain({
-      context: {},
-      sql: `
-        SELECT o.id, u.email
-        FROM orders o
-        JOIN users u ON o.user_id = u.id
-      `,
-    });
+    const explained = unwrapResult(
+      await executableSchema.explain({
+        context: {},
+        sql: `
+          SELECT o.id, u.email
+          FROM orders o
+          JOIN users u ON o.user_id = u.id
+        `,
+      }),
+    );
 
     expect(explained).toMatchObject({
       sql: "SELECT o.id, u.email FROM orders o JOIN users u ON o.user_id = u.id",
@@ -83,36 +99,39 @@ describe("runtime/explain", () => {
   });
 
   it("marks provider descriptions as unavailable when the adapter omits a describe hook", async () => {
-    const schema = buildEntitySchema({
-      orders: {
-        provider: "warehouse",
-        columns: {
-          id: "text",
-        },
+    const provider = bindProviderEntities({
+      name: "warehouse",
+      entities: {
+        orders: createDataEntityHandle({ entity: "orders", provider: "warehouse" }),
+      },
+      canExecute() {
+        return true;
+      },
+      async compile(fragment) {
+        return Result.ok({
+          provider: "warehouse",
+          kind: fragment.kind,
+          payload: fragment,
+        });
+      },
+      async execute() {
+        return Result.ok([]);
+      },
+    } satisfies ProviderAdapter<Record<string, never>>);
+    const builder = createSchemaBuilder<Record<string, never>>();
+    builder.table("orders", provider.entities.orders, {
+      columns: {
+        id: "text",
       },
     });
-    const executableSchema = createExecutableSchemaFromProviders(schema, {
-      warehouse: {
-        canExecute() {
-          return true;
-        },
-        async compile(fragment) {
-          return Result.ok({
-            provider: "warehouse",
-            kind: fragment.kind,
-            payload: fragment,
-          });
-        },
-        async execute() {
-          return Result.ok([]);
-        },
-      },
-    });
+    const executableSchema = unwrapResult(createExecutableSchema(builder));
 
-    const explained = await executableSchema.explain({
-      context: {},
-      sql: "SELECT id FROM orders",
-    });
+    const explained = unwrapResult(
+      await executableSchema.explain({
+        context: {},
+        sql: "SELECT id FROM orders",
+      }),
+    );
 
     expect(explained.providerPlans).toEqual(
       expect.arrayContaining([

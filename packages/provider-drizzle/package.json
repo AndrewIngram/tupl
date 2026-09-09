@@ -1,6 +1,6 @@
 {
   "name": "@tupl/provider-drizzle",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Drizzle provider for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/provider-drizzle#readme",
   "license": "MIT",
@@ -11,15 +11,13 @@
   },
   "type": "module",
   "sideEffects": false,
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
     ".": {
       "source": "./src/index.ts",
       "types": "./dist/index.d.mts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.mjs"
     }
   },
   "scripts": {

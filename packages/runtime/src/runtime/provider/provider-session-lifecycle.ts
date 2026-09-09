@@ -16,7 +16,11 @@ import {
   resolveSyncProviderCapabilityForRel,
   resolveSyncProviderCapabilityForRelResult,
 } from "./provider-execution";
-import { enforcePlannerNodeLimitResult, resolveGuardrails } from "../policy";
+import {
+  enforcePlannerNodeLimitResult,
+  resolveGuardrails,
+  validateQueryGuardrailsResult,
+} from "../policy";
 
 /**
  * Provider session lifecycle owns the stable one-step plan and initial step state for provider-fragment sessions.
@@ -38,6 +42,7 @@ export function createProviderFragmentPlan(
     steps: [
       {
         id: "remote_fragment_1",
+        relNodeId: fragment.rel.id,
         kind: "remote_fragment",
         dependsOn: [],
         summary: `Execute provider fragment (${providerName})`,
@@ -67,10 +72,12 @@ export function createProviderFragmentPlan(
 
 export function createInitialProviderFragmentState(
   providerName: string,
+  relNodeId: string,
   diagnostics: TuplDiagnostic[],
 ): QueryStepState {
   return {
     id: "remote_fragment_1",
+    relNodeId,
     kind: "remote_fragment",
     status: "ready",
     summary: `Execute provider fragment (${providerName})`,
@@ -84,6 +91,10 @@ export function resolveSessionPreparationResult<TContext>(
 ): BetterResult<PreparedSession<TContext>, TuplError> {
   const resolvedInput = input;
   const guardrails = resolveGuardrails(input.queryGuardrails);
+  const guardrailResult = validateQueryGuardrailsResult(guardrails);
+  if (Result.isError(guardrailResult)) {
+    return guardrailResult;
+  }
   const logicalPlanResult = buildLogicalQueryPlanResult(
     resolvedInput.sql,
     resolvedInput.preparedSchema.schema,

@@ -28,7 +28,10 @@ export async function resolveKnexResult<TContext>(
   options: CreateObjectionProviderOptions<TContext>,
   context: TContext,
 ): Promise<ProviderOperationResult<KnexLike, TuplProviderBindingError>> {
-  const knex = typeof options.knex === "function" ? await options.knex(context) : options.knex;
+  const knex =
+    typeof options.knex === "function" && !("queryBuilder" in options.knex)
+      ? await options.knex(context)
+      : options.knex;
   return validateKnex(knex);
 }
 

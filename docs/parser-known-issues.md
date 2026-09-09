@@ -1,6 +1,6 @@
 # Parser Notes (In-House SQLite Parser)
 
-`tupl` now uses an in-house SQL parser focused on the SQLite read-query subset that `tupl`
+`tupl` uses an in-house SQL parser focused on the SQLite read-query subset that `tupl`
 supports.
 
 This document tracks parser-specific behavior and known gaps so support decisions remain explicit.
@@ -18,14 +18,17 @@ This document tracks parser-specific behavior and known gaps so support decision
 The parser is designed around `tupl`'s supported surface area, not full SQLite syntax.
 Queries outside the supported subset should fail fast with clear errors.
 
-Current examples of intentionally unsupported syntax:
+Supported forms include recursive CTEs, derived tables in `FROM`, correlated
+subqueries in the planner's decorrelatable subset, named `WINDOW` clauses, explicit
+`ROWS` frames, and the value/navigation functions `LAG`, `LEAD`, and `FIRST_VALUE`.
+Parser acceptance does not guarantee that every composition can be planned or
+pushed to a provider.
 
-- recursive CTE execution
-- correlated subqueries
-- subqueries in `FROM`
-- named `WINDOW` clauses/references
-- explicit window frame clauses
-- some advanced value/navigation window functions (for example `FIRST_VALUE`, `LAST_VALUE`, `NTH_VALUE`)
+`RANGE` and `GROUPS` window frames, `LAST_VALUE`, and `NTH_VALUE` remain
+unsupported by the planner/runtime. Writes and multiple statements are rejected.
+See the [SQL roadmap](sql-standards-roadmap.md)
+for runtime coverage and the [provider matrix](provider-capability-matrix.md) for
+pushdown limitations.
 
 ## 2) AST remains planner/executor-oriented
 
@@ -53,6 +56,6 @@ position, but they are not full compiler-style diagnostics.
 
 ## Test Anchors
 
-- `test/parser/sqlite-parser.test.ts`: parser-conformance coverage (shape + rejection behavior)
-- `test/compliance/*-parity.test.ts`: SQLite parity behavior for supported query shapes
-- `test/compliance/standards-gaps.todo.test.ts`: explicit unsupported feature backlog
+- `packages/planner/src/sqlite-parser/__tests__/parser.test.ts`: parser shape and rejection coverage
+- `packages/runtime/src/__tests__/compliance/*-parity.test.ts`: SQLite parity for supported query shapes
+- The standards-gap TODO list currently has no entries; that is not a claim of full SQLite grammar support.

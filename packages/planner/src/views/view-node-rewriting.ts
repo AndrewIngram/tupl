@@ -91,7 +91,7 @@ export function rewriteExpandedViewNode<TContext>(
                 : {}),
             })),
           },
-          aliases: input.aliases,
+          aliases: new Map(),
         });
       });
     }

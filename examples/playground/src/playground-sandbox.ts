@@ -55,6 +55,7 @@ export interface SandboxSessionSnapshot {
   events: QueryStepEvent[];
   result: QueryRow[] | null;
   done: boolean;
+  error: string | null;
   executedOperations: ExecutedProviderOperation[];
 }
 
@@ -477,7 +478,6 @@ export async function createSandboxSession(
       context: runtimeContext,
       sql: compiled.sql,
       options: {
-        maxConcurrency: 4,
         captureRows: "full",
       },
     }),
@@ -538,19 +538,32 @@ export async function runSandboxSessionToCompletion(
   const record = readSessionRecord(sessionId);
   const events: QueryStepEvent[] = [];
 
-  while (true) {
-    const next = await record.session.next();
-    if ("done" in next) {
-      disposeSandboxSession(sessionId);
-      return {
-        plan: record.session.getPlan(),
-        events,
-        result: next.result,
-        done: true,
-        executedOperations: getExecutedProviderOperations(),
-      };
+  try {
+    while (true) {
+      const next = await record.session.next();
+      if ("done" in next) {
+        disposeSandboxSession(sessionId);
+        return {
+          plan: record.session.getPlan(),
+          events,
+          result: next.result,
+          done: true,
+          error: null,
+          executedOperations: getExecutedProviderOperations(),
+        };
+      }
+      events.push(next);
     }
-    events.push(next);
+  } catch (error) {
+    disposeSandboxSession(sessionId);
+    return {
+      plan: record.session.getPlan(),
+      events,
+      result: null,
+      done: true,
+      error: asErrorMessage(error),
+      executedOperations: getExecutedProviderOperations(),
+    };
   }
 }
 
@@ -567,20 +580,34 @@ export async function replaySandboxSession(
   const record = readSessionRecord(bundle.sessionId);
   const events: QueryStepEvent[] = [];
 
-  while (events.length < eventCount) {
-    const next = await record.session.next();
-    if ("done" in next) {
-      disposeSandboxSession(bundle.sessionId);
-      return {
-        sessionId: bundle.sessionId,
-        plan: record.session.getPlan(),
-        events,
-        result: next.result,
-        done: true,
-        executedOperations: getExecutedProviderOperations(),
-      };
+  try {
+    while (events.length < eventCount) {
+      const next = await record.session.next();
+      if ("done" in next) {
+        disposeSandboxSession(bundle.sessionId);
+        return {
+          sessionId: bundle.sessionId,
+          plan: record.session.getPlan(),
+          events,
+          result: next.result,
+          done: true,
+          error: null,
+          executedOperations: getExecutedProviderOperations(),
+        };
+      }
+      events.push(next);
     }
-    events.push(next);
+  } catch (error) {
+    disposeSandboxSession(bundle.sessionId);
+    return {
+      sessionId: bundle.sessionId,
+      plan: record.session.getPlan(),
+      events,
+      result: null,
+      done: true,
+      error: asErrorMessage(error),
+      executedOperations: getExecutedProviderOperations(),
+    };
   }
 
   return {
@@ -589,6 +616,7 @@ export async function replaySandboxSession(
     events,
     result: null,
     done: false,
+    error: null,
     executedOperations: getExecutedProviderOperations(),
   };
 }

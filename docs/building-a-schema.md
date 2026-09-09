@@ -141,10 +141,14 @@ builder.view(
   },
 );
 
-const executableSchema = createExecutableSchema(builder);
+const executableSchema = createExecutableSchema(builder).unwrap();
 ```
 
-`createExecutableSchema(...)` now accepts either a built schema object or a `SchemaBuilder`. For the DSL flow, `createSchemaBuilder(...)` plus `createExecutableSchema(builder)` is the intended pattern. That step also prepares the runtime artifact once by finalizing the schema, materializing linked enums, and validating provider bindings up front instead of on each query.
+`createExecutableSchema(...)` accepts either a built schema object or a `SchemaBuilder`
+and returns a `Result`. The example unwraps it during setup; applications can
+instead handle the error explicitly. Query methods return a promise of a `Result`
+containing rows. Schema creation finalizes the schema, materializes linked enums,
+and validates provider bindings once, before queries run.
 
 When a view only needs a provider entity as a private source, `scan(...)` can read the `DataEntityHandle` directly. You only need `table(...)` when you want that source to be part of the public facade.
 
@@ -199,4 +203,100 @@ If your database handle is already static for the lifetime of the provider, you 
 - provider `tables` keys match the entities you bind in `table("logicalName", provider.entities.someTable, ...)`
 - scoped columns exist on physical tables
 - facade FK references target facade table/column names
-- any unsupported query shape is either pushed down partially or handled by fallback/local execution
+- supported SQL can run across provider fragments and local operators; syntax or
+  relational shapes the planner cannot represent return an error
+
+## Derived columns in TypeScript
+
+Use `derive` inside a table or view's `columns` callback when an existing TypeScript
+function computes a value. Give it named column dependencies and a synchronous
+callback, then expose its result with the usual column builders.
+
+```ts
+const documents = builder.table("documents", provider.entities.documents, {
+  columns: ({ col, derive }) => {
+    const body = col.string("body", { nullable: false });
+    const parsed = derive({ body }, ({ body }) => parseDocument(body));
+    const rendered = derive({ parsed }, ({ parsed }) => renderDocument(parsed));
+    return {
+      id: col.id("id"),
+      status: col.string("status"),
+      markdown: col.string(
+        derive({ rendered }, ({ rendered }) => rendered.markdown),
+        { nullable: false },
+      ),
+      plainText: col.string(
+        derive({ rendered }, ({ rendered }) => rendered.plainText),
+        { nullable: false },
+      ),
+    };
+  },
+});
+```
+
+Here `parseDocument` and `renderDocument` are application functions. Only returned
+entries become public columns. `body`, `parsed`, and `rendered` remain private.
+Both outputs share parsing and rendering once per row occurrence in that stage of
+the query. A later query computes fresh values. Intermediate values can be objects
+or Maps; public values must satisfy the declared SQL type and nullability.
+
+A dependency can be a source column definition, an expression-based calculated
+column, or another derive result from the same `columns` declaration. In views,
+use qualified definitions such as `col.string(documents, "plainText")` as inputs.
+Keep handles within their declaration; reference another table through `col`.
+JSON inputs without authoritative provider read types are `unknown`: validate
+before reading their properties. Nullable inputs reach the callback as `null`.
+
+```sql
+-- No parsing, rendering, or body fetch is needed.
+SELECT id FROM documents WHERE status = 'published';
+
+-- When supported by the provider, filtering and pagination happen before rendering.
+SELECT id, markdown, plainText
+FROM documents WHERE status = 'published' ORDER BY id LIMIT 20;
+
+-- The native status restriction reduces candidates; text filtering happens locally.
+SELECT id FROM documents
+WHERE status = 'published' AND plainText LIKE '%welcome%' LIMIT 20;
+```
+
+References anywhere in a query matter, including filters, joins, grouping,
+ordering, and windows. `COUNT(*)` does not require unused derived outputs;
+`SELECT *` includes all public derived columns. Existing `expr` calculations can
+still execute in a supporting provider. JavaScript computations execute locally.
+Tupl moves safe native restrictions and projections below that boundary. It does
+not push a limit below a derived filter or remove a join without preserving its
+row multiplicity. Local filtering currently materializes the candidate rows;
+incremental fetching is future work.
+
+Callbacks must be pure, synchronous functions of their declared inputs. Do not
+fetch data, mutate dependencies or shared state, or depend on time, randomness,
+or invocation counts. Unused computations never execute. A computation can also
+be skipped for rows eliminated earlier, so predicate text order does not specify
+callback evaluation or failure order. Thrown errors become tagged execution
+failures; Promise-like results are rejected. Async callbacks are outside the
+initial API contract.
+
+Explain shows local expressions with operation identifiers, their arguments,
+and the provider boundaries without invoking callbacks. Sessions report actual
+computation invocation and input/output row counts. Enriched explain includes SQL
+and bindings for supported first-party SQL fragments; data-dependent lookup
+statements are only known during execution. Sessions retain intermediate metadata,
+not intermediate objects, and capture final rows only when requested.
+
+Materialization limits still apply. Synchronous callbacks cannot be interrupted
+mid-call; execution checks the deadline after each computed expression. Row limits
+do not bound the size of objects a trusted callback allocates.
+
+Wrapping an inferred object result with `col.json(derive(...))` preserves its
+TypeScript shape for subsequent derived dependencies, including qualified view
+references. If column options supply or may supply a `coerce` callback, the JSON
+shape becomes `unknown`: a coercer can replace the object. Narrow that value
+before reading its fields. This also applies to native columns and view references.
+Unvalidated provider JSON remains unknown.
+
+`EXISTS` and `NOT EXISTS` skip derived values used only in the inner SELECT list.
+Inner predicates and operations that affect existence still demand their inputs.
+Explicit CTE column lists, such as `WITH d(documentId, text) AS (...)`, rename the
+query's outputs by position and must contain one unique name per output column.
+SELECT-local aliases in `HAVING` and `ORDER BY` resolve before this renaming.

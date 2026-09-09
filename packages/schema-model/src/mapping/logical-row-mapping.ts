@@ -1,12 +1,13 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { getNormalizedColumnBindings } from "../normalization";
 import { normalizeProviderRowValue } from "./row-coercion";
 import type {
   NormalizedColumnBinding,
   NormalizedPhysicalTableBinding,
   NormalizedSourceColumnBinding,
-  QueryRow,
-  TableDefinition,
-} from "../types";
+} from "../contracts/normalized-contracts";
+import type { QueryRow } from "../contracts/query-contracts";
+import type { TableDefinition } from "../contracts/schema-contracts";
 
 /**
  * Logical row mapping owns logical-column projection against normalized physical bindings.
@@ -33,11 +34,10 @@ export function mapProviderRowsToLogical(
         ? columnBinding.source
         : logical;
       const fallbackDefinition = tableDefinition?.columns[logical];
-      out[logical] = normalizeProviderRowValue(
-        row[source] ?? null,
-        columnBinding,
-        fallbackDefinition,
-        options,
+      setOwnProperty(
+        out,
+        logical,
+        normalizeProviderRowValue(row[source] ?? null, columnBinding, fallbackDefinition, options),
       );
     }
     return out;

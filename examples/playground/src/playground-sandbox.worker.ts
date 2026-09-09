@@ -154,5 +154,3 @@ self.onmessage = (event: MessageEvent<SandboxRpcRequest>) => {
       self.postMessage(response);
     });
 };
-
-export {};

@@ -1,6 +1,7 @@
 import type { RelNode } from "@tupl/foundation";
 import {
-  SqlRelationalOrderTerm,
+  SqlRelationalWithOrderTerm,
+  SqlRelationalMetricOrderTerm,
   SqlRelationalQueryTranslationBackend,
   SqlRelationalSelection,
   UnsupportedSqlRelationalPlanError,
@@ -9,13 +10,17 @@ import {
 import {
   applyWhereClause,
   applyWindowFunction,
-  createJoinSource,
+  createScopedSource,
   resolveQualifiedColumnRef,
   resolveWithBodyColumnRef,
   toRef,
   executeQuery,
 } from "../backend/query-helpers";
 import type { KnexLike, KnexLikeQueryBuilder, ResolvedEntityConfig, ScanBinding } from "../types";
+
+export interface ObjectionTranslatedQuery {
+  builder: KnexLikeQueryBuilder;
+}
 
 /**
  * Objection/Knex query translation owns only Knex-specific query-builder primitives.
@@ -26,12 +31,14 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
   ResolvedEntityConfig<unknown>,
   ScanBinding<unknown>,
   KnexLike,
-  KnexLikeQueryBuilder
+  ObjectionTranslatedQuery
 > = {
   createRootQuery({ runtime, root, context }) {
-    return runtime.queryBuilder().from(createJoinSource(root, context));
+    return {
+      builder: runtime.queryBuilder().from(createScopedSource(root.resolved, context, root.alias)),
+    };
   },
-  applyRegularJoin({ query, join, context }) {
+  applyRegularJoin({ query: { builder: query }, join, context }) {
     const joinMethod =
       join.joinType === "inner"
         ? "innerJoin"
@@ -39,7 +46,7 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
           ? "leftJoin"
           : join.joinType === "right"
             ? "rightJoin"
-            : "fullJoin";
+            : "fullOuterJoin";
 
     const fn = (query as unknown as Record<string, unknown>)[joinMethod];
     if (typeof fn !== "function") {
@@ -48,48 +55,55 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
       );
     }
 
-    const rightSource = createJoinSource(join.right, context);
-    return (fn as (...args: unknown[]) => KnexLikeQueryBuilder).call(
-      query,
-      rightSource,
-      `${join.leftKey.alias}.${join.leftKey.column}`,
-      `${join.rightKey.alias}.${join.rightKey.column}`,
-    );
+    const rightSource = createScopedSource(join.right.resolved, context, join.right.alias);
+    return {
+      builder: (fn as (...args: unknown[]) => KnexLikeQueryBuilder).call(
+        query,
+        rightSource,
+        `${join.leftKey.alias}.${join.leftKey.column}`,
+        `${join.rightKey.alias}.${join.rightKey.column}`,
+      ),
+    };
   },
-  applySemiJoin({ query, leftKey, subquery }) {
-    return query.whereIn(`${leftKey.alias}.${leftKey.column}`, subquery);
+  applySemiJoin({ query: { builder: query }, leftKey, subquery }) {
+    return { builder: query.whereIn(`${leftKey.alias}.${leftKey.column}`, subquery.builder) };
   },
-  applyWhereClause({ query, clause, aliases }) {
-    return applyWhereClause(query, clause, aliases);
+  applyWhereClause({ query: { builder: query }, clause, aliases }) {
+    return { builder: applyWhereClause(query, clause, aliases) };
   },
-  applySelection({ query, selection, aliases }) {
+  applySelection({ query: { builder: query }, selection, aliases }) {
     const next = query.clearSelect?.() ?? query;
     applySelection(next, selection, aliases);
-    return next;
+    return { builder: next };
   },
-  applyGroupBy({ query, groupBy, aliases }) {
-    return query.groupBy(
-      ...groupBy.map((ref) =>
-        resolveQualifiedColumnRef(aliases, {
-          ...toRef(ref.alias ?? ref.table, ref.column),
-        }),
+  applyGroupBy({ query: { builder: query }, groupBy, aliases }) {
+    return {
+      builder: query.groupBy(
+        ...groupBy.map((ref) =>
+          resolveQualifiedColumnRef(aliases, {
+            ...toRef(ref.alias ?? ref.table, ref.column),
+          }),
+        ),
       ),
-    );
+    };
   },
-  applyOrderBy({ query, orderBy, aliases }) {
+  applyOrderBy({ query: { builder: query }, orderBy, aliases }) {
     let next = query;
     for (const term of orderBy) {
-      next = next.orderBy(resolveOrderTerm(term, aliases), term.direction);
+      next =
+        term.kind === "metric"
+          ? applyMetricOrder(next, term, aliases)
+          : next.orderBy(resolveOrderTerm(term, aliases), term.direction);
     }
-    return next;
+    return { builder: next };
   },
-  applyLimit({ query, limit }) {
-    return query.limit(limit);
+  applyLimit({ query: { builder: query }, limit }) {
+    return { builder: query.limit(limit) };
   },
-  applyOffset({ query, offset }) {
-    return query.offset(offset);
+  applyOffset({ query: { builder: query }, offset }) {
+    return { builder: query.offset(offset) };
   },
-  applySetOp({ left, right, wrapper }) {
+  applySetOp({ left: { builder: left }, right: { builder: right }, wrapper }) {
     const methodName =
       wrapper.setOp.op === "union_all"
         ? "unionAll"
@@ -106,7 +120,7 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
       );
     }
 
-    return applySetOp.call(left, [right]) as KnexLikeQueryBuilder;
+    return { builder: applySetOp.call(left, [right]) as KnexLikeQueryBuilder };
   },
   buildWithQuery({ body, ctes, projection, orderBy, runtime }) {
     let query = runtime.queryBuilder();
@@ -119,7 +133,7 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
         );
       }
 
-      query = withFn.call(query, cte.name, cte.query) as KnexLikeQueryBuilder;
+      query = withFn.call(query, cte.name, cte.query.builder) as KnexLikeQueryBuilder;
     }
 
     const scanAlias = body.cteRef.alias ?? body.cteRef.name;
@@ -158,21 +172,11 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
       }
     }
 
-    for (const fn of body.window?.functions ?? []) {
-      query = applyWindowFunction(query, fn, scanAlias);
-    }
-
     query = query.clearSelect?.() ?? query;
 
-    const windowAliases = new Set((body.window?.functions ?? []).map((fn) => fn.as));
     for (const entry of projection) {
       if (entry.kind === "window") {
-        query = query.select({ [entry.output]: entry.window.as });
-        continue;
-      }
-
-      if (!entry.source.alias && !entry.source.table && windowAliases.has(entry.source.column)) {
-        query = query.select({ [entry.output]: entry.source.column });
+        query = applyWindowFunction(query, { ...entry.window, as: entry.output }, scanAlias);
         continue;
       }
 
@@ -186,9 +190,15 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
       query = query.orderBy(source, term.direction);
     }
 
-    return query;
+    return { builder: query };
   },
-  executeQuery({ query }) {
+  describeQuery({ query: { builder } }) {
+    const compiled = builder.toSQL?.();
+    if (!compiled) return undefined;
+    const native = compiled.toNative?.() ?? compiled;
+    return { sql: native.sql, bindings: native.bindings ?? [] };
+  },
+  executeQuery({ query: { builder: query } }) {
     return executeQuery(query);
   },
 };
@@ -274,7 +284,7 @@ function applyMetricSelection<TContext>(
 }
 
 function resolveOrderTerm<TContext>(
-  term: SqlRelationalOrderTerm,
+  term: SqlRelationalWithOrderTerm,
   aliases: Map<string, ScanBinding<TContext>>,
 ): string {
   if (term.kind === "qualified") {
@@ -284,4 +294,46 @@ function resolveOrderTerm<TContext>(
   }
 
   return term.column;
+}
+
+function applyMetricOrder<TContext>(
+  query: KnexLikeQueryBuilder,
+  term: SqlRelationalMetricOrderTerm,
+  aliases: Map<string, ScanBinding<TContext>>,
+) {
+  if (!query.orderByRaw) {
+    throw new UnsupportedSqlRelationalPlanError(
+      "Knex query builder does not support aggregate ORDER BY expressions.",
+    );
+  }
+  const direction = term.direction === "asc" ? "asc" : "desc";
+  const metric = term.metric;
+  if (metric.fn === "count" && !metric.column) {
+    return query.orderByRaw(`count(*) ${direction}`);
+  }
+  if (!metric.column) {
+    throw new UnsupportedSqlRelationalPlanError(`Aggregate ${metric.fn} requires a column.`);
+  }
+  const source = resolveQualifiedColumnRef(
+    aliases,
+    toRef(metric.column.alias ?? metric.column.table, metric.column.column),
+  );
+  switch (metric.fn) {
+    case "count":
+      return query.orderByRaw(`count(${metric.distinct ? "distinct " : ""}??) ${direction}`, [
+        source,
+      ]);
+    case "sum":
+      return query.orderByRaw(`sum(${metric.distinct ? "distinct " : ""}??) ${direction}`, [
+        source,
+      ]);
+    case "avg":
+      return query.orderByRaw(`avg(${metric.distinct ? "distinct " : ""}??) ${direction}`, [
+        source,
+      ]);
+    case "min":
+      return query.orderByRaw(`min(??) ${direction}`, [source]);
+    case "max":
+      return query.orderByRaw(`max(??) ${direction}`, [source]);
+  }
 }

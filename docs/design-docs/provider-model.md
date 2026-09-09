@@ -47,3 +47,39 @@ Compiled plans are provider-specific payloads. `tupl` does not assume SQL text i
   - one nested `queryBackend` for backend-specific query translation
   - optional `advanced` overrides only for real backend exceptions
 - `createRelationalProviderAdapter(...)` remains the lower-level escape hatch for unusual adapters.
+
+## Mandatory entity scope
+
+A provider's `scope` or `base` callback restricts the entity's rows for the current execution context. Apply it to every source before joins, aggregation, set operations, CTEs, windows, sorting, and pagination. Lookup paths must apply the same restrictions. Resolve callbacks at execution time, including when a compiled plan is reused with another context, and propagate callback failures.
+
+Drizzle and Kysely use scoped derived tables for relational reads. Objection uses its scoped base queries as derived sources. Applying mandatory scope as a final `WHERE` predicate on an outer join is incorrect: it removes unmatched rows instead of joining the restricted inputs. Unscoped sources can use their physical tables directly.
+
+Query translation hooks may be awaited. Adapters with thenable query builders must carry those builders inside a non-thenable object throughout translation, including set-operation branches and CTEs. Objection uses `{ builder }`; only `executeQuery` consumes the thenable.
+
+The database-backed operation matrix in `test/__tests__/provider-scope.test.ts` checks these contracts against SQLite for all three SQL providers. Redis shares context-aware key construction and decoding between its keyed scan and lookup paths.
+
+## Containment assurance
+
+The result invariant is `query(scoped tables)`: user predicates can restrict the authorized inputs but cannot redefine them. Each SQL provider shares one physical-source constructor between relational reads and lookup reads. Scope predicates live inside derived sources, including on lookup paths; user predicates apply outside. This does not require materialized CTEs. Scope callbacks and provider implementations remain trusted application code.
+
+Public SQL is validated against the declared schema before execution. Validation traverses expression subqueries as well as ordinary relational children, and column membership uses own properties. Physical table names and undeclared columns must not reach backend execution through aliases, nested expressions, or prototype properties.
+
+`test/__tests__/query-containment.test.ts` exercises Drizzle, Kysely, and Objection against SQLite and PGlite, with normal pushdown and scan-only fallback. Its reference databases are populated independently with only authorized rows and declared columns. Generated Boolean expression trees are rendered into scans, aggregates, CTEs, EXISTS subqueries, unions, and windows. Each generated query runs before and after changing hidden rows and hidden fields, and both results must match the reference. Fixed cases also cover joins, self-joins, set operations, pagination, null semantics, scope errors, and rejection before backend dispatch. Redis's keyed reads are covered separately in `test/__tests__/redis-containment.test.ts`.
+
+Provider capability overrides are authoritative: an explicit unsupported result must not fall through to generic SQL compilation. Fallback execution must retain the same scoped inputs and SQL three-valued Boolean semantics. Scan translation must honor the requested output names so fallback mapping does not turn qualified values into nulls.
+
+These tests establish evidence for result containment over the covered grammar; they are not a proof for arbitrary SQL. Unsupported syntax is rejected. Error-message and timing noninterference, multi-connection PostgreSQL behavior, and correctness of application-supplied scope callbacks are outside this suite. PGlite exercises PostgreSQL SQL semantics through its Drizzle, Kysely, and Knex adapters; it does not replace production-server concurrency or network-driver testing.
+
+## Computed facade values
+
+A `local` expression is a planner-enforced ownership barrier for application
+TypeScript computations. Providers see only supported native fragments below it.
+Internal entity handles can describe private declared dependencies without adding
+public schema columns. Resolve their attached provider consistently for capability
+analysis, scans, explain, and lookups; mandatory entity scopes still apply.
+
+First-party Drizzle, Kysely, and Objection adapters describe supported compiled
+fragments with generated SQL and ordered bindings using their ordinary scoped
+query construction. Description does not execute a query. Basic explain remains
+compilation-free; enriched descriptions are planned statements, not evidence of
+execution or the eventual bindings of data-dependent lookups.

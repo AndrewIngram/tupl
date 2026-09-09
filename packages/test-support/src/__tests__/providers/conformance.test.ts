@@ -316,6 +316,9 @@ function createMockObjectionKnex(rowsByJoin: Map<string, QueryRow[]>): KnexLike 
       where() {
         return builder;
       },
+      whereRaw() {
+        return builder;
+      },
       whereIn() {
         return builder;
       },

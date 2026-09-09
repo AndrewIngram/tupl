@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { isRelProjectColumnMapping, type RelExpr, type RelNode } from "@tupl/foundation";
 import {
   UnsupportedSqlRelationalPlanError,
@@ -80,8 +81,7 @@ export function resolveDrizzleRelCompileStrategy(
     canCompileSetOp: (current) =>
       canCompileSetOpRel(
         current,
-        (branch) =>
-          canCompileBasicRel(branch, (table) => !!entityConfigs[table]) ? "basic" : null,
+        (branch) => resolveDrizzleRelCompileStrategy(branch, entityConfigs),
         requireColumnProjectMapping,
       ),
     canCompileWith: (current) =>
@@ -110,8 +110,18 @@ export function buildSingleQueryPlan<TContext>(
   rel: RelNode,
   entityConfigs: Record<string, ResolvedEntityConfig<TContext>>,
 ): SingleQueryPlan<TContext> {
+  // Drizzle's row decoder assigns object keys, so this public name must be projected locally.
+  if (rel.output.some((column) => column.name === "__proto__")) {
+    throw new UnsupportedSingleQueryPlanError("This output name requires local row projection.");
+  }
   const pipeline = extractRelPipeline(rel);
   const joinPlan = buildJoinPlan(pipeline.base, entityConfigs);
+
+  // Capability discovery must validate the same expression grammar as execution.
+  for (const mapping of pipeline.project?.columns ?? []) {
+    if (!isRelProjectColumnMapping(mapping))
+      buildSqlExpressionFromRelExpr(mapping.expr, joinPlan.aliases);
+  }
 
   return {
     joinPlan,
@@ -301,6 +311,14 @@ function createProjectedScanBinding<TContext>(
   const columns: Record<string, AnyColumn | SQL> = {};
 
   for (const rawMapping of project.columns) {
+    const output = rawMapping.output.startsWith(`${base.alias}.`)
+      ? rawMapping.output.slice(base.alias.length + 1)
+      : rawMapping.output;
+    if (output.includes(".")) {
+      throw new UnsupportedSingleQueryPlanError(
+        "Qualified projected join outputs require local execution.",
+      );
+    }
     if (isRelProjectColumnMapping(rawMapping)) {
       if (rawMapping.source.alias && rawMapping.source.alias !== base.alias) {
         throw new UnsupportedSingleQueryPlanError(
@@ -309,13 +327,13 @@ function createProjectedScanBinding<TContext>(
       }
     }
 
-    columns[rawMapping.output] = resolveProjectedSqlExpression(rawMapping, aliases, true);
+    setOwnProperty(columns, output, resolveProjectedSqlExpression(rawMapping, aliases, true));
   }
 
   return {
     ...base,
     columns,
-    outputColumns: project.columns.map((column) => column.output),
+    outputColumns: Object.keys(columns),
   };
 }
 
@@ -347,6 +365,8 @@ export function buildSqlExpressionFromRelExpr<TContext>(
         aliases,
         toAliasColumnRef(expr.ref.alias ?? expr.ref.table, expr.ref.column),
       );
+    case "local":
+      throw new Error("Local computations cannot be translated to SQL.");
     case "function": {
       const args = expr.args.map((arg) => buildSqlExpressionFromRelExpr(arg, aliases));
       switch (expr.name) {

@@ -115,10 +115,10 @@ export function mapRelExprRefs(expr: RelExpr, aliases: Map<string, ViewAliasColu
         kind: "column",
         ref: resolveMappedColumnRef(expr.ref, aliases),
       };
+    case "local":
     case "function":
       return {
-        kind: "function",
-        name: expr.name,
+        ...expr,
         args: expr.args.map((arg) => mapRelExprRefs(arg, aliases)),
       };
     case "subquery":

@@ -592,7 +592,7 @@ export function App(): React.JSX.Element {
     return firstOrg ? (usersByOrg.get(firstOrg) ?? []) : [];
   }, [orgId, orgIdOptions, usersByOrg]);
 
-  const currentStepId = events.length > 0 ? (events[events.length - 1]?.id ?? null) : null;
+  const currentStepId = [...events].reverse().find((event) => event.stepId)?.stepId ?? null;
 
   const statesById = useMemo(() => {
     const map: Record<string, QueryStepState | undefined> = {};
@@ -918,6 +918,7 @@ export function App(): React.JSX.Element {
         setEvents(snapshot.events);
         setResultRows(snapshot.result);
         setExecutedOperations(snapshot.executedOperations);
+        setRuntimeError(snapshot.error);
         setSessionTick((tick) => tick + 1);
       })
       .catch((error: unknown) => {
@@ -2630,7 +2631,10 @@ export function App(): React.JSX.Element {
                                           <div>
                                             Route used:{" "}
                                             <span className="font-medium text-slate-900">
-                                              {selectedStepState?.routeUsed ?? "pending"}
+                                              {selectedStepState &&
+                                              selectedStepState.status !== "ready"
+                                                ? selectedStepState.routeUsed
+                                                : "pending"}
                                             </span>
                                           </div>
                                           {selectedStepState?.notes &&
@@ -2657,25 +2661,26 @@ export function App(): React.JSX.Element {
                                           <div>Status: {selectedStepState?.status ?? "ready"}</div>
                                           <div>
                                             Execution index:{" "}
-                                            {selectedStepState?.executionIndex != null
+                                            {selectedStepState?.status === "done" ||
+                                            selectedStepState?.status === "failed"
                                               ? selectedStepState.executionIndex
                                               : "pending"}
                                           </div>
-                                          {selectedStepState?.durationMs != null ? (
+                                          {selectedStepState?.status === "done" ||
+                                          selectedStepState?.status === "failed" ? (
                                             <div>Duration: {selectedStepState.durationMs}ms</div>
                                           ) : null}
-                                          {selectedStepState?.inputRowCount != null ? (
+                                          {selectedStepState?.status === "done" &&
+                                          selectedStepState.inputRowCount != null ? (
                                             <div>Input rows: {selectedStepState.inputRowCount}</div>
                                           ) : null}
-                                          {selectedStepState?.outputRowCount != null ? (
+                                          {selectedStepState?.status === "done" ? (
                                             <div>
                                               Output rows: {selectedStepState.outputRowCount}
                                             </div>
-                                          ) : selectedStepState?.rowCount != null ? (
-                                            <div>Output rows: {selectedStepState.rowCount}</div>
                                           ) : null}
                                         </div>
-                                        {selectedStepState?.error ? (
+                                        {selectedStepState?.status === "failed" ? (
                                           <Alert variant="destructive">
                                             <AlertTitle>Step error</AlertTitle>
                                             <AlertDescription>
@@ -2702,7 +2707,8 @@ export function App(): React.JSX.Element {
                                         </div>
                                       </StepSection>
 
-                                      {selectedStepState?.rows ? (
+                                      {selectedStepState?.status === "done" &&
+                                      selectedStepState.rows ? (
                                         <StepSection title="Data preview" defaultOpen={false}>
                                           <p className="text-xs text-slate-500">
                                             Sample output rows emitted by this step after execution.

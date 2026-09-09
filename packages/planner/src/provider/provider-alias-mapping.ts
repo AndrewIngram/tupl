@@ -79,7 +79,7 @@ export function mapColumnRefForAlias(
     }
     return {
       ...ref,
-      column: mapping[ref.column] ?? ref.column,
+      column: Object.hasOwn(mapping, ref.column) ? mapping[ref.column]! : ref.column,
     };
   }
 
@@ -98,13 +98,13 @@ export function mapColumnNameForAlias(column: string, aliasToSource: AliasToSour
     if (!mapping) {
       return column;
     }
-    const mapped = mapping[name] ?? name;
+    const mapped = Object.hasOwn(mapping, name) ? mapping[name]! : name;
     return `${alias}.${mapped}`;
   }
 
   let mappedColumn: string | null = null;
   for (const mapping of aliasToSource.values()) {
-    if (!(column in mapping)) {
+    if (!Object.hasOwn(mapping, column)) {
       continue;
     }
     const candidate = mapping[column] ?? column;
@@ -129,10 +129,10 @@ export function mapRelExprRefsForAliasSource(
         kind: "column",
         ref: mapColumnRefForAlias(expr.ref, aliasToSource),
       };
+    case "local":
     case "function":
       return {
-        kind: "function",
-        name: expr.name,
+        ...expr,
         args: expr.args.map((arg) => mapRelExprRefsForAliasSource(arg, aliasToSource)),
       };
     case "subquery":

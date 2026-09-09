@@ -1,6 +1,6 @@
 {
   "name": "@tupl/runtime",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Query execution, guardrails, and sessions for tupl",
   "homepage": "https://github.com/AndrewIngram/tupl/tree/main/packages/runtime#readme",
   "license": "MIT",
@@ -9,15 +9,30 @@
     "url": "git+https://github.com/AndrewIngram/tupl.git",
     "directory": "packages/runtime"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "type": "module",
   "sideEffects": false,
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "exports": {
-    ".": "./src/index.ts",
-    "./executor": "./src/runtime/executor.ts",
-    "./session": "./src/runtime/session/index.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./executor": {
+      "source": "./src/runtime/executor.ts",
+      "types": "./dist/executor.d.mts",
+      "import": "./dist/executor.mjs"
+    },
+    "./session": {
+      "source": "./src/runtime/session/index.ts",
+      "types": "./dist/session.d.mts",
+      "import": "./dist/session.mjs"
+    }
   },
   "publishConfig": {
     "access": "public"
@@ -25,7 +40,8 @@
   "scripts": {
     "build": "vp pack",
     "test": "vp test run",
-    "typecheck": "tsgo --noEmit -p tsconfig.json"
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@tupl/foundation": "workspace:*",

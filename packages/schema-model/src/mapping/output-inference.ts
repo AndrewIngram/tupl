@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import type { RelNode } from "@tupl/foundation";
 
 import { inferAggregateMetricDefinition, inferRelExprDefinition } from "./rel-expr-definition";
@@ -8,7 +9,7 @@ import {
   buildRelOutputCoercion,
   resolveRelRefOutputDefinition,
 } from "./output-definition-utils";
-import type { SchemaDefinition, TableColumnDefinition } from "../types";
+import type { SchemaDefinition, TableColumnDefinition } from "../contracts/schema-contracts";
 
 /**
  * Output inference owns column-definition inference for relational output trees.
@@ -70,7 +71,7 @@ export function inferRelOutputDefinitions(
         if (!groupRef || !output) {
           continue;
         }
-        out[output.name] = resolveRelRefOutputDefinition(inputDefinitions, groupRef);
+        setOwnProperty(out, output.name, resolveRelRefOutputDefinition(inputDefinitions, groupRef));
       }
 
       for (let index = 0; index < rel.metrics.length; index += 1) {
@@ -79,7 +80,7 @@ export function inferRelOutputDefinitions(
         if (!metric || !output) {
           continue;
         }
-        out[output.name] = inferAggregateMetricDefinition(metric, inputDefinitions);
+        setOwnProperty(out, output.name, inferAggregateMetricDefinition(metric, inputDefinitions));
       }
 
       return out;
@@ -89,7 +90,7 @@ export function inferRelOutputDefinitions(
         ...inferRelOutputDefinitions(rel.input, schema, cteDefinitions),
       };
       for (const fn of rel.functions) {
-        out[fn.as] = buildInferredColumnDefinition("integer", false);
+        setOwnProperty(out, fn.as, buildInferredColumnDefinition("integer", false));
       }
       return out;
     }
@@ -104,9 +105,12 @@ export function inferRelOutputDefinitions(
         if (!output) {
           continue;
         }
-        out[output.name] =
+        setOwnProperty(
+          out,
+          output.name,
           (leftOutput && leftDefinitions[leftOutput.name]) ||
-          (rightOutput && rightDefinitions[rightOutput.name]);
+            (rightOutput && rightDefinitions[rightOutput.name]),
+        );
       }
       return out;
     }

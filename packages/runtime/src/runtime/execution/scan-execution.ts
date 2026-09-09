@@ -3,10 +3,9 @@ import { Result } from "better-result";
 import { validateTableConstraintRows } from "../constraints";
 import { TuplExecutionError } from "@tupl/foundation";
 import {
-  getDataEntityProvider,
+  resolveRelProviderAdapter,
   normalizeCapability,
   unwrapProviderOperationResult,
-  type ProviderAdapter,
 } from "@tupl/provider-kit";
 import { type QueryRow, type ScanFilterClause, type TableScanRequest } from "@tupl/schema-model";
 import { mapProviderRowsToLogical } from "@tupl/schema-model/mapping";
@@ -25,6 +24,7 @@ import {
   type RelExecutionContext,
 } from "./local-execution";
 import { prefixRow, scanLocalRows } from "./row-ops";
+import { enforceMaterializationLimitResult } from "../policy";
 
 /**
  * Scan execution owns provider-backed physical scans and explicit reads from materialized CTEs.
@@ -42,11 +42,7 @@ export async function executeScanResult<TContext>(
     return providerNameResult;
   }
   const providerName = providerNameResult.value;
-  const provider =
-    context.providers[providerName] ??
-    (scan.entity
-      ? (getDataEntityProvider(scan.entity) as ProviderAdapter<TContext> | undefined)
-      : undefined);
+  const provider = resolveRelProviderAdapter(scan, providerName, context.providers);
   if (!provider) {
     return Result.err(
       new TuplExecutionError({
@@ -87,6 +83,7 @@ export async function executeScanResult<TContext>(
     ...scan,
     table: request.table,
     select: request.select,
+    output: request.select.map((name) => ({ name })),
     ...(request.where ? { where: request.where } : {}),
     ...(request.orderBy ? { orderBy: request.orderBy } : {}),
     ...(request.limit != null ? { limit: request.limit } : {}),
@@ -126,6 +123,13 @@ export async function executeScanResult<TContext>(
   );
   if (Result.isError(rowsResult)) {
     return rowsResult;
+  }
+  const providerRowsLimitResult = enforceMaterializationLimitResult(
+    rowsResult.value,
+    context.guardrails,
+  );
+  if (Result.isError(providerRowsLimitResult)) {
+    return providerRowsLimitResult;
   }
   const projectedResult = tryExecutionStep("map provider rows to logical rows", () =>
     mapProviderRowsToLogical(

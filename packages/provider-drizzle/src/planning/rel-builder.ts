@@ -1,3 +1,5 @@
+import { setOwnProperty } from "@tupl/foundation";
+import { createScopedSource } from "../backend/scoped-source";
 import { asc, desc, eq, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import type { RelNode } from "@tupl/foundation";
 import type { ScanFilterClause } from "@tupl/provider-kit";
@@ -46,7 +48,12 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
   DrizzleQueryExecutor,
   DrizzleTranslatedQuery
 > = {
-  createRootQuery({ runtime, plan, selection }) {
+  async createRootQuery({ runtime, plan, selection, context }) {
+    const source = createScopedSource(
+      plan.joinPlan.root.sourceTable,
+      plan.joinPlan.root.scanColumns,
+      await plan.joinPlan.root.tableConfig.scope?.(context),
+    );
     const preferDistinctSelection =
       !!plan.pipeline.aggregate &&
       plan.pipeline.aggregate.metrics.length === 0 &&
@@ -67,12 +74,17 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
 
     return {
       builder: selectFn(buildSelectionRecord(selection, plan.joinPlan.aliases)).from(
-        plan.joinPlan.root.sourceTable,
+        source,
       ) as DrizzleExecutableBuilder,
       whereClauses: [],
     };
   },
-  applyRegularJoin({ query, join, aliases }) {
+  async applyRegularJoin({ query, join, aliases, context }) {
+    const source = createScopedSource(
+      join.right.sourceTable,
+      join.right.scanColumns,
+      await join.right.tableConfig.scope?.(context),
+    );
     const joinable = query.builder as DrizzleExecutableBuilder & {
       innerJoin?: (table: object, on: SQL) => unknown;
       leftJoin?: (table: object, on: SQL) => unknown;
@@ -92,12 +104,12 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
     return {
       ...query,
       builder: (join.joinType === "inner"
-        ? joinable.innerJoin!(join.right.sourceTable, onClause)
+        ? joinable.innerJoin!(source, onClause)
         : join.joinType === "left"
-          ? joinable.leftJoin!(join.right.sourceTable, onClause)
+          ? joinable.leftJoin!(source, onClause)
           : join.joinType === "right"
-            ? joinable.rightJoin!(join.right.sourceTable, onClause)
-            : joinable.fullJoin!(join.right.sourceTable, onClause)) as DrizzleExecutableBuilder,
+            ? joinable.rightJoin!(source, onClause)
+            : joinable.fullJoin!(source, onClause)) as DrizzleExecutableBuilder,
     };
   },
   applySemiJoin({ query, leftKey, subquery, aliases }) {
@@ -110,13 +122,13 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
       ],
     };
   },
-  applyWhereClause({ query, clause, plan }) {
+  applyWhereClause({ query, clause, plan, inputScope }) {
     const singleQueryPlan = plan as SingleQueryPlan<unknown>;
     return {
       ...query,
       whereClauses: [
         ...query.whereClauses,
-        toSqlConditionFromRelFilterClause(clause, singleQueryPlan),
+        toSqlConditionFromRelFilterClause(clause, singleQueryPlan, inputScope),
       ],
     };
   },
@@ -226,7 +238,9 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
     const cteBindings = new Map<string, unknown>();
     const cteRefs: unknown[] = [];
     for (const cte of ctes) {
-      const cteRef = dbWithCtes.$with(cte.name).as(ensureWhereApplied(cte.query).builder);
+      const cteRef = dbWithCtes
+        .$with(escapeIdentifier(cte.name))
+        .as(ensureWhereApplied(cte.query).builder);
       cteBindings.set(cte.name, cteRef);
       cteRefs.push(cteRef);
     }
@@ -305,8 +319,8 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
           term.kind === "qualified"
             ? resolveWithBodySourceColumn(source as Record<string, unknown>, term.source, scanAlias)
             : windowExpressions.has(term.column)
-              ? sql`${sql.identifier(term.column)}`
-              : sql`${sql.identifier(term.column)}`;
+              ? sql`${sql.identifier(escapeIdentifier(term.column))}`
+              : sql`${sql.identifier(escapeIdentifier(term.column))}`;
         return term.direction === "asc" ? asc(sourceColumn) : desc(sourceColumn);
       });
       builder = builder.orderBy(...orderByClauses) as DrizzleExecutableBuilder;
@@ -316,6 +330,10 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
       builder,
       whereClauses: [],
     };
+  },
+  describeQuery({ query }) {
+    const compiled = ensureWhereApplied(query).builder.toSQL?.();
+    return compiled ? { sql: compiled.sql, bindings: compiled.params } : undefined;
   },
   async executeQuery({ query, runtime }) {
     return executeDrizzleQueryBuilder(ensureWhereApplied(query).builder, runtime);
@@ -349,17 +367,35 @@ function buildSelectionRecord<TContext>(
 
   for (const entry of selection) {
     switch (entry.kind) {
-      case "column":
-        out[entry.output] = resolveColumnRefFromAliasMap(
+      case "column": {
+        const source = resolveColumnRefFromAliasMap(
           aliases,
           toAliasColumnRef(entry.source.alias ?? entry.source.table, entry.source.column),
         );
+        setOwnProperty(
+          out,
+          entry.output,
+          entry.output === entry.source.column
+            ? source
+            : sql`${source}`.as(escapeIdentifier(entry.output)),
+        );
         break;
+      }
       case "metric":
-        out[entry.output] = buildAggregateMetricSql(entry.metric, aliases);
+        setOwnProperty(
+          out,
+          entry.output,
+          buildAggregateMetricSql(entry.metric, aliases).as(escapeIdentifier(entry.output)),
+        );
         break;
       case "expr":
-        out[entry.output] = buildSqlExpressionFromRelExpr(entry.expr, aliases);
+        setOwnProperty(
+          out,
+          entry.output,
+          sql`${buildSqlExpressionFromRelExpr(entry.expr, aliases)}`.as(
+            escapeIdentifier(entry.output),
+          ),
+        );
         break;
     }
   }
@@ -377,17 +413,24 @@ function buildWithSelectionRecord(
 
   for (const entry of projection) {
     if (entry.kind === "window") {
-      selection[entry.output] =
-        windowExpressions.get(entry.window.as) ?? windowExpressions.get(entry.output);
+      setOwnProperty(
+        selection,
+        entry.output,
+        windowExpressions.get(entry.window.as) ?? windowExpressions.get(entry.output),
+      );
       continue;
     }
 
     if (windowExpressions.has(entry.source.column)) {
-      selection[entry.output] = windowExpressions.get(entry.source.column)!;
+      setOwnProperty(selection, entry.output, windowExpressions.get(entry.source.column)!);
       continue;
     }
 
-    selection[entry.output] = resolveWithBodySourceColumn(source, entry.source, scanAlias);
+    setOwnProperty(
+      selection,
+      entry.output,
+      resolveWithBodySourceColumn(source, entry.source, scanAlias),
+    );
   }
 
   return selection;
@@ -398,6 +441,7 @@ function resolveOrderSource<TContext>(
   plan: SingleQueryPlan<TContext> | object,
   aliases: Map<string, ScanBinding<TContext>>,
 ): AnyColumn | SQL {
+  if (term.kind === "metric") return buildAggregateMetricSql(term.metric, aliases);
   if (term.kind === "qualified") {
     const alias = term.source.alias ?? term.source.table;
     if (!alias) {
@@ -412,7 +456,7 @@ function resolveOrderSource<TContext>(
   }
 
   if (!("pipeline" in plan)) {
-    return sql`${sql.identifier(term.column)}`;
+    return sql`${sql.identifier(escapeIdentifier(term.column))}`;
   }
 
   if (!plan.pipeline.aggregate) {
@@ -420,7 +464,7 @@ function resolveOrderSource<TContext>(
     if (projected) {
       return projected;
     }
-    return sql`${sql.identifier(term.column)}`;
+    return sql`${sql.identifier(escapeIdentifier(term.column))}`;
   }
 
   const metric = plan.pipeline.aggregate.metrics.find((entry) => entry.as === term.column);
@@ -439,7 +483,7 @@ function resolveOrderSource<TContext>(
     );
   }
 
-  return sql`${sql.identifier(term.column)}`;
+  return sql`${sql.identifier(escapeIdentifier(term.column))}`;
 }
 
 function buildWindowFunctionSql(
@@ -463,7 +507,7 @@ function buildWindowFunctionSql(
   if (orderBy.length > 0) {
     overParts.push(sql`order by ${sql.join(orderBy, sql`, `)}`);
   }
-  return sql`${call} over (${sql.join(overParts, sql` `)})`.as(fn.as);
+  return sql`${call} over (${sql.join(overParts, sql` `)})`.as(escapeIdentifier(fn.as));
 }
 
 function resolveWithBodySourceColumn(
@@ -559,8 +603,9 @@ function resolveProjectedSelectionSource<TContext>(
 function resolveFilterSource<TContext>(
   column: string,
   plan: SingleQueryPlan<TContext>,
+  inputScope: "source" | "projected",
 ): AnyColumn | SQL {
-  if (!plan.pipeline.aggregate) {
+  if (inputScope === "projected" && !plan.pipeline.aggregate) {
     const projected = resolveProjectedSelectionSource(column, plan);
     if (projected) {
       return projected;
@@ -573,8 +618,9 @@ function resolveFilterSource<TContext>(
 function toSqlConditionFromRelFilterClause<TContext>(
   clause: ScanFilterClause,
   plan: SingleQueryPlan<TContext>,
+  inputScope: "source" | "projected",
 ): SQL {
-  const source = resolveFilterSource(clause.column, plan);
+  const source = resolveFilterSource(clause.column, plan, inputScope);
   return toSqlConditionFromSource(clause, source);
 }
 
@@ -614,4 +660,9 @@ function asDrizzleSubquerySql(subquery: unknown): SQL {
     );
   }
   return sql`${subquery as { getSQL: () => SQL }}`;
+}
+
+/** Drizzle's SQLite/PostgreSQL escapeName wraps names without doubling embedded quotes. */
+function escapeIdentifier(name: string) {
+  return name.replaceAll('"', '""');
 }

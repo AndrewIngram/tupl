@@ -9,7 +9,6 @@ import {
   parseSupportedCorrelatedInSubquery,
   parseSupportedCorrelatedScalarAggregateSubquery,
 } from "./subqueries/analysis";
-import { literalFilterToRelExpr } from "./expr/literal-filter-operators";
 import type {
   CorrelatedExistsFilter,
   CorrelatedInSubqueryFilter,
@@ -36,21 +35,6 @@ export function parseWhereFilters(
   }
 
   const parts = flattenConjunctiveWhere(where);
-  if (parts == null) {
-    const residualExpr = lowerSqlAstToRelExpr(where, bindings, aliasToBinding, lowerExprContext);
-    if (!residualExpr) {
-      return null;
-    }
-    return {
-      literals: [],
-      inSubqueries: [],
-      existsSubqueries: [],
-      correlatedInSubqueries: [],
-      correlatedScalarAggregates: [],
-      residualExpr,
-    };
-  }
-
   const literals: LiteralFilter[] = [];
   const inSubqueries: InSubqueryFilter[] = [];
   const existsSubqueries: CorrelatedExistsFilter[] = [];
@@ -59,7 +43,11 @@ export function parseWhereFilters(
   const residualParts: RelExpr[] = [];
   const outerAliases = new Set(bindings.map((binding) => binding.alias));
   for (const part of parts) {
-    const correlatedExists = parseSupportedCorrelatedExistsSubquery(part, outerAliases);
+    const correlatedExists = parseSupportedCorrelatedExistsSubquery(
+      part,
+      outerAliases,
+      lowerExprContext.expandProjection,
+    );
     if (correlatedExists) {
       existsSubqueries.push({
         negated: correlatedExists.negated,

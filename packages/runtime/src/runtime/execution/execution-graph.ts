@@ -48,6 +48,7 @@ export function buildExecutionGraph<TContext>(
         const id = `correlate_${state.steps.length + 1}`;
         state.steps.push({
           id,
+          relNodeId: node.id,
           kind: "projection",
           dependsOn: [leftId, rightId],
           summary: "Correlated subquery rewrite",
@@ -84,6 +85,7 @@ export function buildExecutionGraph<TContext>(
         const id = `repeat_union_${state.steps.length + 1}`;
         state.steps.push({
           id,
+          relNodeId: node.id,
           kind: "projection",
           dependsOn: [seedId, iterativeId],
           summary: `Recursive CTE (${node.cteName})`,

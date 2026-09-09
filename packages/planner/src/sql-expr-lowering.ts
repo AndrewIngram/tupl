@@ -4,24 +4,29 @@ import type { SchemaDefinition } from "@tupl/schema-model";
 
 import type { Binding } from "./planner-types";
 import {
-  collectRelExprRefs,
-  collectTablesFromSelectAst,
-  isCorrelatedSubquery,
-  mapBinaryOperatorToRelFunction,
   parseLimitAndOffset,
   parseLiteral,
+  parsePositiveOrdinalLiteral,
+  tryParseLiteralExpressionList,
+} from "./expr/expr-literals";
+import {
+  collectRelExprRefs,
+  collectTablesFromSelectAst,
+  resolveColumnRef,
+  toRawColumnRef,
+} from "./expr/expr-column-refs";
+import { isCorrelatedSubquery, parseSubqueryAst } from "./subqueries/analysis";
+import {
   parseNamedWindowSpecifications,
   parseWindowFrameClause,
-  parsePositiveOrdinalLiteral,
-  parseSubqueryAst,
   parseWindowOver,
+} from "./windows/window-specifications";
+import {
+  mapBinaryOperatorToRelFunction,
   readWindowFunctionArgs,
   readWindowFunctionName,
-  resolveColumnRef,
   supportsRankWindowArgs,
-  toRawColumnRef,
-  tryParseLiteralExpressionList,
-} from "./sql-expr-utils";
+} from "./expr/expr-functions";
 import {
   lowerBinaryExprToRelExpr,
   lowerColumnRefExpr,
@@ -32,6 +37,7 @@ import { lowerScalarSubqueryExpr } from "./subqueries/expr-subquery-lowering";
 export interface SqlExprLoweringContext {
   schema: SchemaDefinition;
   cteNames: Set<string>;
+  expandProjection: (ast: SelectAst) => SelectAst;
   tryLowerSelect(ast: SelectAst): import("@tupl/foundation").RelNode | null;
 }
 
@@ -84,6 +90,7 @@ export function lowerSqlAstToRelExpr(
         context,
         lowerSqlAstToRelExpr,
       );
+    case "local":
     case "function":
       return lowerFunctionExprToRelExpr(
         expr,

@@ -18,7 +18,7 @@ export type { QueryFallbackPolicy, TuplDiagnostic } from "@tupl/provider-kit";
 export interface QueryGuardrails {
   /** Hard upper bound on the size of the lowered relational tree. */
   maxPlannerNodes: number;
-  /** Hard upper bound on rows materialized by local or remote execution. */
+  /** Positive safe-integer upper bound on each row set materialized by local or remote execution. */
   maxExecutionRows: number;
   /** Maximum lookup keys sent in a single provider batch request. */
   maxLookupKeysPerBatch: number;

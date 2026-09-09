@@ -1,13 +1,15 @@
-import type { PhysicalDialect, SchemaDefinition, SqlScalarType } from "./types";
 import type {
   ColumnDefinition,
   ColumnForeignKeyReference,
   ForeignKeyConstraint,
+  PhysicalDialect,
   PrimaryKeyConstraint,
+  SchemaDefinition,
+  SqlScalarType,
   TableColumnDefinition,
   TableDefinition,
   UniqueConstraint,
-} from "./types";
+} from "./contracts/schema-contracts";
 
 /**
  * Schema definition helpers normalize and resolve table and column metadata without touching

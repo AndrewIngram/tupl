@@ -2,6 +2,8 @@ import { type RelNode } from "@tupl/foundation";
 
 import {
   unwrapSetOpRel,
+  resolveRelationalOrderBy,
+  isProjectionInInput,
   unwrapWithBodyRel,
   type RelationalSetOpWrapper,
   type RelationalSingleQueryPlan,
@@ -25,6 +27,7 @@ import type {
   SqlRelationalSelection,
   SqlRelationalWindowSelection,
   SqlRelationalWithSelection,
+  SqlRelationalWithOrderTerm,
 } from "./types";
 import { UnsupportedSqlRelationalPlanError } from "./types";
 
@@ -259,6 +262,7 @@ async function buildBasicSqlRelationalQuery<
       query = backend.applyWhereClause({
         query,
         clause,
+        inputScope: "source",
         plan,
         aliases: plan.joinPlan.aliases,
         context,
@@ -272,6 +276,9 @@ async function buildBasicSqlRelationalQuery<
       query = backend.applyWhereClause({
         query,
         clause,
+        inputScope: isProjectionInInput(filter.input, plan.pipeline.project)
+          ? "projected"
+          : "source",
         plan,
         aliases: plan.joinPlan.aliases,
         context,
@@ -304,7 +311,9 @@ async function buildBasicSqlRelationalQuery<
       query,
       plan,
       selection,
-      orderBy: plan.pipeline.sort.orderBy.map((term) => resolvePlanOrderTerm(plan, term)),
+      orderBy: resolveRelationalOrderBy(plan.pipeline.sort, plan.pipeline.project).map((term) =>
+        resolvePlanOrderTerm(plan, term),
+      ),
       aliases: plan.joinPlan.aliases,
       context,
       runtime,
@@ -557,10 +566,10 @@ function buildSqlRelationalSelection<
           ? (binding as { outputColumns: string[] }).outputColumns
           : binding.scan.select
         ).map(
-          (column) =>
+          (column, index) =>
             ({
               kind: "column",
-              output: `${binding.alias}.${column}`,
+              output: binding.scan.output[index]?.name ?? `${binding.alias}.${column}`,
               source: {
                 alias: binding.alias,
                 column,
@@ -650,8 +659,11 @@ function resolvePlanOrderTerm<
   TBinding extends SqlRelationalScanBinding<TResolvedEntity>,
 >(
   plan: RelationalSingleQueryPlan<TBinding>,
-  term: Extract<RelNode, { kind: "sort" }>["orderBy"][number],
+  term: ReturnType<typeof resolveRelationalOrderBy>[number],
 ): SqlRelationalOrderTerm {
+  if (term.projectedOutput !== undefined) {
+    return { kind: "output", column: term.projectedOutput, direction: term.direction };
+  }
   if (term.source.alias || term.source.table) {
     return {
       kind: "qualified",
@@ -661,6 +673,12 @@ function resolvePlanOrderTerm<
   }
 
   if (plan.pipeline.aggregate) {
+    const metric = plan.pipeline.aggregate.metrics.find((entry) => entry.as === term.source.column);
+    if (metric) {
+      // The final projection can rename or omit this metric. Order by its value,
+      // not a SELECT alias that may no longer exist in the compiled SQL.
+      return { kind: "metric", metric, direction: term.direction };
+    }
     const groupBy = plan.pipeline.aggregate.groupBy.find((entry, index) => {
       const outputName = plan.pipeline.aggregate!.output[index]?.name ?? entry.column;
       return outputName === term.source.column || entry.column === term.source.column;
@@ -673,6 +691,19 @@ function resolvePlanOrderTerm<
           ...(groupBy.table ? { table: groupBy.table } : {}),
           column: groupBy.column,
         },
+        direction: term.direction,
+      };
+    }
+  }
+
+  if (!plan.pipeline.aggregate) {
+    const bindings = [...plan.joinPlan.aliases.values()].filter((binding) =>
+      binding.scan.select.includes(term.source.column),
+    );
+    if (bindings.length === 1) {
+      return {
+        kind: "qualified",
+        source: { alias: bindings[0]!.alias, column: term.source.column },
         direction: term.direction,
       };
     }
@@ -738,11 +769,11 @@ function buildWithSelection(body: RelationalWithBodyWrapper): SqlRelationalWithS
   });
 }
 
-function buildWithOrder(body: RelationalWithBodyWrapper): SqlRelationalOrderTerm[] {
+function buildWithOrder(body: RelationalWithBodyWrapper): SqlRelationalWithOrderTerm[] {
   const scanAlias = body.cteRef.alias ?? body.cteRef.name;
   const windowAliases = new Set((body.window?.functions ?? []).map((fn) => fn.as));
 
-  return (body.sort?.orderBy ?? []).map((term) => {
+  return resolveRelationalOrderBy(body.sort, body.project).map((term) => {
     if (!term.source.alias && !term.source.table && windowAliases.has(term.source.column)) {
       return {
         kind: "output",

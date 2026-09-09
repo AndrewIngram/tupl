@@ -1,0 +1,1982 @@
+[
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "sqlite",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "drizzle",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "kysely",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": false,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id FROM c WHERE secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1
+      },
+      {
+        "id": 2
+      },
+      {
+        "id": 5
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT COUNT(secret) AS n FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "n": 0
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT secret,COUNT(*) AS n FROM c GROUP BY secret",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null,
+        "n": 3
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT id,LAG(secret) OVER (ORDER BY id) AS v FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "v": null
+      },
+      {
+        "id": 2,
+        "v": null
+      },
+      {
+        "id": 5,
+        "v": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH c AS (SELECT id FROM accounts) SELECT constructor FROM c",
+    "invalid": true,
+    "actual": [{}, {}, {}],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT secret FROM (SELECT id FROM accounts) x",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "WITH RECURSIVE c(id) AS (SELECT id FROM accounts WHERE id=1 UNION ALL SELECT id+1 FROM c WHERE id<2) SELECT secret FROM c",
+    "invalid": true,
+    "actual": [
+      {
+        "secret": null
+      },
+      {
+        "secret": null
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  },
+  {
+    "dialect": "postgres",
+    "provider": "objection",
+    "local": true,
+    "sql": "SELECT id,COUNT(*) AS n FROM accounts GROUP BY id HAVING accounts.secret IS NULL",
+    "invalid": true,
+    "actual": [
+      {
+        "id": 1,
+        "n": 1
+      },
+      {
+        "id": 2,
+        "n": 1
+      },
+      {
+        "id": 5,
+        "n": 1
+      }
+    ],
+    "calls": 1,
+    "pass": false
+  }
+]

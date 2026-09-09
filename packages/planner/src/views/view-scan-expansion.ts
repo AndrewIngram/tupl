@@ -43,7 +43,7 @@ export function expandViewScanNode<TContext>(
 
   if (!binding || binding.kind !== "view") {
     return Result.ok({
-      node,
+      node: expandScanModifiers(node),
       aliases: new Map(),
     });
   }
@@ -128,4 +128,55 @@ export function expandViewScanNode<TContext>(
       aliases,
     });
   });
+}
+
+/** SQL providers consume explicit operations; embedded scan pagination cannot disappear. */
+function expandScanModifiers(node: Extract<RelNode, { kind: "scan" }>): RelNode {
+  if (!node.orderBy?.length && node.limit == null && node.offset == null) return node;
+  const { orderBy, limit, offset, ...scan } = node;
+  const select = [...new Set([...scan.select, ...(orderBy ?? []).map((term) => term.column)])];
+  let current: RelNode = {
+    ...scan,
+    select,
+    output: select.map(
+      (column, index) =>
+        scan.output[index] ?? { name: node.alias ? `${node.alias}.${column}` : column },
+    ),
+  };
+  if (orderBy?.length)
+    current = {
+      id: nextRelId("scan_sort"),
+      kind: "sort",
+      convention: "local",
+      input: current,
+      orderBy: orderBy.map((term) => ({
+        source: { column: term.column },
+        direction: term.direction,
+      })),
+      output: current.output,
+    };
+  if (limit != null || offset != null)
+    current = {
+      id: nextRelId("scan_page"),
+      kind: "limit_offset",
+      convention: "local",
+      input: current,
+      ...(limit != null ? { limit } : {}),
+      ...(offset != null ? { offset } : {}),
+      output: current.output,
+    };
+  if (select.length !== scan.select.length)
+    current = {
+      id: nextRelId("scan_output"),
+      kind: "project",
+      convention: "local",
+      input: current,
+      columns: scan.select.map((column, index) => ({
+        kind: "column",
+        source: { column },
+        output: scan.output[index]!.name,
+      })),
+      output: scan.output,
+    };
+  return current;
 }

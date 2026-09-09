@@ -106,6 +106,11 @@ class SqliteSelectParser {
     }
 
     this.parseSetOperations(root);
+    if (this.matchKeyword("ORDER")) {
+      this.expectKeyword("BY");
+      root.orderby = this.parseOrderByTerms();
+    }
+    if (this.matchKeyword("LIMIT")) root.limit = this.parseLimitClause();
     return root;
   }
 
@@ -128,16 +133,11 @@ class SqliteSelectParser {
     while (true) {
       const cteName = this.parseIdentifier();
 
+      let columns: string[] | undefined;
       if (this.matchSymbol("(")) {
-        if (!this.matchSymbol(")")) {
-          while (true) {
-            this.parseIdentifier();
-            if (!this.matchSymbol(",")) {
-              break;
-            }
-          }
-          this.expectSymbol(")");
-        }
+        columns = [this.parseIdentifier()];
+        while (this.matchSymbol(",")) columns.push(this.parseIdentifier());
+        this.expectSymbol(")");
       }
 
       this.expectKeyword("AS");
@@ -147,6 +147,7 @@ class SqliteSelectParser {
 
       entries.push({
         name: { value: cteName },
+        ...(columns ? { columns } : {}),
         stmt: {
           ast: statement,
         },
@@ -230,23 +231,10 @@ class SqliteSelectParser {
       ast.window = this.parseWindowClause();
     }
 
-    if (this.matchKeyword("ORDER")) {
-      this.expectKeyword("BY");
-      ast.orderby = this.parseOrderByTerms();
-    }
-
-    if (this.matchKeyword("LIMIT")) {
-      ast.limit = this.parseLimitClause();
-    }
-
     return ast;
   }
 
-  parseSelectColumns(): "*" | SelectColumnAst[] {
-    if (this.matchSymbol("*")) {
-      return "*";
-    }
-
+  parseSelectColumns(): SelectColumnAst[] {
     const columns: SelectColumnAst[] = [];
     while (true) {
       const expr = this.parseExpression();

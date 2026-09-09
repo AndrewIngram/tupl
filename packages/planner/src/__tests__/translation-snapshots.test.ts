@@ -1,5 +1,6 @@
 import { Result } from "better-result";
 import { describe, expect, it } from "vite-plus/test";
+import type { ProviderAdapter } from "@tupl/provider-kit";
 
 import {
   buildLogicalQueryPlanResult,
@@ -10,7 +11,8 @@ import {
   planPhysicalQueryResult,
 } from "@tupl/planner";
 import { buildEntitySchema } from "./support/schema";
-import { finalizeProviders } from "./support/runtime";
+
+type TestContext = Record<string, never>;
 
 function lowerSqlToRel(sql: string, schema: Parameters<typeof lowerSqlToRelResult>[1]) {
   return lowerSqlToRelResult(sql, schema).unwrap();
@@ -734,6 +736,14 @@ describe("query/translation-snapshots", () => {
                 "kind": "expr",
                 "output": "expr",
               },
+              {
+                "kind": "column",
+                "output": "id",
+                "source": {
+                  "alias": "u",
+                  "column": "id",
+                },
+              },
             ],
             "convention": "local",
             "id": "project_4",
@@ -744,10 +754,14 @@ describe("query/translation-snapshots", () => {
               "kind": "scan",
               "output": [
                 {
+                  "name": "u.id",
+                },
+                {
                   "name": "u.team_id",
                 },
               ],
               "select": [
+                "id",
                 "team_id",
               ],
               "table": "users",
@@ -763,6 +777,9 @@ describe("query/translation-snapshots", () => {
             "output": [
               {
                 "name": "expr",
+              },
+              {
+                "name": "id",
               },
             ],
           },
@@ -838,7 +855,7 @@ describe("query/translation-snapshots", () => {
               },
               {
                 "kind": "column",
-                "output": "u.id",
+                "output": "id",
                 "source": {
                   "alias": "u",
                   "column": "id",
@@ -854,10 +871,14 @@ describe("query/translation-snapshots", () => {
               "kind": "scan",
               "output": [
                 {
+                  "name": "u.id",
+                },
+                {
                   "name": "u.team_id",
                 },
               ],
               "select": [
+                "id",
                 "team_id",
               ],
               "table": "users",
@@ -875,12 +896,11 @@ describe("query/translation-snapshots", () => {
                 "name": "expr",
               },
               {
-                "name": "u.id",
+                "name": "id",
               },
             ],
           },
           "rightKey": {
-            "alias": "u",
             "column": "id",
           },
         },
@@ -911,36 +931,32 @@ describe("query/translation-snapshots", () => {
         },
       },
     });
-    const providers = finalizeProviders({
+    const providers = {
       orders: {
+        name: "orders",
         canExecute() {
           return true;
         },
         async compile(fragment) {
-          return {
-            ok: true as const,
-            value: { provider: "orders", kind: fragment.kind, payload: fragment },
-          };
+          return Result.ok({ provider: "orders", kind: fragment.kind, payload: fragment });
         },
         async execute() {
-          return { ok: true as const, value: [] };
+          return Result.ok([]);
         },
-      },
+      } satisfies ProviderAdapter<TestContext>,
       users: {
+        name: "users",
         canExecute() {
           return true;
         },
         async compile(fragment) {
-          return {
-            ok: true as const,
-            value: { provider: "users", kind: fragment.kind, payload: fragment },
-          };
+          return Result.ok({ provider: "users", kind: fragment.kind, payload: fragment });
         },
         async execute() {
-          return { ok: true as const, value: [] };
+          return Result.ok([]);
         },
-      },
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const lowered = lowerSqlToRel(
       `
@@ -1161,22 +1177,20 @@ describe("query/translation-snapshots", () => {
         },
       },
     });
-    const providers = finalizeProviders({
+    const providers = {
       warehouse: {
+        name: "warehouse",
         canExecute() {
           return true;
         },
         async compile(rel) {
-          return {
-            ok: true as const,
-            value: { provider: "warehouse", kind: "rel", payload: rel },
-          };
+          return Result.ok({ provider: "warehouse", kind: "rel", payload: rel });
         },
         async execute() {
-          return { ok: true as const, value: [] };
+          return Result.ok([]);
         },
-      },
-    });
+      } satisfies ProviderAdapter<TestContext>,
+    };
 
     const logicalPlan = buildLogicalQueryPlan(
       `

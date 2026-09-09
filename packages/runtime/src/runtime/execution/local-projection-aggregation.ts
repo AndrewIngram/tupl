@@ -1,3 +1,5 @@
+import { setOwnProperty } from "@tupl/foundation";
+import { describeRelExecution, type RelExecutionObservation } from "./execution-observer";
 import { Result } from "better-result";
 
 import { isRelProjectColumnMapping, type RelNode, type RelProjectNode } from "@tupl/foundation";
@@ -6,6 +8,7 @@ import type { QueryRow } from "@tupl/schema-model";
 import { evaluateAggregateMetricResult, evaluateRelExprResult } from "./expression-eval";
 import {
   executeRelNodeResult,
+  checkExecutionDeadlineResult,
   type RelExecutionContext,
   type RelExecutionResult,
 } from "./local-execution";
@@ -17,30 +20,54 @@ import { readRowValue, toColumnKey, type InternalRow } from "./row-ops";
 export async function executeProjectResult<TContext>(
   project: RelProjectNode,
   context: RelExecutionContext<TContext>,
+  observation?: RelExecutionObservation,
 ): Promise<RelExecutionResult> {
   const rowsResult = await executeRelNodeResult(project.input, context);
   if (Result.isError(rowsResult)) {
     return rowsResult;
   }
 
+  const counts = new Map<import("@tupl/foundation").RelLocalOperation, number>();
+  const onCompute = (operation: import("@tupl/foundation").RelLocalOperation) =>
+    counts.set(operation, (counts.get(operation) ?? 0) + 1);
   const out: QueryRow[] = [];
   for (const row of rowsResult.value as InternalRow[]) {
     const projected: QueryRow = {};
+    const localValues = new Map<import("@tupl/foundation").RelLocalOperation, unknown>();
     for (const mapping of project.columns) {
       if (isRelProjectColumnMapping(mapping)) {
-        projected[mapping.output] = readRowValue(row, toColumnKey(mapping.source)) ?? null;
+        setOwnProperty(
+          projected,
+          mapping.output,
+          readRowValue(row, toColumnKey(mapping.source)) ?? null,
+        );
         continue;
       }
 
-      const exprResult = evaluateRelExprResult(mapping.expr, row, context.subqueryResults);
+      const exprResult = evaluateRelExprResult(
+        mapping.expr,
+        row,
+        context.subqueryResults,
+        localValues,
+        onCompute,
+      );
       if (Result.isError(exprResult)) {
         return exprResult;
       }
-      projected[mapping.output] = exprResult.value;
+      const deadlineResult = checkExecutionDeadlineResult(context);
+      if (Result.isError(deadlineResult)) return deadlineResult;
+      setOwnProperty(projected, mapping.output, exprResult.value);
     }
     out.push(projected);
   }
 
+  if (counts.size)
+    observation?.updateDescriptor({
+      ...describeRelExecution(project),
+      summary: "Compute derived columns",
+      inputRowCount: rowsResult.value.length,
+      computations: [...counts].map(([operation, invocations]) => ({ ...operation, invocations })),
+    });
   return Result.ok(out);
 }
 
@@ -77,7 +104,7 @@ export async function executeAggregateResult<TContext>(
       const values = JSON.parse(groupKey) as unknown[];
       aggregate.groupBy.forEach((ref, index) => {
         const outputName = aggregate.output[index]?.name ?? ref.column;
-        row[outputName] = values[index] ?? null;
+        setOwnProperty(row, outputName, values[index] ?? null);
       });
     }
 
@@ -98,7 +125,7 @@ export async function executeAggregateResult<TContext>(
       if (Result.isError(metricResult)) {
         return metricResult;
       }
-      row[metric.as] = metricResult.value;
+      setOwnProperty(row, metric.as, metricResult.value);
     }
 
     out.push(row);

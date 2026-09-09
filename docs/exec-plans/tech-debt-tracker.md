@@ -24,15 +24,10 @@ These are the current architecture and process questions that remain intentional
 - Current state: some planner/runtime/provider-normalization switches intentionally treat local-only barrier nodes like `correlate` and `repeat_union` as unreachable in provider-owned paths and return early rather than traversing children.
 - Question: keep that as an explicit invariant-only simplification, or normalize these switches to traverse children for consistency and future-proofing even when the current planner should never route them there?
 
-### Lookup-join planning vs runtime lookup capability
+### Lookup-join planning and runtime eligibility
 
-- Current state: planner lookup-join candidacy no longer checks whether the right-side provider implements `lookupMany`; runtime still guards the optimization before execution.
-- Question: is the current split acceptable as a planner simplification, or should planner candidacy regain lookup-capability awareness to keep explain/physical-plan diagnostics closer to actual execution choices?
-
-### Aggregate-mode navigation window validation
-
-- Current state: grouped aggregate window validation checks `partitionBy`, `orderBy`, and aggregate `column` refs against aggregate output columns, but it does not yet validate navigation-function `value` / `defaultExpr` expression refs in the same way.
-- Question: should aggregate-mode window preparation reject non-aggregate navigation expressions early with a specific lowering error, rather than relying on later execution-time failure?
+- Resolved in derived-column execution: physical explain, session plans, and runtime use the same eligibility helper. A right input must be a bare scan with no limit or offset, and its provider must implement `lookupMany`. Private providers resolve from attached entity handles. Left keys may be computed locally.
+- Runtime session events remain the evidence for executed batches; static provider SQL descriptions do not include data-dependent lookup keys.
 
 ### Planner subquery callback Result bridge
 
@@ -43,3 +38,28 @@ These are the current architecture and process questions that remain intentional
 
 - Current state: substantial work is expected to have a checked-in execution plan, but enforcement is social/documented rather than diff-based.
 - Question: add a low-noise repo check later, or keep it as documented workflow only?
+
+### Derived-column follow-ups
+
+- Initial release supports synchronous, cardinality-preserving computations with
+  demand pruning and conservative filter/sort/limit motion.
+- Cardinality-aware join elimination needs trustworthy uniqueness and existence
+  proofs. Do not remove multiplying joins just because their outputs are unused.
+- Collection dependencies need explicit keys, selected fields, batching, ordering,
+  and missing-row semantics. Evaluate existing joins/grouping before adding an API.
+- Row expansion needs a separate operation with zero/many-row semantics and bounds.
+- Incremental fetching beneath derived filters needs stable cursors/order, examined
+  row limits, cancellation, and scope preservation; an OFFSET loop is insufficient.
+- Async computation is deferred until a use case justifies concurrency, shared
+  in-flight evaluation, and cancellation semantics.
+
+### Integer division contract
+
+- Current state: ordinary tupl division produces floating-point results, including
+  `9 / 2 = 4.5`, across tested local and SQL routes. SQLite literal integer
+  division produces `4`. Null propagation and zero divisors are now consistent.
+- Question: retain floating-point division as the portable contract, or introduce
+  explicit integer-sensitive semantics? This was outside the nine audit fixes.
+
+The embedded scan modifier, grouped navigation validation, and public source
+coercion defects were resolved in the [contract audit remediation](completed/contract-audit-remediation.md).

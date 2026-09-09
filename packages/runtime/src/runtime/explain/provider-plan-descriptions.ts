@@ -2,7 +2,7 @@ import { Result, type Result as BetterResult } from "better-result";
 
 import { type TuplError, TuplRuntimeError } from "@tupl/foundation";
 import { buildProviderFragmentForRelResult } from "@tupl/planner";
-import { normalizeCapability } from "@tupl/provider-kit";
+import { normalizeCapability, resolveRelProviderAdapter } from "@tupl/provider-kit";
 
 import type { ExplainFragment, ExplainProviderPlan, QueryInput } from "../contracts";
 import { toTuplRuntimeError } from "../diagnostics";
@@ -27,7 +27,11 @@ export async function describeExplainProviderPlansResult<TContext>(
         continue;
       }
 
-      const adapter = input.preparedSchema.providers[fragment.provider];
+      const adapter = resolveRelProviderAdapter(
+        fragment.rel,
+        fragment.provider,
+        input.preparedSchema.providers,
+      );
       if (!adapter) {
         return Result.err(
           new TuplRuntimeError({

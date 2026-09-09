@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { stringifyUnknownValue } from "@tupl/foundation";
 import type { QueryRow, ScanFilterClause, TableScanRequest } from "@tupl/schema-model";
 
@@ -9,7 +10,7 @@ export type InternalRow = Record<string, unknown>;
 export function prefixRow(row: QueryRow, alias: string): InternalRow {
   const out: InternalRow = {};
   for (const [column, value] of Object.entries(row)) {
-    out[`${alias}.${column}`] = value;
+    setOwnProperty(out, `${alias}.${column}`, value);
   }
   return out;
 }
@@ -43,7 +44,7 @@ export function scanLocalRows(rows: QueryRow[], request: TableScanRequest): Quer
   return out.map((row) => {
     const projected: QueryRow = {};
     for (const column of request.select) {
-      projected[column] = row[column] ?? null;
+      setOwnProperty(projected, column, row[column] ?? null);
     }
     return projected;
   });
@@ -56,7 +57,7 @@ export function matchesClause(row: Record<string, unknown>, clause: ScanFilterCl
     case "eq":
       return value != null && value === clause.value;
     case "neq":
-      return value != null && value !== clause.value;
+      return value != null && clause.value != null && value !== clause.value;
     case "gt":
       return value != null && clause.value != null && compareNonNull(value, clause.value) > 0;
     case "gte":
@@ -71,7 +72,7 @@ export function matchesClause(row: Record<string, unknown>, clause: ScanFilterCl
     }
     case "not_in": {
       const set = new Set(clause.values.filter((entry) => entry != null));
-      return value != null && !set.has(value);
+      return value != null && !clause.values.some((entry) => entry == null) && !set.has(value);
     }
     case "like":
       return typeof value === "string" && typeof clause.value === "string"

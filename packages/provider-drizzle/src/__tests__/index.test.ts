@@ -3,12 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { stringifyUnknownValue, type RelNode } from "@tupl/foundation";
 import { type QueryRow, type ScanFilterClause } from "@tupl/provider-kit";
-import {
-  createDrizzleProvider,
-  impossibleCondition,
-  runDrizzleScan,
-  type DrizzleQueryExecutor,
-} from "../index";
+import { createDrizzleProvider, runDrizzleScan, type DrizzleQueryExecutor } from "../index";
 
 type TestColumn = { name: string };
 type TestRow = Record<string, unknown>;
@@ -919,7 +914,6 @@ describe("drizzle adapter", () => {
         total_cents: totalCentsColumn as never,
         org_id: orgIdColumn as never,
       },
-      scope: [impossibleCondition()],
       request: {
         table: "orders",
         select: ["id", "total_cents"],
@@ -1312,46 +1306,17 @@ describe("drizzle adapter", () => {
       },
     });
 
-    const rel: RelNode = {
+    const projected: RelNode = {
       id: "project_1",
       kind: "project",
       convention: "provider:drizzle",
       input: {
-        id: "sort_1",
-        kind: "sort",
+        id: "scan_orders",
+        kind: "scan",
         convention: "provider:drizzle",
-        input: {
-          id: "filter_1",
-          kind: "filter",
-          convention: "provider:drizzle",
-          input: {
-            id: "scan_orders",
-            kind: "scan",
-            convention: "provider:drizzle",
-            table: "orders",
-            alias: "o",
-            select: ["id", "total_cents"],
-            output: [],
-          },
-          where: [
-            {
-              column: "total_dollars",
-              op: "gte",
-              value: 200,
-            },
-          ],
-          output: [],
-        },
-        orderBy: [
-          {
-            source: { column: "total_dollars" },
-            direction: "desc",
-          },
-          {
-            source: { column: "id" },
-            direction: "asc",
-          },
-        ],
+        table: "orders",
+        alias: "o",
+        select: ["id", "total_cents"],
         output: [],
       },
       columns: [
@@ -1383,6 +1348,26 @@ describe("drizzle adapter", () => {
         },
       ],
       output: [],
+    };
+
+    // Predicates and ordering read values produced by the preceding projection.
+    const rel: RelNode = {
+      id: "sort_1",
+      kind: "sort",
+      convention: "provider:drizzle",
+      input: {
+        id: "filter_1",
+        kind: "filter",
+        convention: "provider:drizzle",
+        input: projected,
+        where: [{ column: "total_dollars", op: "gte", value: 200 }],
+        output: projected.output,
+      },
+      orderBy: [
+        { source: { column: "total_dollars" }, direction: "desc" },
+        { source: { column: "id" }, direction: "asc" },
+      ],
+      output: projected.output,
     };
 
     expect(provider.canExecute(rel, {})).toBe(true);

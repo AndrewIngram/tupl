@@ -1,6 +1,5 @@
 import { Result } from "better-result";
 import { TuplGuardrailError } from "@tupl/foundation";
-import type { QueryRow } from "@tupl/schema-model";
 
 import {
   DEFAULT_QUERY_FALLBACK_POLICY,
@@ -34,19 +33,127 @@ export function resolveFallbackPolicy(
   };
 }
 
-export function enforceExecutionRowLimitResult(rows: QueryRow[], guardrails: QueryGuardrails) {
-  if (rows.length > guardrails.maxExecutionRows) {
+type ExecutionRowGuardrails = Pick<QueryGuardrails, "maxExecutionRows">;
+
+function validatePositiveSafeIntegerResult(guardrail: string, value: number) {
+  if (Number.isSafeInteger(value) && value >= 1) {
+    return Result.ok(value);
+  }
+
+  return Result.err(
+    new TuplGuardrailError({
+      guardrail,
+      limit: Number.MAX_SAFE_INTEGER,
+      actual: value,
+      message: `Query guardrail ${guardrail} must be a positive safe integer. Received ${value}.`,
+    }),
+  );
+}
+
+function validatePositiveSafeIntegerGuardrailsResult(
+  entries: ReadonlyArray<readonly [guardrail: string, value: number]>,
+) {
+  for (const [guardrail, value] of entries) {
+    const result = validatePositiveSafeIntegerResult(guardrail, value);
+    if (Result.isError(result)) {
+      return result;
+    }
+  }
+
+  return Result.ok(undefined);
+}
+
+export function validateQueryGuardrailsResult(guardrails: QueryGuardrails) {
+  const result = validatePositiveSafeIntegerGuardrailsResult([
+    ["maxPlannerNodes", guardrails.maxPlannerNodes],
+    ["maxExecutionRows", guardrails.maxExecutionRows],
+    ["maxLookupKeysPerBatch", guardrails.maxLookupKeysPerBatch],
+    ["maxLookupBatches", guardrails.maxLookupBatches],
+  ]);
+  if (Result.isError(result)) {
+    return result;
+  }
+
+  return Result.ok(guardrails);
+}
+
+export function validateExecutionGuardrailsResult(guardrails: {
+  maxExecutionRows: number;
+  maxLookupKeysPerBatch: number;
+  maxLookupBatches: number;
+}) {
+  const result = validatePositiveSafeIntegerGuardrailsResult([
+    ["maxExecutionRows", guardrails.maxExecutionRows],
+    ["maxLookupKeysPerBatch", guardrails.maxLookupKeysPerBatch],
+    ["maxLookupBatches", guardrails.maxLookupBatches],
+  ]);
+  if (Result.isError(result)) {
+    return result;
+  }
+
+  return Result.ok(guardrails);
+}
+
+export function enforceMaterializationLimitResult<TRows extends readonly unknown[]>(
+  rows: TRows,
+  guardrails: ExecutionRowGuardrails,
+) {
+  const countResult = enforceMaterializationCountResult(rows.length, guardrails);
+  if (Result.isError(countResult)) {
+    return countResult;
+  }
+
+  return Result.ok(rows);
+}
+
+export function enforceMaterializationCountResult(
+  actual: number,
+  guardrails: ExecutionRowGuardrails,
+) {
+  if (actual > guardrails.maxExecutionRows) {
     return Result.err(
       new TuplGuardrailError({
         guardrail: "maxExecutionRows",
         limit: guardrails.maxExecutionRows,
-        actual: rows.length,
-        message: `Query exceeded maxExecutionRows guardrail (${guardrails.maxExecutionRows}). Received ${rows.length} rows.`,
+        actual,
+        message: `Query exceeded maxExecutionRows guardrail (${guardrails.maxExecutionRows}). Received ${actual} rows.`,
       }),
     );
   }
 
-  return Result.ok(rows);
+  return Result.ok(actual);
+}
+
+export function appendMaterializedRowResult<T>(
+  target: T[],
+  row: T,
+  guardrails: ExecutionRowGuardrails,
+) {
+  const actual = target.length + 1;
+  const countResult = enforceMaterializationCountResult(actual, guardrails);
+  if (Result.isError(countResult)) {
+    return countResult;
+  }
+
+  target.push(row);
+  return Result.ok(undefined);
+}
+
+export function appendMaterializedRowsResult<T>(
+  target: T[],
+  rows: readonly T[],
+  guardrails: ExecutionRowGuardrails,
+) {
+  const actual = target.length + rows.length;
+  const countResult = enforceMaterializationCountResult(actual, guardrails);
+  if (Result.isError(countResult)) {
+    return countResult;
+  }
+
+  for (const row of rows) {
+    target.push(row);
+  }
+  return Result.ok(undefined);
 }
 
 export function enforcePlannerNodeLimitResult(

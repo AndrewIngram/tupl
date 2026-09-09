@@ -19,16 +19,16 @@
     "clean": "rm -rf .vitest-reports coverage dist packages/*/dist examples/*/dist",
     "typecheck": "vp run -r typecheck",
     "typecheck:root": "tsgo --noEmit -p tsconfig.json",
-    "test": "vp run -r test",
-    "test:coverage": "vp run -r test",
-    "test:ci": "vp run -r test",
-    "test:watch": "vp run -r test",
+    "test": "vp test run",
+    "test:coverage": "vp test run --coverage",
+    "test:ci": "vp test run",
+    "test:watch": "vp test --watch",
     "lint": "vp lint",
     "lint:fix": "vp lint --fix",
     "fmt": "vp fmt",
     "fmt:check": "vp fmt --check",
-    "verify": "vp lint && vp run -r typecheck && vp run -r test && vp fmt",
-    "verify:ci": "vp lint && vp run -r typecheck && vp run -r test && vp fmt --check",
+    "verify": "vp lint && vp run -r typecheck && vp test run && vp fmt",
+    "verify:ci": "vp lint && vp run -r typecheck && vp test run && vp fmt --check",
     "example:build": "vp run @tupl/example-basic#build",
     "example:start": "vp run @tupl/example-basic#start",
     "example:drizzle:build": "vp run -t @tupl/example-drizzle#build",
@@ -41,7 +41,8 @@
     "example:playground:start": "vp run @tupl/example-playground#start",
     "example:playground:dev": "vp run @tupl/example-playground#dev",
     "publish:public": "pnpm --filter @tupl/foundation publish --access public && pnpm --filter @tupl/provider-kit publish --access public && pnpm --filter @tupl/schema-model publish --access public && pnpm --filter @tupl/planner publish --access public && pnpm --filter @tupl/runtime publish --access public && pnpm --filter @tupl/schema publish --access public && pnpm -r --filter @tupl/provider-drizzle --filter @tupl/provider-ioredis --filter @tupl/provider-kysely --filter @tupl/provider-objection publish --access public",
-    "publish:public:dry-run": "pnpm --filter @tupl/foundation publish --access public --dry-run && pnpm --filter @tupl/provider-kit publish --access public --dry-run && pnpm --filter @tupl/schema-model publish --access public --dry-run && pnpm --filter @tupl/planner publish --access public --dry-run && pnpm --filter @tupl/runtime publish --access public --dry-run && pnpm --filter @tupl/schema publish --access public --dry-run && pnpm -r --filter @tupl/provider-drizzle --filter @tupl/provider-ioredis --filter @tupl/provider-kysely --filter @tupl/provider-objection publish --access public --dry-run"
+    "publish:public:dry-run": "pnpm --filter @tupl/foundation publish --access public --dry-run && pnpm --filter @tupl/provider-kit publish --access public --dry-run && pnpm --filter @tupl/schema-model publish --access public --dry-run && pnpm --filter @tupl/planner publish --access public --dry-run && pnpm --filter @tupl/runtime publish --access public --dry-run && pnpm --filter @tupl/schema publish --access public --dry-run && pnpm -r --filter @tupl/provider-drizzle --filter @tupl/provider-ioredis --filter @tupl/provider-kysely --filter @tupl/provider-objection publish --access public --dry-run",
+    "test:packed": "vp run -r build && python3 scripts/verify-packed-consumer.py"
   },
   "devDependencies": {
     "@tupl/test-support": "workspace:*",
@@ -52,13 +53,29 @@
     "better-result": "catalog:",
     "better-sqlite3": "catalog:",
     "typescript": "catalog:",
-    "vite-plus": "catalog:"
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
   "packageManager": "pnpm@10.0.0",
   "pnpm": {
     "onlyBuiltDependencies": [
       "better-sqlite3",
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "vite@*": "npm:@voidzero-dev/vite-plus-core@0.3.1",
+      "vitest@*": "4.1.11"
+    },
+    "peerDependencyRules": {
+      "allowAny": [
+        "vite",
+        "vitest"
+      ],
+      "allowedVersions": {
+        "vite": "*",
+        "vitest": "*"
+      }
+    }
   }
 }
