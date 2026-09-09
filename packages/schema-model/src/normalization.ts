@@ -9,6 +9,7 @@ export {
 } from "./normalization/schema-finalization";
 export {
   getNormalizedColumnBindings,
+  sourceColumnValueExpression,
   getNormalizedColumnSourceMap,
   resolveNormalizedColumnSource,
 } from "./normalization/normalized-column-sources";

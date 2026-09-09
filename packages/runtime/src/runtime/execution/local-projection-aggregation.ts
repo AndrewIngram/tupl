@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { describeRelExecution, type RelExecutionObservation } from "./execution-observer";
 import { Result } from "better-result";
 
@@ -35,7 +36,11 @@ export async function executeProjectResult<TContext>(
     const localValues = new Map<import("@tupl/foundation").RelLocalOperation, unknown>();
     for (const mapping of project.columns) {
       if (isRelProjectColumnMapping(mapping)) {
-        projected[mapping.output] = readRowValue(row, toColumnKey(mapping.source)) ?? null;
+        setOwnProperty(
+          projected,
+          mapping.output,
+          readRowValue(row, toColumnKey(mapping.source)) ?? null,
+        );
         continue;
       }
 
@@ -51,7 +56,7 @@ export async function executeProjectResult<TContext>(
       }
       const deadlineResult = checkExecutionDeadlineResult(context);
       if (Result.isError(deadlineResult)) return deadlineResult;
-      projected[mapping.output] = exprResult.value;
+      setOwnProperty(projected, mapping.output, exprResult.value);
     }
     out.push(projected);
   }
@@ -99,7 +104,7 @@ export async function executeAggregateResult<TContext>(
       const values = JSON.parse(groupKey) as unknown[];
       aggregate.groupBy.forEach((ref, index) => {
         const outputName = aggregate.output[index]?.name ?? ref.column;
-        row[outputName] = values[index] ?? null;
+        setOwnProperty(row, outputName, values[index] ?? null);
       });
     }
 
@@ -120,7 +125,7 @@ export async function executeAggregateResult<TContext>(
       if (Result.isError(metricResult)) {
         return metricResult;
       }
-      row[metric.as] = metricResult.value;
+      setOwnProperty(row, metric.as, metricResult.value);
     }
 
     out.push(row);

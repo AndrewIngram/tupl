@@ -170,22 +170,11 @@ export function resolveNonAggregateOrderBy(
 export function resolveAggregateOrderBy(
   orderByTerms: ParsedOrderByTerm[],
   projections: ParsedAggregateProjection[],
+  groupOutputsBySource: Map<string, string>,
 ): BetterResult<ResolvedOrderTerm[], RelLoweringError> {
   const projectionsByOutput = new Map(
     projections.map((projection) => [projection.output, projection] as const),
   );
-  const groupOutputsBySource = new Map<string, string>();
-
-  for (const projection of projections) {
-    if (projection.kind !== "group" || !projection.source) {
-      continue;
-    }
-    groupOutputsBySource.set(
-      `${projection.source.alias ?? ""}.${projection.source.column}`,
-      projection.source.column,
-    );
-  }
-
   const resolveProjectionSource = (
     projection: ParsedAggregateProjection,
     ordinal?: number,
@@ -204,7 +193,12 @@ export function resolveAggregateOrderBy(
         }),
       );
     }
-    return Result.ok({ column: projection.source.column });
+    return Result.ok({
+      column:
+        groupOutputsBySource.get(
+          `${projection.source.alias ?? projection.source.table ?? ""}.${projection.source.column}`,
+        ) ?? projection.source.column,
+    });
   };
 
   const resolvedTerms: ResolvedOrderTerm[] = [];

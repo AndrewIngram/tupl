@@ -1,4 +1,4 @@
-import type { RelColumnRef, RelNode } from "@tupl/foundation";
+import type { RelNode } from "@tupl/foundation";
 
 import { nextRelId } from "../physical/planner-ids";
 import type { PreparedSimpleSelect } from "./select-shape";
@@ -27,7 +27,7 @@ export function finalizeSimpleSelectRel(
       groupBy: shape.effectiveGroupBy,
       metrics: shape.allAggregateMetrics,
       output: [
-        ...shape.effectiveGroupBy.map((ref: RelColumnRef) => ({ name: ref.column })),
+        ...shape.aggregateGroupOutputs.map((name) => ({ name })),
         ...shape.allAggregateMetrics.map((metric) => ({ name: metric.as })),
       ],
     };
@@ -116,7 +116,17 @@ function buildFinalProject(
           projection.kind === "group" && projection.source
             ? {
                 kind: "column" as const,
-                source: { column: projection.source.column },
+                source: {
+                  column:
+                    shape.aggregateGroupOutputs[
+                      shape.effectiveGroupBy.findIndex(
+                        (ref) =>
+                          ref.column === projection.source!.column &&
+                          (ref.alias ?? ref.table) ===
+                            (projection.source!.alias ?? projection.source!.table),
+                      )
+                    ]!,
+                },
                 output: projection.output,
               }
             : projection.kind === "metric"

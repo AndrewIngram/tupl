@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { getNormalizedColumnBindings } from "../normalization";
 import { normalizeProviderRowValue } from "./row-coercion";
 import type {
@@ -33,11 +34,10 @@ export function mapProviderRowsToLogical(
         ? columnBinding.source
         : logical;
       const fallbackDefinition = tableDefinition?.columns[logical];
-      out[logical] = normalizeProviderRowValue(
-        row[source] ?? null,
-        columnBinding,
-        fallbackDefinition,
-        options,
+      setOwnProperty(
+        out,
+        logical,
+        normalizeProviderRowValue(row[source] ?? null, columnBinding, fallbackDefinition, options),
       );
     }
     return out;

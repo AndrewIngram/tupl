@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { isRelProjectColumnMapping, type RelExpr, type RelNode } from "@tupl/foundation";
 import {
   UnsupportedSqlRelationalPlanError,
@@ -109,8 +110,18 @@ export function buildSingleQueryPlan<TContext>(
   rel: RelNode,
   entityConfigs: Record<string, ResolvedEntityConfig<TContext>>,
 ): SingleQueryPlan<TContext> {
+  // Drizzle's row decoder assigns object keys, so this public name must be projected locally.
+  if (rel.output.some((column) => column.name === "__proto__")) {
+    throw new UnsupportedSingleQueryPlanError("This output name requires local row projection.");
+  }
   const pipeline = extractRelPipeline(rel);
   const joinPlan = buildJoinPlan(pipeline.base, entityConfigs);
+
+  // Capability discovery must validate the same expression grammar as execution.
+  for (const mapping of pipeline.project?.columns ?? []) {
+    if (!isRelProjectColumnMapping(mapping))
+      buildSqlExpressionFromRelExpr(mapping.expr, joinPlan.aliases);
+  }
 
   return {
     joinPlan,
@@ -316,7 +327,7 @@ function createProjectedScanBinding<TContext>(
       }
     }
 
-    columns[output] = resolveProjectedSqlExpression(rawMapping, aliases, true);
+    setOwnProperty(columns, output, resolveProjectedSqlExpression(rawMapping, aliases, true));
   }
 
   return {

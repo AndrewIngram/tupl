@@ -8,3 +8,5 @@ export * from "./model/errors";
 export * from "./model/primitives";
 export * from "./model/rel";
 export * from "./stringify-unknown-value";
+
+export { setOwnProperty } from "./record";

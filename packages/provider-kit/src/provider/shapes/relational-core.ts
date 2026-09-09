@@ -83,7 +83,12 @@ export function canCompileBasicRel(
     case "cte_ref":
       return false;
     case "scan":
-      return isKnownScan(node.table);
+      return (
+        isKnownScan(node.table) &&
+        !node.orderBy?.length &&
+        node.limit == null &&
+        node.offset == null
+      );
     case "filter":
       return !node.expr && canCompileBasicRel(node.input, isKnownScan, options);
     case "project":

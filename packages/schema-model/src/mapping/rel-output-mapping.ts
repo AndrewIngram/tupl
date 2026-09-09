@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import type { QueryRow } from "../contracts/query-contracts";
 import type {
   SchemaDefinition,
@@ -30,11 +31,15 @@ export function inferAndMapRelOutputRows(
     const out: QueryRow = {};
     for (const output of rel.output) {
       const definition = outputDefinitions[output.name];
-      out[output.name] = normalizeRowValue(
-        row[output.name] ?? null,
+      setOwnProperty(
+        out,
         output.name,
-        definition,
-        definition ? buildRelOutputCoercion(definition) : undefined,
+        normalizeRowValue(
+          row[output.name] ?? null,
+          output.name,
+          definition,
+          definition ? buildRelOutputCoercion(definition) : undefined,
+        ),
       );
     }
     return out;

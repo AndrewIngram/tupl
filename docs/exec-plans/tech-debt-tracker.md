@@ -29,17 +29,6 @@ These are the current architecture and process questions that remain intentional
 - Resolved in derived-column execution: physical explain, session plans, and runtime use the same eligibility helper. A right input must be a bare scan with no limit or offset, and its provider must implement `lookupMany`. Private providers resolve from attached entity handles. Left keys may be computed locally.
 - Runtime session events remain the evidence for executed batches; static provider SQL descriptions do not include data-dependent lookup keys.
 
-### Embedded SQL scan modifiers
-
-- Pre-existing: first-party SQL fragment lowering can omit `orderBy`, `limit`, and `offset` carried directly on a `RelScanNode`. An explicit sort/limit relational wrapper works correctly.
-- Repro: a view returning a raw scan of scoped profiles with `orderBy: [{ column: "id", direction: "asc" }]`, `limit: 1`, and `offset: 1` emits a scoped `SELECT id, name` without ordering or pagination through Objection. With scoped IDs 7 and 9, the scan returns both instead of only 9.
-- Shared lookup eligibility rejects embedded scan limits/offsets, so the lookup optimization does not bypass them. Canonicalizing or rejecting embedded modifiers before SQL fragment flattening remains separate provider work.
-
-### Aggregate-mode navigation window validation
-
-- Current state: grouped aggregate window validation checks `partitionBy`, `orderBy`, and aggregate `column` refs against aggregate output columns, but it does not yet validate navigation-function `value` / `defaultExpr` expression refs in the same way.
-- Question: should aggregate-mode window preparation reject non-aggregate navigation expressions early with a specific lowering error, rather than relying on later execution-time failure?
-
 ### Planner subquery callback Result bridge
 
 - Current state: structured/simple SELECT lowering now returns typed `Result` values for direct validation failures, but nested subquery lowering still crosses an older callback seam that expects `RelNode | null`, so the structured-select bridge temporarily rethrows `RelLoweringError` across that seam and immediately re-captures it.
@@ -64,12 +53,13 @@ These are the current architecture and process questions that remain intentional
 - Async computation is deferred until a use case justifies concurrency, shared
   in-flight evaluation, and cancellation semantics.
 
-### Public source coercion through SQL fragments
+### Integer division contract
 
-- Pre-existing: SQL query execution can bypass a public source column's `coerce`,
-  while explicit provider-row mapping applies it. Derived dependencies now apply
-  coercion before validating the callback input, including type-changing coercions.
-- Repro: declare `col.string("id", { coerce: value => String(value) + "!" })` over
-  integer IDs. Direct mapping produces suffixed strings; a fully native SQL
-  projection can return the provider's original value. A public coercion must
-  become a planner-visible transformation without breaking standalone mapping.
+- Current state: ordinary tupl division produces floating-point results, including
+  `9 / 2 = 4.5`, across tested local and SQL routes. SQLite literal integer
+  division produces `4`. Null propagation and zero divisors are now consistent.
+- Question: retain floating-point division as the portable contract, or introduce
+  explicit integer-sensitive semantics? This was outside the nine audit fixes.
+
+The embedded scan modifier, grouped navigation validation, and public source
+coercion defects were resolved in the [contract audit remediation](completed/contract-audit-remediation.md).

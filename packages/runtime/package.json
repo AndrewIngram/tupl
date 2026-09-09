@@ -9,15 +9,49 @@
     "url": "git+https://github.com/AndrewIngram/tupl.git",
     "directory": "packages/runtime"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "type": "module",
   "sideEffects": false,
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "exports": {
-    ".": "./src/index.ts",
-    "./executor": "./src/runtime/executor.ts",
-    "./session": "./src/runtime/session/index.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./executor": {
+      "source": "./src/runtime/executor.ts",
+      "import": {
+        "types": "./dist/executor.d.mts",
+        "default": "./dist/executor.mjs"
+      },
+      "require": {
+        "types": "./dist/executor.d.cts",
+        "default": "./dist/executor.cjs"
+      }
+    },
+    "./session": {
+      "source": "./src/runtime/session/index.ts",
+      "import": {
+        "types": "./dist/session.d.mts",
+        "default": "./dist/session.mjs"
+      },
+      "require": {
+        "types": "./dist/session.d.cts",
+        "default": "./dist/session.cjs"
+      }
+    }
   },
   "publishConfig": {
     "access": "public"
@@ -25,7 +59,8 @@
   "scripts": {
     "build": "vp pack",
     "test": "vp test run",
-    "typecheck": "tsgo --noEmit -p tsconfig.json"
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@tupl/foundation": "workspace:*",

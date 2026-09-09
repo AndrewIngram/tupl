@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { createScopedSource } from "../backend/scoped-source";
 import { asc, desc, eq, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import type { RelNode } from "@tupl/foundation";
@@ -364,18 +365,30 @@ function buildSelectionRecord<TContext>(
 
   for (const entry of selection) {
     switch (entry.kind) {
-      case "column":
-        out[entry.output] = resolveColumnRefFromAliasMap(
+      case "column": {
+        const source = resolveColumnRefFromAliasMap(
           aliases,
           toAliasColumnRef(entry.source.alias ?? entry.source.table, entry.source.column),
         );
+        setOwnProperty(
+          out,
+          entry.output,
+          entry.output === entry.source.column ? source : sql`${source}`.as(entry.output),
+        );
         break;
+      }
       case "metric":
-        out[entry.output] = buildAggregateMetricSql(entry.metric, aliases).as(entry.output);
+        setOwnProperty(
+          out,
+          entry.output,
+          buildAggregateMetricSql(entry.metric, aliases).as(entry.output),
+        );
         break;
       case "expr":
-        out[entry.output] = sql`${buildSqlExpressionFromRelExpr(entry.expr, aliases)}`.as(
+        setOwnProperty(
+          out,
           entry.output,
+          sql`${buildSqlExpressionFromRelExpr(entry.expr, aliases)}`.as(entry.output),
         );
         break;
     }
@@ -394,17 +407,24 @@ function buildWithSelectionRecord(
 
   for (const entry of projection) {
     if (entry.kind === "window") {
-      selection[entry.output] =
-        windowExpressions.get(entry.window.as) ?? windowExpressions.get(entry.output);
+      setOwnProperty(
+        selection,
+        entry.output,
+        windowExpressions.get(entry.window.as) ?? windowExpressions.get(entry.output),
+      );
       continue;
     }
 
     if (windowExpressions.has(entry.source.column)) {
-      selection[entry.output] = windowExpressions.get(entry.source.column)!;
+      setOwnProperty(selection, entry.output, windowExpressions.get(entry.source.column)!);
       continue;
     }
 
-    selection[entry.output] = resolveWithBodySourceColumn(source, entry.source, scanAlias);
+    setOwnProperty(
+      selection,
+      entry.output,
+      resolveWithBodySourceColumn(source, entry.source, scanAlias),
+    );
   }
 
   return selection;

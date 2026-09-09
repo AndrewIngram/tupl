@@ -163,6 +163,7 @@ function evaluateNumericBinaryResult(
   op: "ADD" | "SUBTRACT" | "MULTIPLY" | "DIVIDE" | "MOD",
   apply: (left: number, right: number) => number,
 ) {
+  if (left == null || right == null) return Result.ok(null);
   const leftResult = toFiniteNumberResult(left, op);
   if (Result.isError(leftResult)) {
     return leftResult;
@@ -171,6 +172,7 @@ function evaluateNumericBinaryResult(
   if (Result.isError(rightResult)) {
     return rightResult;
   }
+  if ((op === "DIVIDE" || op === "MOD") && rightResult.value === 0) return Result.ok(null);
   return Result.ok(apply(leftResult.value, rightResult.value));
 }
 

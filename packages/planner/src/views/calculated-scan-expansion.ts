@@ -2,7 +2,10 @@ import { containsLocalExpression } from "../provider/provider-ownership";
 import type { RelExpr, RelNode, RelScanNode } from "@tupl/foundation";
 import { isNormalizedSourceColumnBinding } from "@tupl/schema-model/mapping";
 import type { NormalizedPhysicalTableBinding } from "@tupl/schema-model/normalized";
-import { getNormalizedColumnBindings } from "@tupl/schema-model/normalization";
+import {
+  getNormalizedColumnBindings,
+  sourceColumnValueExpression,
+} from "@tupl/schema-model/normalization";
 
 import { nextRelId } from "../physical/planner-ids";
 import type { ViewAliasColumnMap } from "../planner-types";
@@ -12,7 +15,7 @@ import type { ViewAliasColumnMap } from "../planner-types";
  */
 export function hasCalculatedColumns(binding: NormalizedPhysicalTableBinding): boolean {
   return Object.values(getNormalizedColumnBindings(binding)).some(
-    (columnBinding) => !isNormalizedSourceColumnBinding(columnBinding),
+    (columnBinding) => !isNormalizedSourceColumnBinding(columnBinding) || !!columnBinding.coerce,
   );
 }
 
@@ -31,7 +34,9 @@ export function expandCalculatedScan(
 
   const referencedCalculated = [...referencedColumns].filter((column) => {
     const columnBinding = columnBindings[column];
-    return !!columnBinding && !isNormalizedSourceColumnBinding(columnBinding);
+    return (
+      !!columnBinding && (!isNormalizedSourceColumnBinding(columnBinding) || !!columnBinding.coerce)
+    );
   });
   if (referencedCalculated.length === 0) {
     return null;
@@ -56,7 +61,9 @@ export function expandCalculatedScan(
   const alias = node.alias ?? node.table;
   const needsPrivateInputs = referencedCalculated.some((column) => {
     const entry = columnBindings[column];
-    return entry?.kind === "expr" && containsLocalExpression(entry.expr);
+    return (
+      !!entry && (entry.kind === "source" ? !!entry.coerce : containsLocalExpression(entry.expr))
+    );
   });
   const entity =
     needsPrivateInputs && binding.sourceHandle
@@ -89,7 +96,10 @@ export function expandCalculatedScan(
     ...(entity ? { entity } : {}),
     alias,
     select: [...requiredSourceColumns],
-    where: (node.where ?? []).filter((clause) => columnBindings[clause.column]?.kind === "source"),
+    where: (node.where ?? []).filter(
+      (clause) =>
+        columnBindings[clause.column]?.kind === "source" && !columnBindings[clause.column]?.coerce,
+    ),
     output: [...requiredSourceColumns].map((column) => ({
       name: `${alias}.${column}`,
     })),
@@ -102,6 +112,16 @@ export function expandCalculatedScan(
     input: current,
     columns: [...referencedColumns].map((column) => {
       const columnBinding = columnBindings[column];
+      if (columnBinding?.kind === "source" && columnBinding.coerce) {
+        return {
+          kind: "expr" as const,
+          expr: sourceColumnValueExpression(columnBinding, {
+            kind: "column",
+            ref: { alias, column },
+          }),
+          output: `${alias}.${column}`,
+        };
+      }
       if (!columnBinding || isNormalizedSourceColumnBinding(columnBinding)) {
         return {
           kind: "column" as const,
@@ -119,7 +139,8 @@ export function expandCalculatedScan(
   };
 
   const residualWhere = (node.where ?? []).filter(
-    (clause) => columnBindings[clause.column]?.kind !== "source",
+    (clause) =>
+      columnBindings[clause.column]?.kind !== "source" || !!columnBindings[clause.column]?.coerce,
   );
   if (residualWhere.length > 0) {
     current = {

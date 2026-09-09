@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { stringifyUnknownValue } from "@tupl/foundation";
 import type { QueryRow, ScanFilterClause, TableScanRequest } from "@tupl/schema-model";
 
@@ -9,7 +10,7 @@ export type InternalRow = Record<string, unknown>;
 export function prefixRow(row: QueryRow, alias: string): InternalRow {
   const out: InternalRow = {};
   for (const [column, value] of Object.entries(row)) {
-    out[`${alias}.${column}`] = value;
+    setOwnProperty(out, `${alias}.${column}`, value);
   }
   return out;
 }
@@ -43,7 +44,7 @@ export function scanLocalRows(rows: QueryRow[], request: TableScanRequest): Quer
   return out.map((row) => {
     const projected: QueryRow = {};
     for (const column of request.select) {
-      projected[column] = row[column] ?? null;
+      setOwnProperty(projected, column, row[column] ?? null);
     }
     return projected;
   });

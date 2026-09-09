@@ -106,6 +106,11 @@ class SqliteSelectParser {
     }
 
     this.parseSetOperations(root);
+    if (this.matchKeyword("ORDER")) {
+      this.expectKeyword("BY");
+      root.orderby = this.parseOrderByTerms();
+    }
+    if (this.matchKeyword("LIMIT")) root.limit = this.parseLimitClause();
     return root;
   }
 
@@ -224,15 +229,6 @@ class SqliteSelectParser {
 
     if (this.matchKeyword("WINDOW")) {
       ast.window = this.parseWindowClause();
-    }
-
-    if (this.matchKeyword("ORDER")) {
-      this.expectKeyword("BY");
-      ast.orderby = this.parseOrderByTerms();
-    }
-
-    if (this.matchKeyword("LIMIT")) {
-      ast.limit = this.parseLimitClause();
     }
 
     return ast;

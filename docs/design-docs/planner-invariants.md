@@ -84,3 +84,25 @@ These invariants should hold unless a deliberate architecture change updates thi
   Typed derived JSON retains its inferred shape through column definitions and
   qualified view references unless coercion may change that shape. Coerced and
   unvalidated provider JSON stay unknown.
+
+## SQL contract boundaries
+
+- Compound ORDER BY and pagination wrap the complete set operation. Branch
+  outputs align positionally before those modifiers run. Recursive CTE body
+  ordering and pagination are rejected until recursive queue semantics exist.
+- Aggregate grouping values and metrics have distinct internal names. HAVING,
+  sorting, windows, and final projection must resolve the same identities.
+- Grouped navigation windows validate value and default expressions against
+  grouped or aggregate outputs, just like partition and ordering references.
+- Binary arithmetic propagates null. Division and remainder by zero return null.
+  Ordinary division retains floating-point semantics.
+- SQL output names, including `__proto__`, are own enumerable row properties.
+  Providers whose decoders cannot preserve a name must decline that fragment.
+- Embedded scan ordering and pagination expand into explicit relational nodes
+  before provider planning. SQL capability checks reject unexpanded modifiers.
+- A demanded public source coercion is a local expression. Predicates and ordering
+  on it consume the coerced value; unused coercions introduce no local work.
+  Standalone row mapping retains the same source coercion contract.
+- Provider capability checks must account for expression translation, not just
+  relational node shapes. Unsupported expressions leave eligible descendants
+  available for provider execution.

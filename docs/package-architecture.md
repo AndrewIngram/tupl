@@ -68,3 +68,15 @@ Local computation ownership follows the same layering: foundation defines the
 dependency normalization, and the callback registry; planner owns demand pruning
 and stage placement; runtime evaluates registered operations and records actual
 work. Provider-kit and provider packages never receive executable callbacks.
+
+## Published entry points
+
+The six core packages publish built ESM, CommonJS, and matching declarations for
+every public root and subpath. The `source` condition supports workspace tooling;
+ordinary Node imports resolve `dist`. Workspace test aliases derive from those
+export declarations so all packages share the same source module instances.
+
+Run `pnpm test:packed` to build and verify actual tarballs in an isolated consumer.
+It checks every core export, both Node import styles, strict NodeNext consumers,
+and native and derived SQLite queries. Consumer type checks do not skip library
+declarations.

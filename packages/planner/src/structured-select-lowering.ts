@@ -9,7 +9,7 @@ import { toRelLoweringError } from "./planner-errors";
 import { tryLowerSimpleSelect } from "./simple-select-lowering";
 import { parseRelColumnRef } from "./select/select-from-lowering";
 import { expandSelectWildcards } from "./select/select-wildcards";
-import { parseSetOp } from "./select/set-op-lowering";
+import { applyCompoundModifiers, parseSetOp } from "./select/set-op-lowering";
 
 /**
  * Structured select lowering owns select/set-op/CTE lowering into relational nodes.
@@ -101,9 +101,20 @@ export function tryLowerStructuredSelect(
 
     const { with: _ignoredWith, ...withoutWith } = normalizedAst;
     let currentAst: SelectAst = withoutWith as SelectAst;
-    const { set_op: _ignoredSetOp, _next: _ignoredNext, ...currentBaseAst } = currentAst;
-    let currentNode: RelNode | null = yield* tryLowerSimpleSelectWithinStructuredLowering(
+    const {
+      set_op: _ignoredSetOp,
+      _next: _ignoredNext,
+      orderby: _compoundOrder,
+      limit: _compoundLimit,
+      ...currentBaseAst
+    } = currentAst;
+    const firstBranchAst = expandSelectWildcards(
       currentBaseAst as SelectAst,
+      schema,
+      scopedCteColumns,
+    );
+    let currentNode: RelNode | null = yield* tryLowerSimpleSelectWithinStructuredLowering(
+      firstBranchAst,
       schema,
       scopedCteColumns,
       outputNames,
@@ -147,6 +158,18 @@ export function tryLowerStructuredSelect(
       currentAst = currentAst._next;
     }
 
+    currentNode = yield* applyCompoundModifiers(
+      currentNode,
+      { ...normalizedAst, ...(firstBranchAst.columns ? { columns: firstBranchAst.columns } : {}) },
+      !!outputNames,
+    );
+    if (outputNames && outputNames.length === currentNode.output.length) {
+      currentNode = yield* alignRelOutputShape(
+        currentNode,
+        outputNames.map((name) => ({ name })),
+      );
+    }
+
     if (loweredCtes.length === 0) {
       return Result.ok(currentNode);
     }
@@ -177,6 +200,13 @@ function lowerRecursiveCte(
     if (!ast.set_op || !ast._next) {
       return Result.ok(null);
     }
+    if (ast.orderby?.length || ast.limit)
+      return Result.err(
+        new RelLoweringError({
+          operation: "lower recursive CTE",
+          message: "ORDER BY and LIMIT inside a recursive CTE are not supported.",
+        }),
+      );
 
     const op = parseSetOp(ast.set_op);
     if (op !== "union" && op !== "union_all") {

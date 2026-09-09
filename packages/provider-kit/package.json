@@ -9,16 +9,60 @@
     "url": "git+https://github.com/AndrewIngram/tupl.git",
     "directory": "packages/provider-kit"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "type": "module",
   "sideEffects": false,
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "exports": {
-    ".": "./src/index.ts",
-    "./relational-sql": "./src/relational-sql.ts",
-    "./shapes": "./src/provider/shapes/index.ts",
-    "./testing": "./src/testing.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./relational-sql": {
+      "source": "./src/relational-sql.ts",
+      "import": {
+        "types": "./dist/relational-sql.d.mts",
+        "default": "./dist/relational-sql.mjs"
+      },
+      "require": {
+        "types": "./dist/relational-sql.d.cts",
+        "default": "./dist/relational-sql.cjs"
+      }
+    },
+    "./shapes": {
+      "source": "./src/provider/shapes/index.ts",
+      "import": {
+        "types": "./dist/shapes.d.mts",
+        "default": "./dist/shapes.mjs"
+      },
+      "require": {
+        "types": "./dist/shapes.d.cts",
+        "default": "./dist/shapes.cjs"
+      }
+    },
+    "./testing": {
+      "source": "./src/testing.ts",
+      "import": {
+        "types": "./dist/testing.d.mts",
+        "default": "./dist/testing.mjs"
+      },
+      "require": {
+        "types": "./dist/testing.d.cts",
+        "default": "./dist/testing.cjs"
+      }
+    }
   },
   "publishConfig": {
     "access": "public"
@@ -26,7 +70,8 @@
   "scripts": {
     "build": "vp pack",
     "test": "vp test run",
-    "typecheck": "tsgo --noEmit -p tsconfig.json"
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@tupl/foundation": "workspace:*",

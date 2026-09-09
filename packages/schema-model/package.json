@@ -9,23 +9,137 @@
     "url": "git+https://github.com/AndrewIngram/tupl.git",
     "directory": "packages/schema-model"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "type": "module",
   "sideEffects": false,
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "exports": {
-    ".": "./src/index.ts",
-    "./constraints": "./src/constraints.ts",
-    "./ddl": "./src/ddl.ts",
-    "./dsl": "./src/dsl.ts",
-    "./definition": "./src/definition.ts",
-    "./enums": "./src/enums.ts",
-    "./mapping": "./src/mapping/index.ts",
-    "./normalized": "./src/normalized.ts",
-    "./planning": "./src/planning.ts",
-    "./table-planning": "./src/table-planning.ts",
-    "./normalization": "./src/normalization.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./constraints": {
+      "source": "./src/constraints.ts",
+      "import": {
+        "types": "./dist/constraints.d.mts",
+        "default": "./dist/constraints.mjs"
+      },
+      "require": {
+        "types": "./dist/constraints.d.cts",
+        "default": "./dist/constraints.cjs"
+      }
+    },
+    "./ddl": {
+      "source": "./src/ddl.ts",
+      "import": {
+        "types": "./dist/ddl.d.mts",
+        "default": "./dist/ddl.mjs"
+      },
+      "require": {
+        "types": "./dist/ddl.d.cts",
+        "default": "./dist/ddl.cjs"
+      }
+    },
+    "./dsl": {
+      "source": "./src/dsl.ts",
+      "import": {
+        "types": "./dist/dsl.d.mts",
+        "default": "./dist/dsl.mjs"
+      },
+      "require": {
+        "types": "./dist/dsl.d.cts",
+        "default": "./dist/dsl.cjs"
+      }
+    },
+    "./definition": {
+      "source": "./src/definition.ts",
+      "import": {
+        "types": "./dist/definition.d.mts",
+        "default": "./dist/definition.mjs"
+      },
+      "require": {
+        "types": "./dist/definition.d.cts",
+        "default": "./dist/definition.cjs"
+      }
+    },
+    "./enums": {
+      "source": "./src/enums.ts",
+      "import": {
+        "types": "./dist/enums.d.mts",
+        "default": "./dist/enums.mjs"
+      },
+      "require": {
+        "types": "./dist/enums.d.cts",
+        "default": "./dist/enums.cjs"
+      }
+    },
+    "./mapping": {
+      "source": "./src/mapping/index.ts",
+      "import": {
+        "types": "./dist/mapping.d.mts",
+        "default": "./dist/mapping.mjs"
+      },
+      "require": {
+        "types": "./dist/mapping.d.cts",
+        "default": "./dist/mapping.cjs"
+      }
+    },
+    "./normalized": {
+      "source": "./src/normalized.ts",
+      "import": {
+        "types": "./dist/normalized.d.mts",
+        "default": "./dist/normalized.mjs"
+      },
+      "require": {
+        "types": "./dist/normalized.d.cts",
+        "default": "./dist/normalized.cjs"
+      }
+    },
+    "./planning": {
+      "source": "./src/planning.ts",
+      "import": {
+        "types": "./dist/planning.d.mts",
+        "default": "./dist/planning.mjs"
+      },
+      "require": {
+        "types": "./dist/planning.d.cts",
+        "default": "./dist/planning.cjs"
+      }
+    },
+    "./table-planning": {
+      "source": "./src/table-planning.ts",
+      "import": {
+        "types": "./dist/table-planning.d.mts",
+        "default": "./dist/table-planning.mjs"
+      },
+      "require": {
+        "types": "./dist/table-planning.d.cts",
+        "default": "./dist/table-planning.cjs"
+      }
+    },
+    "./normalization": {
+      "source": "./src/normalization.ts",
+      "import": {
+        "types": "./dist/normalization.d.mts",
+        "default": "./dist/normalization.mjs"
+      },
+      "require": {
+        "types": "./dist/normalization.d.cts",
+        "default": "./dist/normalization.cjs"
+      }
+    }
   },
   "publishConfig": {
     "access": "public"
@@ -33,7 +147,8 @@
   "scripts": {
     "build": "vp pack",
     "test": "vp test run",
-    "typecheck": "tsgo --noEmit -p tsconfig.json"
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@tupl/foundation": "workspace:*",

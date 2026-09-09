@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import type { AnyColumn } from "drizzle-orm";
 import type { DataEntityHandle } from "@tupl/provider-kit";
 
@@ -34,11 +35,11 @@ export function deriveColumnsFromTable(table: object): DrizzleColumnMap<string> 
     }
 
     const column = raw as AnyColumn;
-    out[propertyKey] = column;
+    setOwnProperty(out, propertyKey, column);
 
     const dbName = readColumnName(column);
     if (dbName) {
-      out[dbName] = column;
+      setOwnProperty(out, dbName, column);
     }
   }
 
@@ -75,7 +76,7 @@ export function deriveEntityColumnsFromTable(table: object): DataEntityHandle<st
     if (typeof column.dataType === "string") {
       metadata.physicalType = column.dataType;
     }
-    out[propertyKey] = metadata;
+    setOwnProperty(out, propertyKey, metadata);
   }
 
   return out;

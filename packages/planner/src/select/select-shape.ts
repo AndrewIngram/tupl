@@ -3,6 +3,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import {
   RelLoweringError,
   type RelColumnRef,
+  type RelExpr,
   type RelNode,
   type RelProjectExprMapping,
 } from "@tupl/foundation";
@@ -53,6 +54,7 @@ export interface PreparedSimpleSelect {
     materializations: RelProjectExprMapping[];
   };
   effectiveGroupBy: RelColumnRef[];
+  aggregateGroupOutputs: string[];
   allAggregateMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"];
   havingExpr: import("@tupl/foundation").RelExpr | null;
   orderBy: ResolvedOrderTerm[];
@@ -258,7 +260,7 @@ export function prepareSimpleSelectLowering(
     aggregateMetrics.map((metric) => [getAggregateMetricSignature(metric), metric.as]),
   );
   const hiddenHavingMetrics: Extract<RelNode, { kind: "aggregate" }>["metrics"] = [];
-  const havingExpr =
+  let havingExpr =
     aggregateMode && ast.having
       ? lowerHavingExpr(
           ast.having,
@@ -272,6 +274,55 @@ export function prepareSimpleSelectLowering(
     return Result.ok(null);
   }
   const allAggregateMetrics = [...aggregateMetrics, ...hiddenHavingMetrics];
+  const reservedAggregateNames = new Set([
+    ...effectiveGroupBy.map((ref) => ref.column),
+    ...allAggregateMetrics.map((metric) => metric.as),
+    ...windowFunctions.map((fn) => fn.as),
+  ]);
+  const usedAggregateNames = new Set([
+    ...allAggregateMetrics.map((metric) => metric.as),
+    ...windowFunctions.map((fn) => fn.as),
+  ]);
+  const aggregateGroupOutputs = effectiveGroupBy.map((ref) => {
+    let name = ref.column;
+    if (usedAggregateNames.has(name)) {
+      do {
+        name = nextRelId("group_value");
+      } while (reservedAggregateNames.has(name));
+    }
+    usedAggregateNames.add(name);
+    reservedAggregateNames.add(name);
+    return name;
+  });
+  const groupOutputBySource = new Map(
+    effectiveGroupBy.map((ref, index) => [
+      `${ref.alias ?? ref.table ?? ""}.${ref.column}`,
+      aggregateGroupOutputs[index]!,
+    ]),
+  );
+  const havingRef = (ref: RelColumnRef): RelColumnRef => ({
+    column: groupOutputBySource.get(`${ref.alias ?? ref.table ?? ""}.${ref.column}`) ?? ref.column,
+  });
+  if (havingExpr) havingExpr = mapExpressionRefs(havingExpr, havingRef);
+  const windowRef = (ref: RelColumnRef): RelColumnRef => {
+    const projected = safeAggregateProjections.find(
+      (projection) => projection.output === ref.column,
+    );
+    if (projected?.kind === "metric") return { column: projected.metric.as };
+    if (projected?.kind === "group" && projected.source) return havingRef(projected.source);
+    const index = effectiveGroupBy.findIndex(
+      (source) => source.column === ref.column && (!ref.alias || ref.alias === source.alias),
+    );
+    return index < 0 ? ref : { column: aggregateGroupOutputs[index]! };
+  };
+  for (const fn of windowFunctions) {
+    fn.partitionBy = fn.partitionBy.map(windowRef);
+    fn.orderBy = fn.orderBy.map((term) => ({ ...term, source: windowRef(term.source) }));
+    if ("column" in fn && fn.column) fn.column = windowRef(fn.column);
+    if ("value" in fn) fn.value = mapExpressionRefs(fn.value, windowRef);
+    if ("defaultExpr" in fn && fn.defaultExpr)
+      fn.defaultExpr = mapExpressionRefs(fn.defaultExpr, windowRef);
+  }
 
   const orderByTerms = parseOrderBy(
     ast.orderby,
@@ -289,7 +340,11 @@ export function prepareSimpleSelectLowering(
 
   const orderResolution = aggregateMode
     ? Result.gen(function* () {
-        const orderBy = yield* resolveAggregateOrderBy(orderByTerms, safeAggregateProjections);
+        const orderBy = yield* resolveAggregateOrderBy(
+          orderByTerms,
+          safeAggregateProjections,
+          groupOutputBySource,
+        );
         return Result.ok({
           orderBy,
           materializations: [] as RelProjectExprMapping[],
@@ -313,6 +368,7 @@ export function prepareSimpleSelectLowering(
     aggregateSelectProjections,
     aggregateGroupByResolution: aggregateGroupByResolutionResult.value,
     effectiveGroupBy,
+    aggregateGroupOutputs,
     allAggregateMetrics,
     havingExpr,
     orderBy,
@@ -353,9 +409,10 @@ function parseAggregateWindowProjections(
   }
 
   const availableColumns = new Set(
-    aggregateProjections.map((projection) =>
-      projection.kind === "metric" ? projection.metric.as : projection.output,
-    ),
+    aggregateProjections.flatMap((projection) => [
+      projection.output,
+      ...(projection.kind === "group" && projection.source ? [projection.source.column] : []),
+    ]),
   );
   for (const projection of windowProjections) {
     const refs = [
@@ -365,6 +422,16 @@ function parseAggregateWindowProjections(
         ? [projection.function.column]
         : []),
     ];
+    if ("value" in projection.function)
+      mapExpressionRefs(projection.function.value, (ref) => {
+        refs.push(ref);
+        return ref;
+      });
+    if ("defaultExpr" in projection.function && projection.function.defaultExpr)
+      mapExpressionRefs(projection.function.defaultExpr, (ref) => {
+        refs.push(ref);
+        return ref;
+      });
     for (const ref of refs) {
       if (!availableColumns.has(ref.column)) {
         return null;
@@ -373,4 +440,11 @@ function parseAggregateWindowProjections(
   }
 
   return windowProjections;
+}
+
+function mapExpressionRefs(expr: RelExpr, map: (ref: RelColumnRef) => RelColumnRef): RelExpr {
+  if (expr.kind === "column") return { ...expr, ref: map(expr.ref) };
+  if (expr.kind === "function" || expr.kind === "local")
+    return { ...expr, args: expr.args.map((arg) => mapExpressionRefs(arg, map)) };
+  return expr;
 }

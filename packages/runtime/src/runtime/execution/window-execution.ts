@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { Result } from "better-result";
 
 import type { RelNode } from "@tupl/foundation";
@@ -71,7 +72,7 @@ function applyWindowFunction(
       }
 
       if (fn.fn === "row_number") {
-        row[fn.as] = idx + 1;
+        setOwnProperty(row, fn.as, idx + 1);
         continue;
       }
 
@@ -83,14 +84,14 @@ function applyWindowFunction(
           rank = idx + 1;
         }
 
-        row[fn.as] = fn.fn === "dense_rank" ? denseRank : rank;
+        setOwnProperty(row, fn.as, fn.fn === "dense_rank" ? denseRank : rank);
         continue;
       }
 
       if (fn.fn === "first_value") {
         const frameEntries = resolveFrameEntries(entries, idx, fn);
         const first = frameEntries[0];
-        row[fn.as] = first ? evaluateWindowExpr(fn.value, first.row) : null;
+        setOwnProperty(row, fn.as, first ? evaluateWindowExpr(fn.value, first.row) : null);
         continue;
       }
 
@@ -98,11 +99,15 @@ function applyWindowFunction(
         const step = fn.offset ?? 1;
         const targetIndex = fn.fn === "lag" ? idx - step : idx + step;
         const target = entries[targetIndex];
-        row[fn.as] = target
-          ? evaluateWindowExpr(fn.value, target.row)
-          : fn.defaultExpr
-            ? evaluateWindowExpr(fn.defaultExpr, entry.row)
-            : null;
+        setOwnProperty(
+          row,
+          fn.as,
+          target
+            ? evaluateWindowExpr(fn.value, target.row)
+            : fn.defaultExpr
+              ? evaluateWindowExpr(fn.defaultExpr, entry.row)
+              : null,
+        );
         continue;
       }
 
@@ -126,7 +131,7 @@ function applyWindowFunction(
       if (Result.isError(metricResult)) {
         throw metricResult.error;
       }
-      row[fn.as] = metricResult.value;
+      setOwnProperty(row, fn.as, metricResult.value);
     }
   }
 

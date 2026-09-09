@@ -2,7 +2,36 @@ import type {
   NormalizedColumnBinding,
   NormalizedPhysicalTableBinding,
   NormalizedTableBinding,
+  NormalizedSourceColumnBinding,
 } from "../contracts/normalized-contracts";
+import type { RelExpr, RelLocalOperation } from "@tupl/foundation";
+import { registerLocalOperation } from "../dsl/derive";
+import { normalizeProviderRowValue } from "../mapping/row-coercion";
+
+const sourceComputations = new WeakMap<NormalizedSourceColumnBinding, RelLocalOperation>();
+
+/** Source coercion is a value computation; standalone row mapping still uses the source binding. */
+export function sourceColumnValueExpression(
+  binding: NormalizedSourceColumnBinding,
+  input: RelExpr,
+): RelExpr {
+  if (!binding.coerce) return input;
+  let operation = sourceComputations.get(binding);
+  if (!operation) {
+    operation = registerLocalOperation(`coerce ${binding.source}`, {
+      dependencies: {
+        value: {
+          kind: "dsl_calculated_column",
+          expr: input,
+          definition: binding.definition ?? "json",
+        },
+      },
+      evaluate: ({ value }) => normalizeProviderRowValue(value, binding),
+    });
+    sourceComputations.set(binding, operation);
+  }
+  return { kind: "local", operation, args: [input] };
+}
 
 /**
  * Normalized column sources own lookup and source-map helpers for normalized bindings.

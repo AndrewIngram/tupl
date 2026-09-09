@@ -1,0 +1,71 @@
+[
+  {
+    "case": "overlapping scoped contexts, one failure, later reuse, no shared derivations",
+    "pass": true,
+    "derivations": 3
+  },
+  {
+    "case": "SELECT id FROM items",
+    "tenant": "a",
+    "pass": true
+  },
+  {
+    "case": "SELECT MAX(id) AS id FROM items",
+    "tenant": "a",
+    "pass": true
+  },
+  {
+    "case": "WITH c AS (SELECT id FROM items) SELECT id FROM c",
+    "tenant": "a",
+    "pass": true
+  },
+  {
+    "case": "SELECT a.id FROM items a JOIN items b ON a.id=b.id",
+    "tenant": "a",
+    "pass": true
+  },
+  {
+    "case": "SELECT id FROM items",
+    "tenant": "b",
+    "pass": true
+  },
+  {
+    "case": "SELECT MAX(id) AS id FROM items",
+    "tenant": "b",
+    "pass": true
+  },
+  {
+    "case": "WITH c AS (SELECT id FROM items) SELECT id FROM c",
+    "tenant": "b",
+    "pass": true
+  },
+  {
+    "case": "SELECT a.id FROM items a JOIN items b ON a.id=b.id",
+    "tenant": "b",
+    "pass": true
+  },
+  {
+    "case": "SELECT id FROM items",
+    "tenant": "a' OR 1=1 --",
+    "pass": true
+  },
+  {
+    "case": "SELECT MAX(id) AS id FROM items",
+    "tenant": "a' OR 1=1 --",
+    "pass": true
+  },
+  {
+    "case": "WITH c AS (SELECT id FROM items) SELECT id FROM c",
+    "tenant": "a' OR 1=1 --",
+    "pass": true
+  },
+  {
+    "case": "SELECT a.id FROM items a JOIN items b ON a.id=b.id",
+    "tenant": "a' OR 1=1 --",
+    "pass": true
+  },
+  {
+    "case": "undeclared tenant field rejected",
+    "pass": true
+  }
+]

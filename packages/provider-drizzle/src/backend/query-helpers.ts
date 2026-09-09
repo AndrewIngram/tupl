@@ -1,3 +1,4 @@
+import { setOwnProperty } from "@tupl/foundation";
 import { createScopedSource } from "./scoped-source";
 import {
   and,
@@ -118,7 +119,7 @@ export function buildSelection<TColumn extends string>(
     if (!source) {
       throw new Error(`Unsupported column "${column}" for table "${tableName}".`);
     }
-    out[column] = source;
+    setOwnProperty(out, column, source);
   }
   return out;
 }

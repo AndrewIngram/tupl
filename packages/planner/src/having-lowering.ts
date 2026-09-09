@@ -48,6 +48,7 @@ export function lowerHavingExpr(
       return {
         kind: "column",
         ref: {
+          ...(resolved.alias ? { alias: resolved.alias } : {}),
           column: resolved.column,
         },
       };
