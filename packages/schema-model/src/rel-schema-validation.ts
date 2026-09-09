@@ -54,7 +54,7 @@ export function validateRelAgainstSchema(
 
   const visitExpr = (expr: RelExpr): BetterResult<void, RelLoweringError> => {
     if (expr.kind === "subquery") return visit(expr.rel);
-    if (expr.kind === "function") {
+    if (expr.kind === "function" || expr.kind === "local") {
       for (const arg of expr.args) {
         const result = visitExpr(arg);
         if (Result.isError(result)) return result;

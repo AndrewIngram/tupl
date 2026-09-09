@@ -67,7 +67,7 @@ export function buildSchemaColumnsColHelper<
   TSourceColumns extends string,
   TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>> =
     DataEntityReadMetadataMap<TSourceColumns, Record<TSourceColumns, unknown>>,
->() {
+>(owner = Symbol("columns")) {
   return Object.assign(function col<TColumns extends string, TColumn extends TColumns>(
     tableOrRef: unknown,
     column?: TColumn,
@@ -95,5 +95,5 @@ export function buildSchemaColumnsColHelper<
         column,
       },
     } satisfies RelExpr;
-  }, buildTypedColumnBuilder<TSourceColumns, TColumnMetadata>());
+  }, buildTypedColumnBuilder<TSourceColumns, TColumnMetadata>(owner));
 }

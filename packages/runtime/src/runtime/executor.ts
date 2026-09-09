@@ -13,6 +13,7 @@ import type { RelExecutionObserver } from "./execution/execution-observer";
  * It owns the top-level execution entrypoint and delegates lower-level node evaluation.
  */
 export interface RelExecutionGuardrails {
+  timeoutMs?: number;
   maxExecutionRows: number;
   maxLookupKeysPerBatch: number;
   maxLookupBatches: number;
@@ -39,6 +40,9 @@ export async function executeRelWithProvidersResult<TContext>(
     providers,
     context,
     guardrails,
+    ...(guardrails.timeoutMs && guardrails.timeoutMs > 0 && Number.isFinite(guardrails.timeoutMs)
+      ? { deadline: { at: Date.now() + guardrails.timeoutMs, timeoutMs: guardrails.timeoutMs } }
+      : {}),
     ...(options.constraintValidation ? { constraintValidation: options.constraintValidation } : {}),
     ...(options.observer ? { observer: options.observer } : {}),
     lookupBatches: 0,

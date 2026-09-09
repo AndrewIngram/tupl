@@ -47,3 +47,23 @@ These invariants should hold unless a deliberate architecture change updates thi
   provider arrays before mapping them, but does not control provider allocation.
 - Query sessions retain one execution outcome, including failures. Observing a
   session must not start the query a second time or replace failure with empty rows.
+
+## Derived computation
+
+- Declaring a derived column does not make its relation local. Only query demand
+  for it or its transitive dependencies introduces computation stages.
+- Demand includes predicates, keys, aggregates, windows, sorting, and distinctness.
+  Unused output pruning must preserve cardinality, including zero-input aggregates.
+- Local expression descriptors carry identities and arguments, never callbacks.
+  Provider ownership stops at local expressions; native descendants remain eligible.
+- Sharing is per operation, stage, row occurrence, and execution. Never memoize by
+  primary key, value equality, or across queries.
+- Split only independently movable conjunctions. Preserve OR, outer-join null
+  extension, grouping, windows, and pagination boundaries.
+- Projection-only work may follow native ordering and pagination. Values used by a
+  local predicate must be computed before that predicate and its downstream limit.
+- Private dependencies are not public SQL fields, including under wildcards.
+- Source dependency coercion precedes target validation. Nullable dependencies are
+  explicit callback inputs; public outputs obey their declared SQL types.
+- Application callbacks are trusted, pure and synchronous. Reject Promise-like
+  results and wrap application failures; never turn them into null or empty output.

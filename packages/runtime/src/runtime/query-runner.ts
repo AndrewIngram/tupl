@@ -57,6 +57,7 @@ export async function queryInternalResult<TContext>(
             input.preparedSchema.providers,
             input.context,
             {
+              timeoutMs: guardrails.timeoutMs,
               maxExecutionRows: guardrails.maxExecutionRows,
               maxLookupKeysPerBatch: guardrails.maxLookupKeysPerBatch,
               maxLookupBatches: guardrails.maxLookupBatches,

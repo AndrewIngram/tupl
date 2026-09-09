@@ -53,6 +53,7 @@ export function isRelExpr(value: unknown): value is RelExpr {
   if (kind === "literal") {
     return true;
   }
+  if (kind === "local") return "operation" in value && "args" in value;
   if (kind === "function") {
     return Array.isArray((value as { args?: unknown }).args);
   }

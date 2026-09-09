@@ -2,10 +2,9 @@ import { Result } from "better-result";
 
 import { TuplExecutionError, type RelNode } from "@tupl/foundation";
 import {
-  getDataEntityProvider,
+  resolveRelProviderAdapter,
   normalizeCapability,
   unwrapProviderOperationResult,
-  type ProviderAdapter,
 } from "@tupl/provider-kit";
 import { buildProviderFragmentForRelResult } from "@tupl/planner";
 import { mapProviderRowsToRelOutput } from "@tupl/schema-model/mapping";
@@ -46,7 +45,7 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
 
   observation?.updateDescriptor(describeProviderFragmentExecution(fragment.provider));
 
-  const provider = resolveProviderForNode(node, fragment.provider, context);
+  const provider = resolveRelProviderAdapter(node, fragment.provider, context.providers);
   if (!provider) {
     return Result.err(
       new TuplExecutionError({
@@ -97,48 +96,4 @@ export async function tryExecuteRemoteSubtreeResult<TContext>(
   return tryExecutionStep("map provider rows to logical rel output rows", () =>
     mapProviderRowsToRelOutput(rowsResult.value, fragment.rel, context.schema),
   );
-}
-
-function resolveProviderForNode<TContext>(
-  node: RelNode,
-  providerName: string,
-  context: RelExecutionContext<TContext>,
-): ProviderAdapter<TContext> | undefined {
-  return context.providers[providerName] ?? findNodeProvider(node, providerName);
-}
-
-function findNodeProvider<TContext>(
-  node: RelNode,
-  providerName: string,
-): ProviderAdapter<TContext> | undefined {
-  switch (node.kind) {
-    case "scan": {
-      if (!node.entity || node.entity.provider !== providerName) {
-        return undefined;
-      }
-      return getDataEntityProvider(node.entity) as ProviderAdapter<TContext> | undefined;
-    }
-    case "filter":
-    case "project":
-    case "aggregate":
-    case "window":
-    case "sort":
-    case "limit_offset":
-      return findNodeProvider(node.input, providerName);
-    case "join":
-    case "set_op":
-      return (
-        findNodeProvider(node.left, providerName) ?? findNodeProvider(node.right, providerName)
-      );
-    case "with":
-      return (
-        node.ctes.map((cte) => findNodeProvider(cte.query, providerName)).find(Boolean) ??
-        findNodeProvider(node.body, providerName)
-      );
-    case "values":
-    case "cte_ref":
-    case "correlate":
-    case "repeat_union":
-      return undefined;
-  }
 }

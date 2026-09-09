@@ -316,6 +316,43 @@ export function createSqlRelationalProviderAdapter<
       }) => options.resolveEntityColumns!(args)
     : undefined;
 
+  const buildQuery = (
+    compiled: SqlRelationalCompiledPlan,
+    context: TContext,
+    runtime: TRuntime,
+  ) => {
+    return buildSqlRelationalQueryForStrategy({
+      rel: compiled.rel,
+      strategy: compiled.strategy,
+      resolvedEntities,
+      backend: options.queryBackend,
+      runtime,
+      context,
+      planningHooks: {
+        createScanBinding,
+        ...(advanced?.buildSingleQueryPlan
+          ? {
+              buildSingleQueryPlan: (
+                rel,
+                currentResolvedEntities: Record<string, TResolvedEntity>,
+              ) => advanced.buildSingleQueryPlan!(rel, currentResolvedEntities),
+            }
+          : {}),
+        ...(advanced?.resolveRelCompileStrategy
+          ? {
+              resolveRelCompileStrategy: (
+                node,
+                currentResolvedEntities: Record<string, TResolvedEntity>,
+                compileOptions,
+              ) =>
+                advanced.resolveRelCompileStrategy!(node, currentResolvedEntities, compileOptions),
+            }
+          : {}),
+      },
+      ...(advanced?.compileOptions ? { options: advanced.compileOptions } : {}),
+    });
+  };
+
   const baseOptions = {
     name: options.name,
     entities: options.entities,
@@ -389,6 +426,40 @@ export function createSqlRelationalProviderAdapter<
         rel,
       } satisfies SqlRelationalCompiledPlan;
     },
+    async describeCompiledPlan({
+      plan,
+      context,
+    }: {
+      context: TContext;
+      plan: import("../contracts").ProviderCompiledPlan;
+    }): Promise<import("../contracts").ProviderPlanDescription> {
+      if (plan.kind !== "rel") {
+        throw new TuplExecutionError({
+          operation: "describe SQL-relational provider plan",
+          message: `Unsupported ${options.name} compiled plan kind: ${plan.kind}`,
+        });
+      }
+      const compiled = plan.payload as SqlRelationalCompiledPlan;
+      const summary = `${options.name} rel fragment (${compiled.strategy})`;
+      const statement = options.queryBackend.describeQuery
+        ? await options.queryBackend.describeQuery({
+            query: await buildQuery(compiled, context, await options.resolveRuntime(context)),
+            context,
+          })
+        : undefined;
+      return {
+        kind: "rel_fragment",
+        summary,
+        operations: [
+          {
+            kind: statement ? "sql" : "rel",
+            target: options.name,
+            summary: "Planned fragment; runtime lookups may use different statements and bindings.",
+            ...(statement ? { sql: statement.sql, variables: statement.bindings } : {}),
+          },
+        ],
+      };
+    },
     async executeCompiledPlan({
       plan,
       context,
@@ -404,40 +475,7 @@ export function createSqlRelationalProviderAdapter<
           switch (plan.kind) {
             case "rel": {
               const compiled = plan.payload as SqlRelationalCompiledPlan;
-              const query = await buildSqlRelationalQueryForStrategy({
-                rel: compiled.rel,
-                strategy: compiled.strategy,
-                resolvedEntities,
-                backend: options.queryBackend,
-                runtime,
-                context,
-                planningHooks: {
-                  createScanBinding,
-                  ...(advanced?.buildSingleQueryPlan
-                    ? {
-                        buildSingleQueryPlan: (
-                          rel,
-                          currentResolvedEntities: Record<string, TResolvedEntity>,
-                        ) => advanced.buildSingleQueryPlan!(rel, currentResolvedEntities),
-                      }
-                    : {}),
-                  ...(advanced?.resolveRelCompileStrategy
-                    ? {
-                        resolveRelCompileStrategy: (
-                          node,
-                          currentResolvedEntities: Record<string, TResolvedEntity>,
-                          compileOptions,
-                        ) =>
-                          advanced.resolveRelCompileStrategy!(
-                            node,
-                            currentResolvedEntities,
-                            compileOptions,
-                          ),
-                      }
-                    : {}),
-                },
-                ...(advanced?.compileOptions ? { options: advanced.compileOptions } : {}),
-              });
+              const query = await buildQuery(compiled, context, runtime);
               return options.queryBackend.executeQuery({ query, context, runtime });
             }
             default:

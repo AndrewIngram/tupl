@@ -7,6 +7,8 @@ export interface RelExecutionDescriptor {
   kind: QueryStepKind;
   summary: string;
   routeUsed: QueryStepRoute;
+  inputRowCount?: number;
+  computations?: Array<{ id: string; label: string; invocations: number }>;
 }
 
 export interface RelExecutionObservation {

@@ -18,6 +18,7 @@ import { executeWindowResult } from "./window-execution";
 import type { InternalRow } from "./row-ops";
 import {
   TuplExecutionError,
+  TuplTimeoutError,
   TuplGuardrailError,
   type RelNode,
   type TuplError,
@@ -28,6 +29,7 @@ import { enforceMaterializationLimitResult } from "../policy";
 import { describeRelExecution, type RelExecutionObserver } from "./execution-observer";
 
 export interface RelExecutionGuardrails {
+  timeoutMs?: number;
   maxExecutionRows: number;
   maxLookupKeysPerBatch: number;
   maxLookupBatches: number;
@@ -43,6 +45,23 @@ export interface RelExecutionContext<TContext> {
   cteRows: Map<string, QueryRow[]>;
   subqueryResults: Map<string, unknown>;
   observer?: RelExecutionObserver;
+  deadline?: { at: number; timeoutMs: number };
+}
+
+/** Synchronous callbacks cannot be interrupted, but must not hide an elapsed deadline. */
+export function checkExecutionDeadlineResult(
+  context: Pick<RelExecutionContext<unknown>, "deadline">,
+) {
+  if (context.deadline && Date.now() >= context.deadline.at) {
+    return Result.err(
+      new TuplTimeoutError({
+        operation: "execute relational query",
+        timeoutMs: context.deadline.timeoutMs,
+        message: `Query timed out after ${context.deadline.timeoutMs}ms.`,
+      }),
+    );
+  }
+  return Result.ok(undefined);
 }
 
 export type RelExecutionResult = BetterResult<QueryRow[] | InternalRow[], TuplError>;
@@ -98,6 +117,8 @@ export async function executeRelNodeResult<TContext>(
   node: RelNode,
   context: RelExecutionContext<TContext>,
 ): Promise<RelExecutionResult> {
+  const deadlineResult = checkExecutionDeadlineResult(context);
+  if (Result.isError(deadlineResult)) return deadlineResult;
   const observation = context.observer?.start(node, describeRelExecution(node));
 
   try {
@@ -141,7 +162,7 @@ export async function executeRelNodeResult<TContext>(
         case "filter":
           return executeFilterResult(node, context);
         case "project":
-          return executeProjectResult(node, context);
+          return executeProjectResult(node, context, observation);
         case "aggregate":
           return executeAggregateResult(node, context);
         case "window":

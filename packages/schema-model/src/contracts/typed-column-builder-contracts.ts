@@ -1,3 +1,4 @@
+import type { SchemaDerivedValue, SchemaValueHandle } from "../dsl/derive";
 import type {
   DataEntityColumnMetadata,
   DataEntityReadMetadataMap,
@@ -99,29 +100,82 @@ interface SchemaTypedColumnBuilderOptions {
   coerce?: SchemaValueCoercion;
 }
 
+type ScalarValue<T extends SqlScalarType> = T extends "integer" | "real"
+  ? number
+  : T extends "boolean"
+    ? boolean
+    : T extends "blob"
+      ? Uint8Array
+      : T extends "json"
+        ? unknown
+        : string;
+type ReadValue<M> = M extends { readonly __read__?: infer V }
+  ? IsAny<V> extends true
+    ? unknown
+    : V
+  : unknown;
+type ColumnValue<T extends SqlScalarType, O, V = ScalarValue<T>> = O extends { nullable: false }
+  ? Exclude<V, null | undefined>
+  : V | null;
+type SourceValue<T extends SqlScalarType, O, M> = ColumnValue<
+  T,
+  O,
+  T extends "json" ? ReadValue<M> : ScalarValue<T>
+>;
+type ReferenceValue<R, K extends PropertyKey> = R extends { columns?: infer C }
+  ? K extends keyof C
+    ? C[K] extends SchemaValueHandle<infer V>
+      ? V
+      : ReadValue<C[K]>
+    : unknown
+  : unknown;
+
+type RequiredOptions<O, R extends boolean> = R extends true ? O & { nullable: false } : O;
+
 type SchemaTypedColumnBuilderMethod<
   TSourceColumns extends string,
   TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>>,
   TType extends SqlScalarType,
   TOptions extends SchemaTypedColumnBuilderOptions,
+  TRequired extends boolean = false,
 > = {
-  <TSourceColumn extends CompatibleColumnName<TSourceColumns, TColumnMetadata, TType>>(
+  <
+    TSourceColumn extends CompatibleColumnName<TSourceColumns, TColumnMetadata, TType>,
+    const O extends TOptions = TOptions,
+  >(
     sourceColumn: TSourceColumn,
-    options?: TOptions,
-  ): SchemaTypedColumnDefinition<TSourceColumn>;
-  <TSourceColumn extends TSourceColumns>(
+    options?: O,
+  ): SchemaTypedColumnDefinition<
+    TSourceColumn,
+    SourceValue<TType, RequiredOptions<O, TRequired>, TColumnMetadata[TSourceColumn]>
+  >;
+  <TSourceColumn extends TSourceColumns, const O extends TOptions>(
     sourceColumn: TSourceColumn,
-    options: TOptions & { coerce: SchemaValueCoercion },
-  ): SchemaTypedColumnDefinition<TSourceColumn>;
-  <TRelColumns extends string, TColumn extends TRelColumns>(
-    table: SchemaDataEntityHandle<TRelColumns> | SchemaDslRelationRef<TRelColumns>,
+    options: O & { coerce: SchemaValueCoercion },
+  ): SchemaTypedColumnDefinition<TSourceColumn, ColumnValue<TType, RequiredOptions<O, TRequired>>>;
+  <
+    TRelColumns extends string,
+    TColumn extends TRelColumns,
+    R extends SchemaDataEntityHandle<TRelColumns> | SchemaDslRelationRef<TRelColumns>,
+    const O extends TOptions = TOptions,
+  >(
+    table: R,
     column: TColumn,
-    options?: TOptions,
-  ): SchemaColumnLensDefinition;
-  (
-    expr: RelExpr,
-    options?: Omit<TOptions, "primaryKey" | "unique" | "enum" | "enumFrom" | "enumMap">,
-  ): SchemaCalculatedColumnDefinition;
+    options?: O,
+  ): SchemaColumnLensDefinition<
+    ColumnValue<
+      TType,
+      RequiredOptions<O, TRequired>,
+      TType extends "json" ? ReferenceValue<R, TColumn> : ScalarValue<TType>
+    >
+  >;
+  <
+    const O extends Omit<TOptions, "primaryKey" | "unique" | "enum" | "enumFrom" | "enumMap"> =
+      TOptions,
+  >(
+    expr: RelExpr | SchemaDerivedValue<ColumnValue<TType, RequiredOptions<O, TRequired>>>,
+    options?: O,
+  ): SchemaCalculatedColumnDefinition<ColumnValue<TType, RequiredOptions<O, TRequired>>>;
 };
 
 export interface SchemaTypedColumnBuilder<
@@ -136,7 +190,8 @@ export interface SchemaTypedColumnBuilder<
     Omit<
       SchemaTypedColumnBuilderOptions,
       "primaryKey" | "nullable" | "enum" | "enumFrom" | "enumMap"
-    >
+    >,
+    true
   >;
   string: SchemaTypedColumnBuilderMethod<
     TSourceColumns,

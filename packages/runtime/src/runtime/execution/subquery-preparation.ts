@@ -19,6 +19,7 @@ export async function prepareSubqueryResultsResult<TContext>(
       case "literal":
       case "column":
         return Result.ok(undefined);
+      case "local":
       case "function":
         for (const arg of expr.args) {
           const argResult = await prepareExpr(arg);

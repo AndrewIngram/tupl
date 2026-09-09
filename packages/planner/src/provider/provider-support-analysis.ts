@@ -3,6 +3,7 @@ import { Result, type Result as BetterResult } from "better-result";
 import { PhysicalPlanningError, type RelNode, type TuplError } from "@tupl/foundation";
 import {
   normalizeCapability,
+  resolveRelProviderAdapter,
   type ProviderCapabilityReport,
   type ProvidersMap,
 } from "@tupl/provider-kit";
@@ -54,7 +55,7 @@ export async function analyzeProviderSupportResult<TContext>(
           return Result.ok(undefined);
         }
 
-        const adapter = providers[provider];
+        const adapter = resolveRelProviderAdapter(current, provider, providers);
         if (!adapter) {
           return Result.err(
             new PhysicalPlanningError({

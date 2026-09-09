@@ -8,6 +8,11 @@ import type {
 import type { SqlRelationalScanBinding } from "@tupl/provider-kit/relational-sql";
 
 export type KnexLikeQueryBuilder = {
+  toSQL?: () => {
+    sql: string;
+    bindings?: readonly unknown[];
+    toNative?: () => { sql: string; bindings: readonly unknown[] };
+  };
   clone?: (...args: any[]) => KnexLikeQueryBuilder;
   as?: (...args: any[]) => KnexLikeQueryBuilder;
   clearSelect?: (...args: any[]) => KnexLikeQueryBuilder;

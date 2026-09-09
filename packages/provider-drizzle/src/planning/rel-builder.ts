@@ -328,6 +328,10 @@ export const drizzleQueryTranslationBackend: SqlRelationalQueryTranslationBacken
       whereClauses: [],
     };
   },
+  describeQuery({ query }) {
+    const compiled = ensureWhereApplied(query).builder.toSQL?.();
+    return compiled ? { sql: compiled.sql, bindings: compiled.params } : undefined;
+  },
   async executeQuery({ query, runtime }) {
     return executeDrizzleQueryBuilder(ensureWhereApplied(query).builder, runtime);
   },
@@ -415,6 +419,12 @@ function resolveOrderSource<TContext>(
       throw new UnsupportedSingleQueryPlanError(
         `Qualified ORDER BY column "${term.source.column}" is missing an alias.`,
       );
+    }
+    if ("pipeline" in plan && !plan.pipeline.aggregate) {
+      const projected = resolveProjectedSelectionSource(`${alias}.${term.source.column}`, plan);
+      if (projected) {
+        return projected;
+      }
     }
     return resolveColumnRefFromAliasMap(aliases, {
       alias,

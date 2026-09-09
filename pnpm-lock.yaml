@@ -472,6 +472,15 @@ importers:
       '@tupl/schema':
         specifier: workspace:*
         version: link:../schema
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.1(@electric-sql/pglite@0.5.8)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.6.2)(knex@3.1.0(better-sqlite3@12.6.2))(kysely@0.28.11)
+      knex:
+        specifier: 'catalog:'
+        version: 3.1.0(better-sqlite3@12.6.2)
+      kysely:
+        specifier: 'catalog:'
+        version: 0.28.11
       vite:
         specifier: 'catalog:'
         version: '@voidzero-dev/vite-plus-core@0.3.1(@types/node@24.10.13)(esbuild@0.27.3)(jiti@2.6.1)(typescript@5.9.3)'

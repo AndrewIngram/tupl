@@ -32,6 +32,9 @@
     "@tupl/provider-kysely": "workspace:*",
     "@tupl/provider-objection": "workspace:*",
     "@tupl/schema": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "knex": "catalog:",
+    "kysely": "catalog:",
     "vite": "catalog:"
   }
 }

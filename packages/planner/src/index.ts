@@ -16,3 +16,5 @@ export {
   normalizePhysicalPlanForSnapshot,
   normalizeRelForSnapshot,
 } from "./translation-normalization";
+
+export { resolveLookupJoinCandidate } from "./physical/lookup-join-candidate";

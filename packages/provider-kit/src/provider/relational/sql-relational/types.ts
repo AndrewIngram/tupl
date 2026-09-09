@@ -176,6 +176,11 @@ export interface SqlRelationalQueryTranslationBackend<
     context: TContext;
     runtime: TRuntime;
   }): MaybePromise<TQuery>;
+  /** Compile an inspection statement without executing it. Bindings may contain scoped values. */
+  describeQuery?(args: {
+    query: TQuery;
+    context: TContext;
+  }): MaybePromise<{ sql: string; bindings: readonly unknown[] } | undefined>;
   executeQuery(args: { query: TQuery; context: TContext; runtime: TRuntime }): Promise<QueryRow[]>;
 }
 

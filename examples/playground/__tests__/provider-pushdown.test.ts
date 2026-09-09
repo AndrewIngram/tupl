@@ -70,7 +70,10 @@ describe("playground/provider-pushdown", () => {
         expect(plan.steps[0]?.request).toMatchObject({
           relKind: expect.any(String),
         });
-        expect(plan.steps.filter((step) => step.kind === "remote_fragment")).toHaveLength(1);
+        expect(
+          plan.steps.filter((step) => step.kind === "remote_fragment"),
+          presetId,
+        ).toHaveLength(1);
 
         const snapshot = await runSessionToCompletion(bundle.session, []);
         expect(

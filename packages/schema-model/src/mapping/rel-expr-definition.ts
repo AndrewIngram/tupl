@@ -44,6 +44,8 @@ export function inferRelExprDefinition(
   inputDefinitions: Record<string, TableColumnDefinition | undefined>,
 ): TableColumnDefinition | undefined {
   switch (expr.kind) {
+    case "local":
+      return undefined;
     case "literal":
       return inferLiteralDefinition(expr.value);
     case "column":

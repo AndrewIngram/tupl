@@ -300,7 +300,10 @@ function createProjectedScanBinding<TContext>(
   const columns: Record<string, AnyColumn | SQL> = {};
 
   for (const rawMapping of project.columns) {
-    if (rawMapping.output.includes(".")) {
+    const output = rawMapping.output.startsWith(`${base.alias}.`)
+      ? rawMapping.output.slice(base.alias.length + 1)
+      : rawMapping.output;
+    if (output.includes(".")) {
       throw new UnsupportedSingleQueryPlanError(
         "Qualified projected join outputs require local execution.",
       );
@@ -313,13 +316,13 @@ function createProjectedScanBinding<TContext>(
       }
     }
 
-    columns[rawMapping.output] = resolveProjectedSqlExpression(rawMapping, aliases, true);
+    columns[output] = resolveProjectedSqlExpression(rawMapping, aliases, true);
   }
 
   return {
     ...base,
     columns,
-    outputColumns: project.columns.map((column) => column.output),
+    outputColumns: Object.keys(columns),
   };
 }
 
@@ -351,6 +354,8 @@ export function buildSqlExpressionFromRelExpr<TContext>(
         aliases,
         toAliasColumnRef(expr.ref.alias ?? expr.ref.table, expr.ref.column),
       );
+    case "local":
+      throw new Error("Local computations cannot be translated to SQL.");
     case "function": {
       const args = expr.args.map((arg) => buildSqlExpressionFromRelExpr(arg, aliases));
       switch (expr.name) {

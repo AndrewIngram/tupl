@@ -1,3 +1,4 @@
+import { containsLocalExpression } from "../provider/provider-ownership";
 import type { RelExpr, RelNode, RelScanNode } from "@tupl/foundation";
 import { isNormalizedSourceColumnBinding } from "@tupl/schema-model/mapping";
 import type { NormalizedPhysicalTableBinding } from "@tupl/schema-model/normalized";
@@ -53,13 +54,42 @@ export function expandCalculatedScan(
   }
 
   const alias = node.alias ?? node.table;
+  const needsPrivateInputs = referencedCalculated.some((column) => {
+    const entry = columnBindings[column];
+    return entry?.kind === "expr" && containsLocalExpression(entry.expr);
+  });
+  const entity =
+    needsPrivateInputs && binding.sourceHandle
+      ? {
+          ...binding.sourceHandle,
+          columns: Object.fromEntries([
+            ...Object.values(binding.sourceHandle.columns ?? {})
+              .slice(0, 1)
+              .map((metadata) => ["__tupl_cardinality", metadata] as const),
+            ...Object.entries(columnBindings).flatMap(([name, entry]) => {
+              if (entry.kind !== "source") return [];
+              const raw = Object.values(binding.sourceHandle?.columns ?? {}).find(
+                (metadata) => metadata.source === entry.source,
+              );
+              return [
+                [
+                  name,
+                  { ...(raw ?? { type: "json" as const, nullable: true }), source: entry.source },
+                ],
+              ];
+            }),
+          ]),
+        }
+      : undefined;
   let current: RelNode = {
     id: node.id,
     kind: "scan",
     convention: node.convention,
-    table: node.table,
-    ...(node.alias ? { alias: node.alias } : {}),
+    table: entity ? `__derived_source_${node.id}` : node.table,
+    ...(entity ? { entity } : {}),
+    alias,
     select: [...requiredSourceColumns],
+    where: (node.where ?? []).filter((clause) => columnBindings[clause.column]?.kind === "source"),
     output: [...requiredSourceColumns].map((column) => ({
       name: `${alias}.${column}`,
     })),
@@ -76,25 +106,28 @@ export function expandCalculatedScan(
         return {
           kind: "column" as const,
           source: { alias, column },
-          output: column,
+          output: `${alias}.${column}`,
         };
       }
       return {
         kind: "expr" as const,
         expr: qualifyExprColumns(columnBinding.expr, alias),
-        output: column,
+        output: `${alias}.${column}`,
       };
     }),
-    output: [...referencedColumns].map((column) => ({ name: column })),
+    output: [...referencedColumns].map((column) => ({ name: `${alias}.${column}` })),
   };
 
-  if (node.where && node.where.length > 0) {
+  const residualWhere = (node.where ?? []).filter(
+    (clause) => columnBindings[clause.column]?.kind !== "source",
+  );
+  if (residualWhere.length > 0) {
     current = {
       id: nextRelId("filter"),
       kind: "filter",
       convention: "local",
       input: current,
-      where: node.where,
+      where: residualWhere.map((clause) => ({ ...clause, column: `${alias}.${clause.column}` })),
       output: current.output,
     };
   }
@@ -106,7 +139,7 @@ export function expandCalculatedScan(
       convention: "local",
       input: current,
       orderBy: node.orderBy.map((term) => ({
-        source: { column: term.column },
+        source: { alias, column: term.column },
         direction: term.direction,
       })),
       output: current.output,
@@ -126,7 +159,7 @@ export function expandCalculatedScan(
   }
 
   const aliasMap: ViewAliasColumnMap = Object.fromEntries(
-    [...referencedColumns].map((column) => [column, { column }]),
+    [...referencedColumns].map((column) => [column, { alias, column }]),
   );
   return {
     node: current,
@@ -146,10 +179,10 @@ function qualifyExprColumns(expr: RelExpr, alias: string): RelExpr {
           column: expr.ref.column,
         },
       };
+    case "local":
     case "function":
       return {
-        kind: "function",
-        name: expr.name,
+        ...expr,
         args: expr.args.map((arg) => qualifyExprColumns(arg, alias)),
       };
     case "subquery":
@@ -167,6 +200,7 @@ function collectExprColumns(expr: RelExpr): Set<string> {
       case "column":
         columns.add(current.ref.column);
         return;
+      case "local":
       case "function":
         for (const arg of current.args) {
           visit(arg);

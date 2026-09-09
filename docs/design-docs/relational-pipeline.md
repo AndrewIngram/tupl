@@ -65,3 +65,31 @@ cannot change the session's retained failure.
 - Physical planning is not cost-based.
 - Non-`ROWS` window frame modes are explicitly rejected.
 - Remaining architecture questions are tracked in [tech debt](../exec-plans/tech-debt-tracker.md).
+
+## Declared local computations
+
+Schema normalization compiles `derive` dependency handles into `RelExpr` nodes
+with `kind: "local"`, argument expressions, and immutable operation descriptors.
+The schema model owns a weak registry of implementations; callbacks are absent
+from serialized plans. Physical tables gain private dependency bindings, while
+public column membership continues to use only the declared table definition.
+Dependency coercion and public-result validation use the existing row-value rules.
+
+After view expansion, the planner propagates column demand backward, materializes
+shared operations into project stages, moves safe filters/sorts/limits through
+cardinality-preserving projections, then prunes again. Private input scans retain
+a concrete cardinality column when no value dependency remains. An unused
+singleton aggregate still produces one row, including for empty input. Joins and
+distinct set operations retain their multiplicity and complete comparison inputs.
+
+Local expressions are provider ownership barriers. Supporting descendants remain
+eligible for native execution. Each operation is computed once per row occurrence
+at its owning stage; intermediate fields are dropped after their final consumer.
+Self-joins, repeated CTE evaluation, and separate queries do not share row caches.
+Pure callbacks may be skipped for rows removed before their stage, including
+callbacks that would throw. No rewrite promises textual evaluation order.
+
+Completed computation stages expose operation IDs, labels, invocation counts, and
+input/output row counts in session observations. Failures preserve the existing
+single-execution session outcome. Execution deadline checks follow synchronous
+expressions; an individual callback cannot be preempted.

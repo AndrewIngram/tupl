@@ -10,15 +10,20 @@ export function resolveColumnExpr(
   expr: RelExpr,
   resolveTableToken: (token: SchemaDslTableToken<string>) => string,
   resolveEntityToken: (entity: SchemaDataEntityHandle<string>) => string,
+  resolveLocal?: (expr: Extract<RelExpr, { kind: "local" }>) => RelExpr,
 ): RelExpr {
   switch (expr.kind) {
     case "literal":
       return expr;
+    case "local":
+      if (resolveLocal) return resolveLocal(expr);
+      return expr;
     case "function":
       return {
-        kind: "function",
-        name: expr.name,
-        args: expr.args.map((arg) => resolveColumnExpr(arg, resolveTableToken, resolveEntityToken)),
+        ...expr,
+        args: expr.args.map((arg) =>
+          resolveColumnExpr(arg, resolveTableToken, resolveEntityToken, resolveLocal),
+        ),
       };
     case "column": {
       const tableOrAlias = (expr.ref as { table?: unknown; alias?: unknown }).table;

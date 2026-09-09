@@ -69,6 +69,7 @@ export function lowerHavingExpr(
         hiddenMetrics,
         lowerHavingExpr,
       );
+    case "local":
     case "function":
       return lowerHavingFunctionExpr(
         expr,

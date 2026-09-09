@@ -1,3 +1,4 @@
+import { isDerivedValue, derivedExpression, ownColumn, assertColumnOwner } from "./derive";
 import type {
   DataEntityColumnMetadata,
   DataEntityReadMetadataMap,
@@ -47,26 +48,30 @@ export function buildTypedColumnBuilder<
   TSourceColumns extends string,
   TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>> =
     DataEntityReadMetadataMap<TSourceColumns, Record<TSourceColumns, unknown>>,
->(): SchemaTypedColumnBuilder<TSourceColumns, TColumnMetadata> {
+>(owner = Symbol("columns")): SchemaTypedColumnBuilder<TSourceColumns, TColumnMetadata> {
   const buildSourceLensDefinition = (
     source: string | SchemaColRefToken,
     type: SqlScalarType,
     options: SchemaTypedColumnBuilderOptions = {},
-  ): SchemaColumnLensDefinition => ({
-    source,
-    type,
-    ...(options.nullable != null ? { nullable: options.nullable } : {}),
-    ...(options.primaryKey != null ? { primaryKey: options.primaryKey } : {}),
-    ...(options.unique != null ? { unique: options.unique } : {}),
-    ...(options.enum ? { enum: options.enum } : {}),
-    ...(options.enumFrom ? { enumFrom: options.enumFrom } : {}),
-    ...(options.enumMap ? { enumMap: options.enumMap } : {}),
-    ...(options.physicalType ? { physicalType: options.physicalType } : {}),
-    ...(options.physicalDialect ? { physicalDialect: options.physicalDialect as never } : {}),
-    ...(options.foreignKey ? { foreignKey: options.foreignKey } : {}),
-    ...(options.description ? { description: options.description } : {}),
-    ...(options.coerce ? { coerce: options.coerce } : {}),
-  });
+  ): SchemaColumnLensDefinition =>
+    ownColumn(
+      {
+        source,
+        type,
+        ...(options.nullable != null ? { nullable: options.nullable } : {}),
+        ...(options.primaryKey != null ? { primaryKey: options.primaryKey } : {}),
+        ...(options.unique != null ? { unique: options.unique } : {}),
+        ...(options.enum ? { enum: options.enum } : {}),
+        ...(options.enumFrom ? { enumFrom: options.enumFrom } : {}),
+        ...(options.enumMap ? { enumMap: options.enumMap } : {}),
+        ...(options.physicalType ? { physicalType: options.physicalType } : {}),
+        ...(options.physicalDialect ? { physicalDialect: options.physicalDialect as never } : {}),
+        ...(options.foreignKey ? { foreignKey: options.foreignKey } : {}),
+        ...(options.description ? { description: options.description } : {}),
+        ...(options.coerce ? { coerce: options.coerce } : {}),
+      },
+      owner,
+    );
 
   const buildTypedColumnDefinition = <TSourceColumn extends string>(
     sourceColumn: TSourceColumn,
@@ -103,12 +108,15 @@ export function buildTypedColumnBuilder<
     if (options.description) {
       definition.description = options.description;
     }
-    return {
-      kind: "dsl_typed_column",
-      sourceColumn,
-      definition,
-      ...(options.coerce ? { coerce: options.coerce } : {}),
-    };
+    return ownColumn(
+      {
+        kind: "dsl_typed_column",
+        sourceColumn,
+        definition,
+        ...(options.coerce ? { coerce: options.coerce } : {}),
+      },
+      owner,
+    );
   };
 
   const buildCalculatedColumnDefinition = (
@@ -128,19 +136,23 @@ export function buildTypedColumnBuilder<
       ...(options.description ? { description: options.description } : {}),
     } satisfies ColumnDefinition;
 
-    return {
-      kind: "dsl_calculated_column",
-      expr,
-      definition,
-      ...(options.coerce ? { coerce: options.coerce } : {}),
-    };
+    return ownColumn(
+      {
+        kind: "dsl_calculated_column",
+        expr,
+        definition,
+        ...(options.coerce ? { coerce: options.coerce } : {}),
+      },
+      owner,
+    );
   };
 
   const build = (type: SqlScalarType) =>
     ((arg1: unknown, arg2?: unknown, arg3?: unknown) => {
-      if (isRelExpr(arg1)) {
+      if (isDerivedValue(arg1)) assertColumnOwner(arg1, owner);
+      if (isRelExpr(arg1) || isDerivedValue(arg1)) {
         return buildCalculatedColumnDefinition(
-          arg1,
+          isDerivedValue(arg1) ? derivedExpression(arg1) : arg1,
           type,
           (arg2 as
             | Omit<
@@ -187,21 +199,15 @@ export function buildTypedColumnBuilder<
 
   return {
     id: ((arg1: unknown, arg2?: unknown, arg3?: unknown) => {
-      const options = (
-        isRelExpr(arg1)
-          ? arg2
-          : isSchemaDslTableToken(arg1) ||
-              isDslTableDefinition(arg1) ||
-              isDslViewDefinition(arg1) ||
-              isSchemaDataEntityHandle(arg1)
-            ? arg3
-            : arg2
-      ) as SchemaTypedColumnBuilderOptions | undefined;
-      return (build("text") as (...args: unknown[]) => unknown)(arg1, arg2, {
-        ...options,
-        nullable: false,
-        primaryKey: true,
-      });
+      const qualified =
+        isSchemaDslTableToken(arg1) ||
+        isDslTableDefinition(arg1) ||
+        isDslViewDefinition(arg1) ||
+        isSchemaDataEntityHandle(arg1);
+      const options = (qualified ? arg3 : arg2) as SchemaTypedColumnBuilderOptions | undefined;
+      const required = { ...options, nullable: false, primaryKey: true };
+      const make = build("text") as (...args: unknown[]) => unknown;
+      return qualified ? make(arg1, arg2, required) : make(arg1, required);
     }) as never,
     string: build("text"),
     integer: build("integer"),

@@ -5,6 +5,7 @@
  * construction or query execution internals.
  */
 export * from "./provider/entity-handles";
+export { resolveRelProviderAdapter } from "./provider/rel-provider";
 export * from "./provider/operations";
 export * from "./provider/capabilities";
 export * from "./provider/contracts";

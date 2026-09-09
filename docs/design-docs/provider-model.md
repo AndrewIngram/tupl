@@ -69,3 +69,17 @@ Public SQL is validated against the declared schema before execution. Validation
 Provider capability overrides are authoritative: an explicit unsupported result must not fall through to generic SQL compilation. Fallback execution must retain the same scoped inputs and SQL three-valued Boolean semantics. Scan translation must honor the requested output names so fallback mapping does not turn qualified values into nulls.
 
 These tests establish evidence for result containment over the covered grammar; they are not a proof for arbitrary SQL. Unsupported syntax is rejected. Error-message and timing noninterference, multi-connection PostgreSQL behavior, and correctness of application-supplied scope callbacks are outside this suite. PGlite exercises PostgreSQL SQL semantics through its Drizzle, Kysely, and Knex adapters; it does not replace production-server concurrency or network-driver testing.
+
+## Computed facade values
+
+A `local` expression is a planner-enforced ownership barrier for application
+TypeScript computations. Providers see only supported native fragments below it.
+Internal entity handles can describe private declared dependencies without adding
+public schema columns. Resolve their attached provider consistently for capability
+analysis, scans, explain, and lookups; mandatory entity scopes still apply.
+
+First-party Drizzle, Kysely, and Objection adapters describe supported compiled
+fragments with generated SQL and ordered bindings using their ordinary scoped
+query construction. Description does not execute a query. Basic explain remains
+compilation-free; enriched descriptions are planned statements, not evidence of
+execution or the eventual bindings of data-dependent lookups.

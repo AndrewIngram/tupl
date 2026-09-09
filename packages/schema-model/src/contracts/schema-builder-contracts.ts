@@ -1,3 +1,4 @@
+import type { derive } from "../dsl/derive";
 import type { TuplResult } from "@tupl/foundation";
 import type {
   DataEntityColumnMetadata,
@@ -43,88 +44,50 @@ interface SchemaColumnExprHelpers {
   not: (input: RelExpr) => RelExpr;
 }
 
+type ColumnHelpers<
+  C extends string,
+  M extends Partial<Record<C, DataEntityColumnMetadata<any>>>,
+> = {
+  derive: typeof derive;
+  col: SchemaColumnsColHelper<C, M>;
+  expr: SchemaColumnExprHelpers;
+};
+
 type SchemaBuilderTableMethods = {
   <
-    TSourceColumns extends string,
-    TMappedColumns extends string,
-    TRow extends Partial<Record<TSourceColumns, unknown>> = Record<TSourceColumns, unknown>,
-    TColumnMetadata extends Partial<Record<TSourceColumns, DataEntityColumnMetadata<any>>> =
-      DataEntityReadMetadataMap<TSourceColumns, TRow>,
+    C extends string,
+    D extends Record<string, import("./table-definition-contracts").DslTableColumnInput<C>>,
+    Row extends Partial<Record<C, unknown>> = Record<C, unknown>,
+    M extends Partial<Record<C, DataEntityColumnMetadata<any>>> = DataEntityReadMetadataMap<C, Row>,
   >(
     name: string,
-    from: SchemaDataEntityHandle<TSourceColumns, TRow, TColumnMetadata>,
-    input: {
-      columns:
-        | Record<
-            TMappedColumns,
-            | import("./table-definition-contracts").SchemaColumnLensDefinition
-            | import("./table-definition-contracts").SchemaTypedColumnDefinition<TSourceColumns>
-            | import("./table-definition-contracts").SchemaCalculatedColumnDefinition
-            | import("./schema-contracts").TableColumnDefinition
-            | import("./schema-contracts").SchemaColRefToken
-          >
-        | ((helpers: {
-            col: SchemaColumnsColHelper<TSourceColumns, TColumnMetadata>;
-            expr: SchemaColumnExprHelpers;
-          }) => Record<
-            TMappedColumns,
-            | import("./table-definition-contracts").SchemaColumnLensDefinition
-            | import("./table-definition-contracts").SchemaTypedColumnDefinition<TSourceColumns>
-            | import("./table-definition-contracts").SchemaCalculatedColumnDefinition
-            | import("./schema-contracts").TableColumnDefinition
-            | import("./schema-contracts").SchemaColRefToken
-          >);
-      constraints?: TableConstraints;
-    },
-  ): DslTableDefinition<TMappedColumns, TSourceColumns>;
+    from: SchemaDataEntityHandle<C, Row, M>,
+    input: { columns: D | ((helpers: ColumnHelpers<C, M>) => D); constraints?: TableConstraints },
+  ): DslTableDefinition<Extract<keyof D, string>, C, D>;
 };
 
 type SchemaBuilderViewMethods<TContext> = {
-  <TRelColumns extends string, TColumns extends string>(
+  <
+    C extends string,
+    D extends Record<string, import("./table-definition-contracts").DslViewColumnInput<C>>,
+  >(
     name: string,
     rel: (
       helpers: SchemaDslViewRelHelpers,
       context: TContext,
-    ) => SchemaViewRelNodeInput<TRelColumns> | RelNode,
+    ) => SchemaViewRelNodeInput<C> | RelNode,
     input: {
       columns:
-        | ((helpers: {
-            col: SchemaColumnsColHelper<
-              TRelColumns,
-              DataEntityReadMetadataMap<TRelColumns, Record<TRelColumns, unknown>>
-            >;
-            expr: SchemaColumnExprHelpers;
-          }) => Record<
-            TColumns,
-            | import("./table-definition-contracts").SchemaColumnLensDefinition
-            | import("./table-definition-contracts").SchemaTypedColumnDefinition<TRelColumns>
-            | import("./table-definition-contracts").SchemaCalculatedColumnDefinition
-            | import("./schema-contracts").SchemaColRefToken
-          >)
-        | Record<
-            TColumns,
-            | import("./table-definition-contracts").SchemaColumnLensDefinition
-            | import("./table-definition-contracts").SchemaTypedColumnDefinition<TRelColumns>
-            | import("./table-definition-contracts").SchemaCalculatedColumnDefinition
-            | import("./schema-contracts").SchemaColRefToken
-          >;
+        | D
+        | ((helpers: ColumnHelpers<C, DataEntityReadMetadataMap<C, Record<C, unknown>>>) => D);
       constraints?: TableConstraints;
     },
-  ): DslViewDefinition<TContext, TColumns, TRelColumns>;
-  <TColumns extends string>(
+  ): DslViewDefinition<TContext, Extract<keyof D, string>, C, D>;
+  <D extends Record<string, import("./table-definition-contracts").DslViewColumnInput<string>>>(
     name: string,
     rel: (context: TContext) => SchemaViewRelNodeInput<string> | RelNode,
-    input: {
-      columns: Record<
-        TColumns,
-        | import("./table-definition-contracts").SchemaColumnLensDefinition
-        | import("./table-definition-contracts").SchemaTypedColumnDefinition<string>
-        | import("./table-definition-contracts").SchemaCalculatedColumnDefinition
-        | import("./schema-contracts").SchemaColRefToken
-      >;
-      constraints?: TableConstraints;
-    },
-  ): DslViewDefinition<TContext, TColumns, string>;
+    input: { columns: D; constraints?: TableConstraints },
+  ): DslViewDefinition<TContext, Extract<keyof D, string>, string, D>;
 };
 
 export interface SchemaBuilder<TContext> {

@@ -14,6 +14,7 @@ export interface NormalizedPhysicalTableBinding {
   kind: "physical";
   provider?: string;
   entity: string;
+  sourceHandle?: import("./schema-contracts").SchemaDataEntityHandle<string>;
   columnBindings: Record<string, NormalizedColumnBinding>;
   columnToSource: Record<string, string>;
   providerInstance?: ProviderAdapter<unknown>;

@@ -1,24 +1,14 @@
+import { resolveLookupJoinCandidate } from "@tupl/planner";
 import { Result } from "better-result";
 
-import {
-  TuplGuardrailError,
-  type RelJoinNode,
-  type RelNode,
-  type RelScanNode,
-} from "@tupl/foundation";
-import {
-  getDataEntityProvider,
-  unwrapProviderOperationResult,
-  type ProviderAdapter,
-} from "@tupl/provider-kit";
-import { supportsLookupMany } from "@tupl/provider-kit/shapes";
+import { TuplGuardrailError, type RelJoinNode } from "@tupl/foundation";
+import { unwrapProviderOperationResult } from "@tupl/provider-kit";
 import { mapProviderRowsToLogical } from "@tupl/schema-model/mapping";
 import {
   createPhysicalBindingFromEntity,
   createTableDefinitionFromEntity,
   getNormalizedTableBinding,
   resolveNormalizedColumnSource,
-  resolveTableProvider,
 } from "@tupl/schema-model/normalization";
 
 import {
@@ -44,51 +34,21 @@ export async function maybeExecuteLookupJoinResult<TContext>(
   context: RelExecutionContext<TContext>,
   observation?: RelExecutionObservation,
 ) {
-  if (join.joinType !== "inner" && join.joinType !== "left") {
-    return Result.ok(null);
-  }
-
-  const leftScan = findFirstScan(join.left);
-  const rightScan = findLookupEligibleScan(join.right);
-  if (!leftScan || !rightScan) {
-    return Result.ok(null);
-  }
-  const leftScanAlias = leftScan.alias ?? leftScan.table;
-  const rightScanAlias = rightScan.alias ?? rightScan.table;
-  if ((join.leftKey.alias ?? join.leftKey.table ?? leftScanAlias) !== leftScanAlias) {
-    return Result.ok(null);
-  }
-  if ((join.rightKey.alias ?? join.rightKey.table ?? rightScanAlias) !== rightScanAlias) {
-    return Result.ok(null);
-  }
-
+  const candidate = resolveLookupJoinCandidate(join, context.schema, context.providers);
+  if (!candidate) return Result.ok(null);
+  const { rightScan, rightProvider, description } = candidate;
   const rightBinding = getNormalizedTableBinding(context.schema, rightScan.table);
-  const rightProviderName =
-    rightScan.entity?.provider ?? resolveTableProvider(context.schema, rightScan.table);
-  const rightProviderResult =
-    typeof rightProviderName === "string" ? Result.ok(rightProviderName) : rightProviderName;
-  if (Result.isError(rightProviderResult)) {
-    return Result.ok(null);
-  }
-  const rightProvider =
-    context.providers[rightProviderResult.value] ??
-    (rightScan.entity
-      ? (getDataEntityProvider(rightScan.entity) as ProviderAdapter<TContext> | undefined)
-      : undefined);
-  if (!rightProvider || !supportsLookupMany(rightProvider)) {
-    return Result.ok(null);
-  }
 
   observation?.updateDescriptor(
     describeLookupJoinExecution({
-      leftTable: leftScan.table,
+      leftTable: description.leftTable,
       leftKey: join.leftKey.column,
       rightTable: rightScan.table,
       rightKey: join.rightKey.column,
     }),
   );
 
-  const leftKey = `${join.leftKey.alias}.${join.leftKey.column}`;
+  const leftKey = toColumnKey(join.leftKey);
   const rightPhysicalBinding =
     rightBinding?.kind === "physical"
       ? rightBinding
@@ -278,53 +238,4 @@ export function applyLocalHashJoinResult(
   }
 
   return Result.ok(joined);
-}
-
-function findLookupEligibleScan(node: RelNode): RelScanNode | null {
-  switch (node.kind) {
-    case "scan":
-      return node;
-    case "values":
-    case "cte_ref":
-      return null;
-    case "filter":
-    case "project":
-    case "sort":
-    case "limit_offset":
-      return findLookupEligibleScan(node.input);
-    case "aggregate":
-    case "window":
-    case "correlate":
-    case "join":
-    case "set_op":
-    case "repeat_union":
-    case "with":
-      return null;
-  }
-}
-
-function findFirstScan(node: RelNode): RelScanNode | null {
-  switch (node.kind) {
-    case "scan":
-      return node;
-    case "values":
-    case "cte_ref":
-      return null;
-    case "filter":
-    case "project":
-    case "aggregate":
-    case "window":
-    case "sort":
-    case "limit_offset":
-      return findFirstScan(node.input);
-    case "correlate":
-      return findFirstScan(node.left) ?? findFirstScan(node.right);
-    case "join":
-    case "set_op":
-      return findFirstScan(node.left) ?? findFirstScan(node.right);
-    case "repeat_union":
-      return findFirstScan(node.seed) ?? findFirstScan(node.iterative);
-    case "with":
-      return findFirstScan(node.body);
-  }
 }

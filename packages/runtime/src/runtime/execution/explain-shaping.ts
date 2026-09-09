@@ -61,6 +61,7 @@ export function visitExprSubqueries(
     case "literal":
     case "column":
       return [];
+    case "local":
     case "function":
       return [
         ...new Set(

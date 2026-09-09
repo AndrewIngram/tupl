@@ -165,6 +165,7 @@ export interface RunDrizzleScanOptions<TTable extends string, TColumn extends st
 }
 
 export interface DrizzleExecutableBuilder {
+  toSQL?: () => { sql: string; params: unknown[] };
   execute: () => Promise<import("@tupl/provider-kit").QueryRow[]>;
   orderBy?: (...clauses: SQL[]) => unknown;
   limit?: (value: number) => unknown;

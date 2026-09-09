@@ -102,6 +102,10 @@ export function createSessionExecutionObserver(input: {
                 status,
                 rowCount: rows.length,
                 outputRowCount: rows.length,
+                ...(descriptor.inputRowCount != null
+                  ? { inputRowCount: descriptor.inputRowCount }
+                  : {}),
+                ...(descriptor.computations ? { computations: descriptor.computations } : {}),
                 ...(isRoot && input.captureRows === "full" ? { rows } : {}),
               }
             : {

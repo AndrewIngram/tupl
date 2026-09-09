@@ -21,3 +21,15 @@ pnpm add @tupl/provider-kysely kysely
 - `@tupl/provider-kit` owns adapter plumbing and capability reporting.
 - This package owns Kysely-specific planning and execution.
 - [`src/index.ts`](./src/index.ts) should stay thin; backend logic belongs in `planning/`, `execution/`, and `backend/`.
+
+## SQL inspection
+
+Enriched `schema.explain(...)` includes Kysely compiled SQL in
+`providerPlans[].description.operations[].sql` and its ordered bindings in
+`variables`. Building the description applies the same entity scopes as execution
+and does not execute the query. Basic explain does not compile SQL.
+
+These are planned fragment statements. A runtime lookup can add keys from earlier
+results, so its actual SQL and bindings may differ. Use the database query logger
+alongside session events to inspect those statements. Bindings can contain scoped
+values; expose enriched explain only to callers authorized to inspect them.

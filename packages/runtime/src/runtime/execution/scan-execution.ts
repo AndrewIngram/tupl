@@ -3,10 +3,9 @@ import { Result } from "better-result";
 import { validateTableConstraintRows } from "../constraints";
 import { TuplExecutionError } from "@tupl/foundation";
 import {
-  getDataEntityProvider,
+  resolveRelProviderAdapter,
   normalizeCapability,
   unwrapProviderOperationResult,
-  type ProviderAdapter,
 } from "@tupl/provider-kit";
 import { type QueryRow, type ScanFilterClause, type TableScanRequest } from "@tupl/schema-model";
 import { mapProviderRowsToLogical } from "@tupl/schema-model/mapping";
@@ -43,11 +42,7 @@ export async function executeScanResult<TContext>(
     return providerNameResult;
   }
   const providerName = providerNameResult.value;
-  const provider =
-    context.providers[providerName] ??
-    (scan.entity
-      ? (getDataEntityProvider(scan.entity) as ProviderAdapter<TContext> | undefined)
-      : undefined);
+  const provider = resolveRelProviderAdapter(scan, providerName, context.providers);
   if (!provider) {
     return Result.err(
       new TuplExecutionError({

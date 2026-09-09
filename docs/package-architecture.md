@@ -62,3 +62,9 @@ Consumer guidance:
 - Provider conformance belongs on `@tupl/provider-kit/testing`; internal test fixtures do not.
 - Application docs and examples should prefer `@tupl/schema` and first-party provider packages.
 - Maintainers should use [`maintainer-bug-map.md`](./maintainer-bug-map.md) as the starting point for bug triage across provider, planner, and runtime layers.
+
+Local computation ownership follows the same layering: foundation defines the
+`local` expression and operation descriptor; schema-model owns typed handles,
+dependency normalization, and the callback registry; planner owns demand pruning
+and stage placement; runtime evaluates registered operations and records actual
+work. Provider-kit and provider packages never receive executable callbacks.

@@ -325,7 +325,7 @@ describe("createSchemaBuilder", () => {
     expect(binding.columnBindings.id).toEqual({
       kind: "source",
       source: "id",
-      definition: { type: "text" },
+      definition: { type: "text", nullable: false, primaryKey: true },
     });
     expect(binding.columnBindings.totalCents).toEqual({
       kind: "source",

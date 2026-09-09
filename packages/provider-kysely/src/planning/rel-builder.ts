@@ -186,6 +186,10 @@ export const kyselyQueryTranslationBackend: SqlRelationalQueryTranslationBackend
 
     return query;
   },
+  describeQuery({ query }) {
+    const compiled = query.compile?.();
+    return compiled ? { sql: compiled.sql, bindings: compiled.parameters } : undefined;
+  },
   async executeQuery({ query }) {
     return query.execute();
   },

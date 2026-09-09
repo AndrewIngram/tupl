@@ -188,6 +188,12 @@ export const objectionQueryTranslationBackend: SqlRelationalQueryTranslationBack
 
     return { builder: query };
   },
+  describeQuery({ query: { builder } }) {
+    const compiled = builder.toSQL?.();
+    if (!compiled) return undefined;
+    const native = compiled.toNative?.() ?? compiled;
+    return { sql: native.sql, bindings: native.bindings ?? [] };
+  },
   executeQuery({ query: { builder: query } }) {
     return executeQuery(query);
   },

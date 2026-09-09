@@ -78,10 +78,10 @@ function normalizeExpr(expr: RelExpr, state: RelNormalizationState): unknown {
         kind: "column",
         ref: normalizeColumnRef(expr.ref),
       };
+    case "local":
     case "function":
       return {
-        kind: "function",
-        name: expr.name,
+        ...expr,
         args: expr.args.map((arg) => normalizeExpr(arg, state)),
       };
     case "subquery":

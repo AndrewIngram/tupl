@@ -1,3 +1,4 @@
+import type { RelExpr } from "@tupl/foundation";
 import { Result, type Result as BetterResult } from "better-result";
 import type { TuplSchemaNormalizationError } from "@tupl/foundation";
 
@@ -25,6 +26,7 @@ export function normalizeColumnBinding(
   columnName: string,
   rawColumn: unknown,
   options: {
+    resolveLocal?: (expr: Extract<RelExpr, { kind: "local" }>) => RelExpr;
     preserveQualifiedRef: boolean;
     resolveTableToken: (token: SchemaDslTableToken<string>) => string;
     resolveEntityToken: (entity: SchemaDataEntityHandle<string>) => string;
@@ -46,6 +48,7 @@ export function normalizeColumnBinding(
           rawColumn.expr,
           options.resolveTableToken,
           options.resolveEntityToken,
+          options.resolveLocal,
         ),
         definition: rawColumn.definition,
         ...(rawColumn.coerce ? { coerce: rawColumn.coerce } : {}),

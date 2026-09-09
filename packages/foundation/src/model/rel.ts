@@ -33,6 +33,18 @@ export interface RelFunctionExpr {
   args: RelExpr[];
 }
 
+/** A schema-owned synchronous computation. Only its descriptor is serialized in plans. */
+export interface RelLocalOperation {
+  readonly id: string;
+  readonly label: string;
+}
+
+export interface RelLocalExpr {
+  kind: "local";
+  operation: RelLocalOperation;
+  args: RelExpr[];
+}
+
 /**
  * Subquery expressions reference a separately planned relational subtree.
  * `outputColumn` is required only for scalar subqueries that project one value.
@@ -46,7 +58,12 @@ export interface RelSubqueryExpr {
 }
 
 /** Relational expressions are the scalar expression vocabulary used inside relational nodes. */
-export type RelExpr = RelLiteralExpr | RelColumnExpr | RelFunctionExpr | RelSubqueryExpr;
+export type RelExpr =
+  | RelLiteralExpr
+  | RelColumnExpr
+  | RelFunctionExpr
+  | RelLocalExpr
+  | RelSubqueryExpr;
 
 /** Project-column mappings forward one existing source column into a named output column. */
 export interface RelProjectColumnMapping {
@@ -347,6 +364,7 @@ export function countRelNodes(node: RelNode): number {
       case "literal":
       case "column":
         return 0;
+      case "local":
       case "function":
         return expr.args.reduce((sum, arg) => sum + countExpr(arg), 0);
       case "subquery":
@@ -451,6 +469,7 @@ export function collectRelTables(node: RelNode): string[] {
       case "literal":
       case "column":
         return;
+      case "local":
       case "function":
         for (const arg of expr.args) {
           visitExpr(arg);

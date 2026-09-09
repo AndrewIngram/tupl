@@ -60,10 +60,10 @@ function rewriteViewBindingExprForPlanner(
   switch (expr.kind) {
     case "literal":
       return expr;
+    case "local":
     case "function":
       return {
-        kind: "function",
-        name: expr.name,
+        ...expr,
         args: expr.args.map((arg) =>
           rewriteViewBindingExprForPlanner(arg, columnBindings, aliases),
         ),

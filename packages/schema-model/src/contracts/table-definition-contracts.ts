@@ -1,3 +1,4 @@
+import type { SchemaValueHandle } from "../dsl/derive";
 import type { RelExpr, RelNode } from "@tupl/foundation";
 
 import type {
@@ -15,7 +16,7 @@ import type { SchemaDslViewRelHelpers, SchemaViewRelNodeInput } from "./schema-v
 /**
  * Table definition contracts own the logical table/view declaration shapes used by the schema DSL.
  */
-export interface SchemaColumnLensDefinition {
+export interface SchemaColumnLensDefinition<T = unknown> extends SchemaValueHandle<T> {
   source: string | SchemaColRefToken;
   type?: SqlScalarType;
   nullable?: boolean;
@@ -31,28 +32,31 @@ export interface SchemaColumnLensDefinition {
   coerce?: SchemaValueCoercion;
 }
 
-export interface SchemaTypedColumnDefinition<TSourceColumn extends string = string> {
+export interface SchemaTypedColumnDefinition<
+  TSourceColumn extends string = string,
+  T = unknown,
+> extends SchemaValueHandle<T> {
   kind: "dsl_typed_column";
   sourceColumn: TSourceColumn;
   definition: TableColumnDefinition;
   coerce?: SchemaValueCoercion;
 }
 
-export interface SchemaCalculatedColumnDefinition {
+export interface SchemaCalculatedColumnDefinition<T = unknown> extends SchemaValueHandle<T> {
   kind: "dsl_calculated_column";
   expr: RelExpr;
   definition: TableColumnDefinition;
   coerce?: SchemaValueCoercion;
 }
 
-type DslTableColumnInput<TSourceColumns extends string = string> =
+export type DslTableColumnInput<TSourceColumns extends string = string> =
   | TableColumnDefinition
   | SchemaColumnLensDefinition
   | SchemaColRefToken
   | SchemaTypedColumnDefinition<TSourceColumns>
   | SchemaCalculatedColumnDefinition;
 
-type DslViewColumnInput<TSourceColumns extends string = string> =
+export type DslViewColumnInput<TSourceColumns extends string = string> =
   | SchemaColumnLensDefinition
   | SchemaColRefToken
   | SchemaTypedColumnDefinition<TSourceColumns>
@@ -61,11 +65,15 @@ type DslViewColumnInput<TSourceColumns extends string = string> =
 export interface DslTableDefinition<
   TMappedColumns extends string = string,
   TSourceColumns extends string = string,
+  TDefinitions extends Record<TMappedColumns, DslTableColumnInput<TSourceColumns>> = Record<
+    TMappedColumns,
+    DslTableColumnInput<TSourceColumns>
+  >,
 > {
   kind: "dsl_table";
   tableToken: import("./schema-contracts").SchemaDslTableToken<TMappedColumns>;
   from: SchemaDataEntityHandle<TSourceColumns>;
-  columns: Record<TMappedColumns, DslTableColumnInput<TSourceColumns>>;
+  columns: TDefinitions;
   constraints?: TableConstraints;
 }
 
@@ -73,6 +81,10 @@ export interface DslViewDefinition<
   TContext,
   TColumns extends string = string,
   TRelColumns extends string = string,
+  TDefinitions extends Record<TColumns, DslViewColumnInput<TRelColumns>> = Record<
+    TColumns,
+    DslViewColumnInput<TRelColumns>
+  >,
 > {
   kind: "dsl_view";
   tableToken: import("./schema-contracts").SchemaDslTableToken<TColumns>;
@@ -80,7 +92,7 @@ export interface DslViewDefinition<
     context: TContext,
     helpers: SchemaDslViewRelHelpers,
   ) => SchemaViewRelNodeInput<TRelColumns> | RelNode;
-  columns: Record<TColumns, DslViewColumnInput<TRelColumns>>;
+  columns: TDefinitions;
   constraints?: TableConstraints;
 }
 

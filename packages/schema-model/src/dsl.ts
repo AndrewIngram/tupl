@@ -22,3 +22,5 @@ export type {
   SchemaViewScanNode,
 } from "./contracts/schema-view-contracts";
 export type { SchemaColRefToken, SchemaDslTableToken } from "./contracts/schema-contracts";
+
+export type { SchemaDerivedValue, SchemaValueHandle } from "./dsl/derive";

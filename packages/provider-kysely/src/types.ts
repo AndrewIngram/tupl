@@ -11,6 +11,7 @@ import type {
 import type { SqlRelationalScanBinding } from "@tupl/provider-kit/relational-sql";
 
 export type KyselyQueryBuilderLike = {
+  compile?: () => { sql: string; parameters: readonly unknown[] };
   selectAll: () => KyselyQueryBuilderLike;
   as: (alias: string) => unknown;
   select: (...args: any[]) => KyselyQueryBuilderLike;

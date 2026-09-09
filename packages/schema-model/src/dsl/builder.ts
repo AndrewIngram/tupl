@@ -1,3 +1,4 @@
+import { createDerive } from "./derive";
 import type { RelNode } from "@tupl/foundation";
 
 import type { SchemaBuilder } from "../contracts/schema-builder-contracts";
@@ -61,10 +62,12 @@ export function createSchemaBuilder<TContext>(): SchemaBuilder<TContext> {
       );
     }
 
+    const columnOwner = Symbol("columns");
     const columns =
       typeof input.columns === "function"
         ? input.columns({
-            col: buildSchemaColumnsColHelperInternal(),
+            derive: createDerive(columnOwner),
+            col: buildSchemaColumnsColHelperInternal(columnOwner),
             expr: buildColumnExprHelpersInternal(),
           })
         : input.columns;
@@ -98,10 +101,12 @@ export function createSchemaBuilder<TContext>(): SchemaBuilder<TContext> {
               context: TContext,
             ) => SchemaViewRelNodeInput<string> | RelNode
           )(helpers, context);
+    const columnOwner = Symbol("columns");
     const columns =
       typeof input.columns === "function"
         ? input.columns({
-            col: buildSchemaColumnsColHelperInternal(),
+            derive: createDerive(columnOwner),
+            col: buildSchemaColumnsColHelperInternal(columnOwner),
             expr: buildColumnExprHelpersInternal(),
           })
         : input.columns;

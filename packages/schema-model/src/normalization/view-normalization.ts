@@ -172,6 +172,7 @@ export function collectUnqualifiedExprColumns(expr: RelExpr): Set<string> {
       case "literal":
       case "subquery":
         return;
+      case "local":
       case "function":
         current.args.forEach(visit);
         return;

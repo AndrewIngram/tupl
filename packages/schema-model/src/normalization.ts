@@ -20,3 +20,5 @@ export {
   resolveTableProvider,
   validateProviderBindings,
 } from "./normalization/provider-validation";
+
+export { evaluateLocalOperation } from "./dsl/derive";

@@ -161,6 +161,7 @@ export interface QueryDoneStepState extends QueryStepStateBase {
   durationMs: number;
   rowCount: number;
   outputRowCount: number;
+  computations?: Array<{ id: string; label: string; invocations: number }>;
   inputRowCount?: number;
   rows?: QueryRow[];
   routeUsed: QueryStepRoute;
@@ -219,6 +220,7 @@ export interface QueryDoneStepEvent extends QueryStepEventBase {
   status: "done";
   rowCount: number;
   outputRowCount: number;
+  computations?: Array<{ id: string; label: string; invocations: number }>;
   inputRowCount?: number;
   rows?: QueryRow[];
   error?: never;

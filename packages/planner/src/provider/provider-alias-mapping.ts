@@ -129,10 +129,10 @@ export function mapRelExprRefsForAliasSource(
         kind: "column",
         ref: mapColumnRefForAlias(expr.ref, aliasToSource),
       };
+    case "local":
     case "function":
       return {
-        kind: "function",
-        name: expr.name,
+        ...expr,
         args: expr.args.map((arg) => mapRelExprRefsForAliasSource(arg, aliasToSource)),
       };
     case "subquery":

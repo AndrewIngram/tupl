@@ -1,6 +1,8 @@
-import { Result } from "better-result";
+import { rewriteExpressionSubqueries } from "./subqueries/rewrite-expression-subqueries";
+import { planLocalComputations } from "./local-computation-planning";
+import { Result, type Result as BetterResult } from "better-result";
 
-import { countRelNodes, type RelNode } from "@tupl/foundation";
+import { countRelNodes, type RelNode, type TuplError } from "@tupl/foundation";
 import type { PhysicalPlan } from "./physical/physical";
 import type { ProvidersMap } from "@tupl/provider-kit";
 import type { SchemaDefinition } from "@tupl/schema-model";
@@ -30,14 +32,18 @@ export function rewriteLogicalRelResult<TContext>(
   rel: RelNode,
   schema: SchemaDefinition,
   context?: TContext,
-) {
+): BetterResult<RelNode, TuplError> {
   return Result.gen(function* () {
     const decorrelated = yield* Result.try({
       try: () => decorrelateRel(rel),
       catch: (error) => toRelRewriteError(error, "decorrelate logical rel"),
     });
 
-    return expandRelViewsResult(decorrelated, schema, context);
+    const nested = yield* rewriteExpressionSubqueries(decorrelated, (subquery) =>
+      rewriteLogicalRelResult(subquery, schema, context),
+    );
+    const expanded = yield* expandRelViewsResult(nested, schema, context);
+    return Result.ok(planLocalComputations(expanded));
   });
 }
 

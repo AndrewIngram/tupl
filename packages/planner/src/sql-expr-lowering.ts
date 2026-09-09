@@ -90,6 +90,7 @@ export function lowerSqlAstToRelExpr(
         context,
         lowerSqlAstToRelExpr,
       );
+    case "local":
     case "function":
       return lowerFunctionExprToRelExpr(
         expr,

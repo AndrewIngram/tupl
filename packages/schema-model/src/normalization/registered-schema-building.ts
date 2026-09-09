@@ -1,3 +1,11 @@
+import type { RelExpr, RelLocalOperation } from "@tupl/foundation";
+import {
+  derivedExpression,
+  getLocalImplementation,
+  isDerivedValue,
+  registerLocalOperation,
+} from "../dsl/derive";
+import { normalizeProviderRowValue } from "../mapping/row-coercion";
 import { Result, type Result as BetterResult } from "better-result";
 import type { TuplResult, TuplSchemaNormalizationError } from "@tupl/foundation";
 import { getDataEntityProvider } from "@tupl/provider-kit";
@@ -157,6 +165,7 @@ function buildPhysicalTableDefinition<TContext>(
       kind: "physical" as const,
       provider: rawTable.from.provider,
       entity: rawTable.from.entity,
+      sourceHandle: rawTable.from,
       columnBindings,
       columnToSource: buildColumnSourceMapFromBindings(columnBindings),
       ...(providerInstance ? { providerInstance } : {}),
@@ -238,15 +247,110 @@ function normalizeTableColumns(
   const normalizedColumns: TableColumns = {};
   const columnBindings: Record<string, NormalizedColumnBinding> = {};
 
+  const compiled = new Map<RelLocalOperation, RelExpr>();
+  const visiting = new Set<RelLocalOperation>();
+  const inputNames = new Map<object, string>();
+  const dependencyExpressions = new Map<object, RelExpr>();
+  const resolveLocal = (expr: Extract<RelExpr, { kind: "local" }>): RelExpr => {
+    const cached = compiled.get(expr.operation);
+    if (cached) return cached;
+    if (visiting.has(expr.operation)) throw new Error("Cyclic derived dependencies.");
+    visiting.add(expr.operation);
+    const implementation = getLocalImplementation(expr.operation);
+    const args = Object.values(implementation.dependencies).map((dependency): RelExpr => {
+      if (isDerivedValue(dependency)) {
+        const dependencyExpr = derivedExpression(dependency);
+        if (dependencyExpr.kind !== "local") throw new Error("Invalid derive handle.");
+        return resolveLocal(dependencyExpr);
+      }
+      if (!dependency || typeof dependency !== "object")
+        throw new Error("Invalid derived dependency.");
+      const cachedDependency = dependencyExpressions.get(dependency);
+      if (cachedDependency) return cachedDependency;
+      const normalized = normalizeColumnBinding("dependency", dependency, {
+        ...options,
+        resolveLocal,
+      });
+      if (Result.isError(normalized)) throw normalized.error;
+      const binding = normalized.value.binding;
+      let input: RelExpr;
+      if (binding.kind === "expr") input = binding.expr;
+      else if (options.preserveQualifiedRef) {
+        const index = binding.source.lastIndexOf(".");
+        input = {
+          kind: "column",
+          ref:
+            index < 0
+              ? { column: binding.source }
+              : {
+                  table: binding.source.slice(0, index),
+                  column: binding.source.slice(index + 1),
+                },
+        };
+      } else {
+        let name = inputNames.get(dependency);
+        if (!name) {
+          name = `__derive_input_${inputNames.size}`;
+          while (Object.hasOwn(columns, name) || Object.hasOwn(columnBindings, name)) name += "_";
+          inputNames.set(dependency, name);
+          columnBindings[name] = binding;
+        }
+        input = { kind: "column", ref: { column: name } };
+      }
+      const operation = registerLocalOperation("dependency", {
+        dependencies: { value: dependency },
+        evaluate: ({ value }) => normalizeProviderRowValue(value, binding),
+      });
+      const expression: RelExpr = { kind: "local", operation, args: [input] };
+      dependencyExpressions.set(dependency, expression);
+      return expression;
+    });
+    const result: RelExpr = { ...expr, args };
+    visiting.delete(expr.operation);
+    compiled.set(expr.operation, result);
+    return result;
+  };
+
   for (const [columnName, rawColumn] of Object.entries(columns)) {
-    const normalizedResult = normalizeColumnBinding(columnName, rawColumn, options);
+    const attempt = Result.try({
+      try: () => normalizeColumnBinding(columnName, rawColumn, { ...options, resolveLocal }),
+      catch: (error) =>
+        createSchemaNormalizationError({
+          operation: "normalize derived column",
+          column: columnName,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+    });
+    if (Result.isError(attempt)) return attempt;
+    const normalizedResult = attempt.value;
     if (Result.isError(normalizedResult)) {
       return normalizedResult;
     }
     const normalized = normalizedResult.value;
     normalizedColumns[columnName] = normalized.definition;
     columnBindings[columnName] = normalized.binding;
+    if (normalized.binding.kind === "expr" && containsLocal(normalized.binding.expr)) {
+      const binding = normalized.binding;
+      const operation = registerLocalOperation(columnName, {
+        dependencies: {
+          value: {
+            kind: "dsl_calculated_column",
+            expr: binding.expr,
+            definition: normalized.definition,
+          },
+        },
+        evaluate: ({ value }) => normalizeProviderRowValue(value, binding),
+      });
+      columnBindings[columnName] = {
+        ...binding,
+        expr: { kind: "local", operation, args: [binding.expr] },
+      };
+    }
   }
 
   return Result.ok({ normalizedColumns, columnBindings });
+}
+
+function containsLocal(expr: RelExpr): boolean {
+  return expr.kind === "local" || (expr.kind === "function" && expr.args.some(containsLocal));
 }
